@@ -1,0 +1,24 @@
+[runtime]
+# Remote vLLM OpenAI-compatible base URL. Include /v1, but not /chat/completions.
+endpoint = "http://YOUR_VAST_IP:8000/v1"
+model = "Qwen/Qwen3-8B"
+max_tokens = 2048
+temperature = 0.0
+top_p = 1.0
+timeout_seconds = 120
+
+[nvd]
+base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+timeout_seconds = 20
+retry_count = 2
+
+[web]
+timeout_seconds = 20
+retry_count = 2
+cache_dir = ".cache/cve-agent/web"
+
+[storage]
+database = ".data/cve-agent.sqlite3"
+
+[limits]
+token_budget = 12000

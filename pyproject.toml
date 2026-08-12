@@ -1,0 +1,16 @@
+[project]
+name = "cve-agent"
+version = "0.1.0"
+description = "Evidence-backed multi-label CVE classification"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+cve-agent = "cve_agent.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

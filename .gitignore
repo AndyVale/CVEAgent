@@ -1,2 +1,8 @@
 .venv
 .env
+config.toml
+.DS_Store
+__pycache__/
+*.py[cod]
+.cache/
+.data/
