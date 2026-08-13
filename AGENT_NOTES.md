@@ -10,6 +10,12 @@ The vLLM adapter now uses the `openai` Python client. Tracked configuration is a
 `config.example.toml`; the real `config.toml` is ignored, and `VLLM_API_KEY` is read only
 from the environment.
 
+Fixed vLLM prompt construction to recursively serialize nested dataclasses such as CVE
+references. The deterministic suite passes (`6 passed`). NVD connectivity was verified
+with HTTP 200, but the configured vLLM endpoint `109.134.153.217:8000` timed out during
+connectivity testing; the remote port/service needs to be made reachable before a live
+classification can complete.
+
 The CLI now constructs the NVD, cached web, and vLLM adapters by default, so a local
 `config.toml` can connect to a remote vLLM OpenAI-compatible endpoint. Deterministic tests
 pass (`6 passed`); no live external service is used by the tests.

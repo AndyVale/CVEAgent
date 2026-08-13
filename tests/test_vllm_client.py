@@ -1,7 +1,9 @@
 from types import SimpleNamespace
 
 from cve_agent.adapters import VLLMClassifier
-from cve_agent.models import CVERecord
+import json
+
+from cve_agent.models import CVERecord, Reference
 from cve_agent.config import Settings
 from cve_agent.models import InvestigationState
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
@@ -36,12 +38,14 @@ def test_vllm_classifier_uses_openai_chat_client(tmp_path):
     fake = FakeClient()
     classifier = VLLMClassifier(settings(tmp_path), client=fake)
     result = classifier.classify(
-        CVERecord("CVE-1", "fixture description"), [],
+        CVERecord("CVE-1", "fixture description", (Reference("https://fixture.test/advisory"),)), [],
         Taxonomy((TaxonomyLabel("CWE-1", "Example", "fixture"),)), InvestigationState(),
     )
     request = fake.chat.completions.kwargs
     assert request["model"] == "fixture-model"
     assert request["max_tokens"] == 321
     assert request["top_p"] == 0.9
+    prompt = json.loads(request["messages"][1]["content"])
+    assert prompt["cve"]["references"][0]["url"] == "https://fixture.test/advisory"
     assert result.status == "not_enough_information"
     assert result.operational["token_usage"]["prompt_tokens"] == 10

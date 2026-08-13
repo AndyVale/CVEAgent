@@ -5,6 +5,7 @@ import time
 import urllib.parse
 import urllib.error
 import urllib.request
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -86,7 +87,12 @@ class VLLMClassifier:
         )
 
     def classify(self, cve, evidence, taxonomy, state) -> ClassificationResult:
-        prompt = {"cve": cve.__dict__, "evidence": [getattr(x, "__dict__", {}) for x in evidence], "taxonomy": taxonomy.to_dict(), "investigation": state.to_dict()}
+        prompt = {
+            "cve": asdict(cve) if is_dataclass(cve) else cve,
+            "evidence": [asdict(item) if is_dataclass(item) else item for item in evidence],
+            "taxonomy": taxonomy.to_dict(),
+            "investigation": state.to_dict(),
+        }
         response = self.client.chat.completions.create(
             model=self.settings.model,
             temperature=self.settings.temperature,
