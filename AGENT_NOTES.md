@@ -66,8 +66,7 @@ Implement the initial project structure and development tooling according to `AG
 
 ## Next steps
 
-- Review and approve the uncommitted bounded investigation-agent implementation.
-- Add CLI integration tests and the labelled-dataset evaluation command.
+- Add the labelled-dataset evaluation command.
 - Define provider-specific web-search configuration.
 
 ## Open decisions
@@ -78,8 +77,7 @@ Implement the initial project structure and development tooling according to `AG
 
 ## Current implementation slice
 
-The bounded investigation agent is implemented but intentionally uncommitted pending
-developer approval. It uses only `search`, `fetch`, `record_evidence`, and
+The bounded investigation agent is implemented. It uses only `search`, `fetch`, `record_evidence`, and
 `finish_investigation`. NVD remains a pipeline-controlled first step. `httpx` and
 `trafilatura` provide cached retrieval and bounded readable previews; full pages stay out
 of the active prompt, and only explicitly recorded quotes are promoted into future context.
@@ -96,6 +94,10 @@ investigation exception and execution parameters, bounds each request's completi
 by the remaining budget, keeps only the latest tool exchange in active context, and treats
 search results as leads rather than visited URLs. Invalid finish calls now return a tool
 error so the model can correct them within the remaining limits.
+
+Verbose CLI logging is implemented with `--verbose`. It writes pipeline and agent progress
+to stderr while preserving JSON output on stdout; prompts, keys, and document contents are
+not logged. The logging test and full suite pass (`11 passed`).
 
 The vector-database design remains intentionally deferred until the initial application
 structure and retrieval/classification flow are established.

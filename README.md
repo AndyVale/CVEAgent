@@ -44,6 +44,17 @@ The agent uses required tool calls for compatibility with vLLM servers that are 
 started with `--enable-auto-tool-choice` and `--tool-call-parser`. The model still chooses
 which required tool to call, including `finish_investigation` when it is done.
 
+Use `--verbose` to send pipeline and agent progress to `stderr` while keeping the JSON
+classification output on `stdout`:
+
+```text
+uv run cve-agent --verbose --taxonomy fixtures/example_taxonomy.json CVE-2025-6965
+```
+
+Verbose logs include NVD retrieval, agent turns, tool names, result counts, evidence
+promotion, limits, and final status. Prompts, API keys, and document contents are not
+logged.
+
 The search port remains provider-neutral. Deterministic tests inject a fixture searcher;
 the default CLI does not select a commercial search provider yet, so live investigations
 must either use fetchable NVD references or provide a configured `WebSource` adapter.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import asdict
 from typing import Any
@@ -13,6 +14,9 @@ from .ports import WebSource
 from .schemas import AGENT_TOOLS
 from .taxonomy import Taxonomy
 
+
+logger = logging.getLogger(__name__)
+
 class InvestigationAgent:
     def __init__(self, settings: Settings, web_source: WebSource, client: OpenAI | None = None):
         self.settings = settings
@@ -20,6 +24,7 @@ class InvestigationAgent:
         self.client = client or OpenAI(api_key=settings.api_key or "EMPTY", base_url=settings.endpoint, timeout=settings.llm_timeout, max_retries=settings.retry_count)
 
     def classify(self, cve: CVERecord, evidence: list[Document | SearchResult], taxonomy: Taxonomy, state: InvestigationState) -> ClassificationResult:
+        logger.info("[%s] agent started: taxonomy_labels=%d", cve.cve_id, len(taxonomy.labels))
         started = time.monotonic()
         documents: dict[str, Document] = {}
         searches = 0
@@ -33,8 +38,10 @@ class InvestigationAgent:
         while True:
             base_messages[1] = {"role": "user", "content": json.dumps(self._context(cve, taxonomy, state), ensure_ascii=False)}
             if turns >= self.settings.max_agent_turns or time.monotonic() - started >= self.settings.max_investigation_seconds:
+                logger.info("[%s] stopping: investigation limit reached turns=%d", cve.cve_id, turns)
                 return ClassificationResult(cve.cve_id, "not_enough_information", operational={"stop_reason": "investigation_limit", "token_usage": usage})
             if usage["total_tokens"] >= self.settings.token_budget:
+                logger.info("[%s] stopping: token budget reached total_tokens=%d", cve.cve_id, usage["total_tokens"])
                 return ClassificationResult(cve.cve_id, "not_enough_information", operational={"stop_reason": "token_budget", "token_usage": usage})
             # `required` works with vLLM servers that do not enable the optional
             # auto-tool-choice mode. Every turn must therefore produce one tool
@@ -48,6 +55,7 @@ class InvestigationAgent:
                 usage[key] += int(turn_usage.get(key, 0))
             state.token_usage = usage.copy()
             message = response.choices[0].message
+            logger.info("[%s] agent turn=%d tool_calls=%d tokens=%d", cve.cve_id, turns, len(message.tool_calls or []), usage["total_tokens"])
             if not message.tool_calls:
                 if turns >= self.settings.max_agent_turns:
                     return ClassificationResult(cve.cve_id, "not_enough_information", operational={"stop_reason": "no_finish_tool", "token_usage": usage})
@@ -58,6 +66,7 @@ class InvestigationAgent:
             for call in message.tool_calls:
                 name = call.function.name
                 arguments = json.loads(call.function.arguments)
+                logger.info("[%s] tool requested: %s", cve.cve_id, name)
                 key = (name, json.dumps(arguments, sort_keys=True))
                 if key in seen_calls and name != "finish_investigation":
                     result = {"error": "duplicate tool call; choose a different action"}
@@ -66,10 +75,14 @@ class InvestigationAgent:
                     result = self._execute(name, arguments, state, documents, searches, fetches)
                     if name == "search" and "error" not in result: searches += 1
                     if name == "fetch" and "error" not in result: fetches += 1
+                logger.info("[%s] tool completed: %s%s", cve.cve_id, name, " (error)" if "error" in result else "")
                 if name == "finish_investigation":
                     try:
-                        return self._finish(cve, arguments, taxonomy, state, usage, started, turns)
+                        final_result = self._finish(cve, arguments, taxonomy, state, usage, started, turns)
+                        logger.info("[%s] finish accepted: status=%s labels=%d evidence=%d", cve.cve_id, final_result.status, len(final_result.labels), len(state.evidence))
+                        return final_result
                     except ValueError as exc:
+                        logger.info("[%s] finish rejected: %s", cve.cve_id, exc)
                         result = {"error": str(exc), "instruction": "Correct the classification and call finish_investigation again."}
                 current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)})
             exchange = current_exchange
@@ -79,6 +92,7 @@ class InvestigationAgent:
             if searches >= self.settings.max_search_calls:
                 return {"error": "search limit reached"}
             results = self.web_source.search(arguments["query"])
+            logger.info("search returned %d result(s)", len(results))
             return {"results": [asdict(item) for item in results[:10]]}
         if name == "fetch":
             if fetches >= self.settings.max_fetch_calls:
@@ -87,12 +101,14 @@ class InvestigationAgent:
             document_id = document.document_id or arguments["url"]
             documents[document_id] = document
             state.visited_urls.append(document.url) if document.url not in state.visited_urls else None
+            logger.info("fetched document=%s chars=%d", document_id, len(document.content))
             return {"document_id": document_id, "url": document.url, "title": document.title, "content": document.content[:self.settings.max_preview_chars], "truncated": len(document.content) > self.settings.max_preview_chars}
         if name == "record_evidence":
             document = documents.get(arguments["document_id"])
             if document is None or arguments["quote"] not in document.content:
                 return {"error": "document or exact quote not found"}
             state.evidence.append(Evidence(document.url, arguments["quote"], arguments["explanation"]))
+            logger.info("recorded evidence document=%s evidence_count=%d", arguments["document_id"], len(state.evidence))
             return {"recorded": True, "evidence_count": len(state.evidence)}
         return {"error": f"unknown tool: {name}"}
 
