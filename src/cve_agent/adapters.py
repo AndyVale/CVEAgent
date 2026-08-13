@@ -5,11 +5,14 @@ import time
 import urllib.parse
 import urllib.error
 import urllib.request
+import hashlib
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from openai import OpenAI
+import httpx
+import trafilatura
 
 from .config import Settings
 from .models import CVERecord, ClassificationResult, Document, Evidence, LabelClassification, Reference, SearchResult
@@ -45,9 +48,10 @@ class NVDClient:
 
 
 class CachedWebClient:
-    def __init__(self, settings: Settings, searcher: Callable[[str], list[SearchResult]] | None = None):
+    def __init__(self, settings: Settings, searcher: Callable[[str], list[SearchResult]] | None = None, http_client: httpx.Client | None = None):
         self.settings = settings
         self.searcher = searcher
+        self.http_client = http_client
         self.settings.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _cache(self, prefix: str, key: str) -> Path:
@@ -68,10 +72,26 @@ class CachedWebClient:
         path = self._cache("fetch", url)
         if path.exists():
             return Document(**json.loads(path.read_text(encoding="utf-8")))
-        request = urllib.request.Request(url, headers={"User-Agent": "cve-agent/0.1"})
-        with urllib.request.urlopen(request, timeout=self.settings.web_timeout) as response:
-            content = response.read().decode("utf-8", errors="replace")
-        document = Document(url=url, content=content)
+        for attempt in range(self.settings.retry_count + 1):
+            try:
+                if self.http_client is None:
+                    with httpx.Client(timeout=self.settings.web_timeout, follow_redirects=True, headers={"User-Agent": "cve-agent/0.1"}) as client:
+                        response = client.get(url)
+                else:
+                    response = self.http_client.get(url)
+                response.raise_for_status()
+                raw_response = response.text
+                break
+            except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError):
+                if attempt >= self.settings.retry_count:
+                    raise
+                time.sleep(0.2 * (2**attempt))
+        raw_content = raw_response[: self.settings.max_document_chars]
+        content = trafilatura.extract(raw_content, url=url, include_comments=False, include_tables=True) or raw_content
+        content = content[: self.settings.max_document_chars]
+        metadata = trafilatura.extract_metadata(raw_content, default_url=url) if raw_content else None
+        title = (metadata.title or "") if metadata else ""
+        document = Document(url=url, title=title, content=content, metadata={"truncated": len(raw_response) > len(raw_content)}, document_id=hashlib.sha256(url.encode()).hexdigest()[:16])
         path.write_text(json.dumps(document.__dict__), encoding="utf-8")
         return document
 

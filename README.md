@@ -33,3 +33,17 @@ means a fatal infrastructure error.
 
 The local SQLite database stores each CVE's status, result, error, scratchpad, and token
 usage. Its default location is `.data/cve-agent.sqlite3`.
+
+The investigation agent uses the OpenAI-compatible vLLM client with four bounded actions:
+search, fetch, record evidence, and finish investigation. Web pages are retrieved with
+`httpx`, cleaned with `trafilatura`, cached locally, and returned to the model only as
+bounded previews. A page enters the retained investigation context only after the agent
+records a verifiable quote from it.
+
+The agent uses required tool calls for compatibility with vLLM servers that are not
+started with `--enable-auto-tool-choice` and `--tool-call-parser`. The model still chooses
+which required tool to call, including `finish_investigation` when it is done.
+
+The search port remains provider-neutral. Deterministic tests inject a fixture searcher;
+the default CLI does not select a commercial search provider yet, so live investigations
+must either use fetchable NVD references or provide a configured `WebSource` adapter.

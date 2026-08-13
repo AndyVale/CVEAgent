@@ -32,6 +32,7 @@ class Document:
     title: str = ""
     content: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    document_id: str = ""
 
 
 @dataclass(frozen=True)

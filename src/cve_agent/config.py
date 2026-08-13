@@ -21,8 +21,14 @@ class Settings:
     retry_count: int
     web_timeout: float
     cache_dir: Path
+    max_document_chars: int
+    max_preview_chars: int
     database: Path
     token_budget: int
+    max_agent_turns: int
+    max_search_calls: int
+    max_fetch_calls: int
+    max_investigation_seconds: float
 
 
 def load_settings(path: str | Path = "config.toml") -> Settings:
@@ -37,6 +43,9 @@ def load_settings(path: str | Path = "config.toml") -> Settings:
         enable_thinking=bool(runtime.get("enable_thinking", False)),
         nvd_base_url=nvd.get("base_url", "https://services.nvd.nist.gov/rest/json/cves/2.0"),
         nvd_timeout=float(nvd.get("timeout_seconds", 20)), retry_count=int(nvd.get("retry_count", 2)), web_timeout=float(web.get("timeout_seconds", 20)),
-        cache_dir=Path(web.get("cache_dir", ".cache/cve-agent/web")), database=Path(storage.get("database", ".data/cve-agent.sqlite3")),
-        token_budget=int(limits.get("token_budget", 12000)),
+        cache_dir=Path(web.get("cache_dir", ".cache/cve-agent/web")),
+        max_document_chars=int(web.get("max_document_chars", 100000)), max_preview_chars=int(web.get("max_preview_chars", 12000)),
+        database=Path(storage.get("database", ".data/cve-agent.sqlite3")), token_budget=int(limits.get("token_budget", 12000)),
+        max_agent_turns=int(limits.get("max_agent_turns", 12)), max_search_calls=int(limits.get("max_search_calls", 5)),
+        max_fetch_calls=int(limits.get("max_fetch_calls", 8)), max_investigation_seconds=float(limits.get("max_investigation_seconds", 300)),
     )

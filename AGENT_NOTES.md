@@ -66,18 +66,30 @@ Implement the initial project structure and development tooling according to `AG
 
 ## Next steps
 
-- Resolve the unavailable build dependency in the development environment and run the
-  pytest suite.
-- Expand the investigation loop so the classifier can actively use search/fetch evidence
-  while preserving NVD as the first source.
+- Review and approve the uncommitted bounded investigation-agent implementation.
 - Add CLI integration tests and the labelled-dataset evaluation command.
-- Harden retry/error handling and define provider-specific web search configuration.
+- Define provider-specific web-search configuration.
 
 ## Open decisions
 
 - The initial web-search provider and cache serialization mechanism need provider-level
   configuration and further tests.
 - The evaluation dataset file schema needs to be specified when the evaluator is added.
+
+## Current implementation slice
+
+The bounded investigation agent is implemented but intentionally uncommitted pending
+developer approval. It uses only `search`, `fetch`, `record_evidence`, and
+`finish_investigation`. NVD remains a pipeline-controlled first step. `httpx` and
+`trafilatura` provide cached retrieval and bounded readable previews; full pages stay out
+of the active prompt, and only explicitly recorded quotes are promoted into future context.
+The agent enforces configurable turn, search, fetch, token, and wall-clock limits.
+
+The first live CLI attempt against the configured setup reached the service but this
+environment did not expose `VLLM_API_KEY` and received HTTP 401. The developer-reported
+HTTP 400 was diagnosed separately: the server was not started with vLLM auto-tool-choice
+flags, so the controller now requests `tool_choice="required"`, which does not require
+that optional server mode.
 
 The vector-database design remains intentionally deferred until the initial application
 structure and retrieval/classification flow are established.

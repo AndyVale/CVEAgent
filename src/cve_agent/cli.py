@@ -5,7 +5,8 @@ import json
 import sys
 
 from .config import load_settings
-from .adapters import CachedWebClient, NVDClient, VLLMClassifier
+from .agent import InvestigationAgent
+from .adapters import CachedWebClient, NVDClient
 from .pipeline import Pipeline
 from .ports import CVESource, Classifier, WebSource
 from .persistence import Database
@@ -25,10 +26,11 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
     try:
         taxonomy = load_taxonomy(args.taxonomy)
         settings = load_settings(args.config)
+        active_web_source = web_source or CachedWebClient(settings)
         pipeline = Pipeline(
             cve_source or NVDClient(settings),
-            web_source or CachedWebClient(settings),
-            classifier or VLLMClassifier(settings),
+            active_web_source,
+            classifier or InvestigationAgent(settings, active_web_source),
             database or Database(settings.database),
         )
         results = pipeline.run(args.cve_ids, taxonomy)

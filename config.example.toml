@@ -18,9 +18,15 @@ retry_count = 2
 timeout_seconds = 20
 retry_count = 2
 cache_dir = ".cache/cve-agent/web"
+max_document_chars = 100000
+max_preview_chars = 12000
 
 [storage]
 database = ".data/cve-agent.sqlite3"
 
 [limits]
 token_budget = 12000
+max_agent_turns = 12
+max_search_calls = 5
+max_fetch_calls = 8
+max_investigation_seconds = 300
