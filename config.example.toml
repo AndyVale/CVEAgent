@@ -6,7 +6,6 @@ max_tokens = 2048
 temperature = 0.0
 top_p = 1.0
 timeout_seconds = 120
-# Qwen3 reasoning can be enabled when desired, but disabling it is preferable for strict JSON output.
 enable_thinking = false
 
 [nvd]

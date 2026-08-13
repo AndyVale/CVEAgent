@@ -16,6 +16,7 @@ import trafilatura
 
 from .config import Settings
 from .models import CVERecord, ClassificationResult, Document, Evidence, LabelClassification, Reference, SearchResult
+from .schemas import CLASSIFICATION_SCHEMA
 
 
 def _request_json(url: str, timeout: float, retries: int, headers: dict[str, str] | None = None) -> Any:
@@ -113,28 +114,6 @@ class VLLMClassifier:
             "taxonomy": taxonomy.to_dict(),
             "investigation": state.to_dict(),
         }
-        classification_schema = {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "cve_id": {"type": "string"},
-                "status": {"type": "string", "enum": ["classified", "not_enough_information"]},
-                "labels": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "properties": {
-                            "label": {"type": "string"},
-                            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                            "evidence": {"type": "array", "items": {"type": "object", "additionalProperties": False, "properties": {"url": {"type": "string"}, "quote": {"type": "string"}, "explanation": {"type": "string"}}, "required": ["url", "quote", "explanation"]}},
-                        },
-                        "required": ["label", "confidence", "evidence"],
-                    },
-                },
-            },
-            "required": ["cve_id", "status", "labels"],
-        }
         response = self.client.chat.completions.create(
             model=self.settings.model,
             temperature=self.settings.temperature,
@@ -145,7 +124,7 @@ class VLLMClassifier:
                 {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
             ],
             response_format={"type": "json_object"},
-            extra_body={"guided_json": classification_schema, "chat_template_kwargs": {"enable_thinking": self.settings.enable_thinking}},
+            extra_body={"guided_json": CLASSIFICATION_SCHEMA, "chat_template_kwargs": {"enable_thinking": self.settings.enable_thinking}},
         )
         content = response.choices[0].message.content or ""
         if "</think>" in content:

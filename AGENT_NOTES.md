@@ -91,5 +91,11 @@ HTTP 400 was diagnosed separately: the server was not started with vLLM auto-too
 flags, so the controller now requests `tool_choice="required"`, which does not require
 that optional server mode.
 
+The follow-up refactor centralizes tool and classification schemas, removes the unused
+investigation exception and execution parameters, bounds each request's completion tokens
+by the remaining budget, keeps only the latest tool exchange in active context, and treats
+search results as leads rather than visited URLs. Invalid finish calls now return a tool
+error so the model can correct them within the remaining limits.
+
 The vector-database design remains intentionally deferred until the initial application
 structure and retrieval/classification flow are established.
