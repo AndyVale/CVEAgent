@@ -13,9 +13,18 @@ The project uses Python and `uv`:
 uv run cve-agent --taxonomy fixtures/example_taxonomy.json CVE-2026-0001
 ```
 
-Runtime defaults are in [config.toml](config.toml). The vLLM API key, when required, is
-read from the environment variable named by `runtime.api_key_env`; secrets are not stored
-in the configuration file.
+Copy [config.example.toml](config.example.toml) to `config.toml` and edit the local copy.
+The real `config.toml` is ignored by Git. Set the remote vLLM address in
+`[runtime].endpoint`, for example `https://203.0.113.10:8000/v1`, and set the served model
+in `[runtime].model`.
+
+The API key value is never placed in the configuration file. If the vLLM server requires
+authentication, export it as `VLLM_API_KEY`; otherwise the client sends the placeholder key
+`EMPTY`.
+
+The runtime section also controls `max_tokens`, `temperature`, `top_p`, and request
+`timeout_seconds`. NVD/web retry counts and timeouts, cache location, SQLite location, and
+the investigation token budget are configured in the remaining sections.
 
 The CLI writes a JSON array to stdout in input order. Per-CVE diagnostics belong to the
 result object; operational diagnostics are written to stderr. Exit code `0` means all CVEs

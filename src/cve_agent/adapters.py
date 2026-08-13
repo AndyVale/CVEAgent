@@ -8,6 +8,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
+from openai import OpenAI
+
 from .config import Settings
 from .models import CVERecord, ClassificationResult, Document, Evidence, LabelClassification, Reference, SearchResult
 
@@ -74,19 +76,28 @@ class CachedWebClient:
 
 
 class VLLMClassifier:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, client: OpenAI | None = None):
         self.settings = settings
+        self.client = client or OpenAI(
+            api_key=settings.api_key or "EMPTY",
+            base_url=settings.endpoint,
+            timeout=settings.llm_timeout,
+            max_retries=settings.retry_count,
+        )
 
     def classify(self, cve, evidence, taxonomy, state) -> ClassificationResult:
         prompt = {"cve": cve.__dict__, "evidence": [getattr(x, "__dict__", {}) for x in evidence], "taxonomy": taxonomy.to_dict(), "investigation": state.to_dict()}
-        body = json.dumps({"model": self.settings.model, "temperature": self.settings.temperature, "max_tokens": self.settings.max_tokens, "messages": [{"role": "system", "content": "Return only valid JSON matching the requested CVE classification schema."}, {"role": "user", "content": json.dumps(prompt)}]}).encode()
-        headers = {"Content-Type": "application/json"}
-        if self.settings.api_key:
-            headers["Authorization"] = f"Bearer {self.settings.api_key}"
-        request = urllib.request.Request(self.settings.endpoint.rstrip("/") + "/chat/completions", data=body, headers=headers, method="POST")
-        with urllib.request.urlopen(request, timeout=self.settings.web_timeout) as response:
-            payload = json.loads(response.read())
-        content = payload["choices"][0]["message"]["content"]
+        response = self.client.chat.completions.create(
+            model=self.settings.model,
+            temperature=self.settings.temperature,
+            top_p=self.settings.top_p,
+            max_tokens=self.settings.max_tokens,
+            messages=[
+                {"role": "system", "content": "Return only valid JSON matching the requested CVE classification schema."},
+                {"role": "user", "content": json.dumps(prompt)},
+            ],
+        )
+        content = response.choices[0].message.content or ""
         decoded = json.loads(content[content.find("{"):content.rfind("}") + 1])
         status = decoded.get("status")
         if status not in {"classified", "not_enough_information"}:
@@ -100,4 +111,5 @@ class VLLMClassifier:
             raise ValueError("each selected label requires confidence in [0, 1] and supporting evidence")
         if status == "not_enough_information" and labels:
             raise ValueError("not_enough_information results cannot contain labels")
-        return ClassificationResult(cve.cve_id, status, labels, operational={"token_usage": payload.get("usage", {})})
+        usage = response.usage.model_dump() if response.usage else {}
+        return ClassificationResult(cve.cve_id, status, labels, operational={"token_usage": usage})

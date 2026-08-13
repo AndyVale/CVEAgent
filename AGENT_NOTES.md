@@ -6,6 +6,14 @@ The initial implementation slice is present: package metadata, domain models, ta
 validation, TOML settings, SQLite persistence, pipeline/CLI contracts, NVD/web/vLLM
 adapters, fixtures, and tests.
 
+The vLLM adapter now uses the `openai` Python client. Tracked configuration is a safe
+`config.example.toml`; the real `config.toml` is ignored, and `VLLM_API_KEY` is read only
+from the environment.
+
+The CLI now constructs the NVD, cached web, and vLLM adapters by default, so a local
+`config.toml` can connect to a remote vLLM OpenAI-compatible endpoint. Deterministic tests
+pass (`6 passed`); no live external service is used by the tests.
+
 Validation performed: Python bytecode compilation and a SQLite/taxonomy smoke test pass.
 The pytest suite could not start because the environment cannot download the unavailable
 `hatchling` build backend from PyPI; the failure is environmental rather than a test

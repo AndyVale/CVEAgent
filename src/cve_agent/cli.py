@@ -5,29 +5,11 @@ import json
 import sys
 
 from .config import load_settings
-from .models import CVERecord, ClassificationResult
+from .adapters import CachedWebClient, NVDClient, VLLMClassifier
 from .pipeline import Pipeline
 from .ports import CVESource, Classifier, WebSource
 from .persistence import Database
 from .taxonomy import TaxonomyError, load_taxonomy
-
-
-class UnconfiguredSource:
-    def get_cve(self, cve_id: str) -> CVERecord:
-        raise RuntimeError("NVD source is not configured in this initial build")
-
-
-class UnconfiguredWeb:
-    def search(self, query: str):
-        raise RuntimeError("web search source is not configured in this initial build")
-
-    def fetch(self, url: str):
-        raise RuntimeError("web fetch source is not configured in this initial build")
-
-
-class UnconfiguredClassifier:
-    def classify(self, cve, evidence, taxonomy, state):
-        raise RuntimeError("vLLM classifier adapter is not configured in this initial build")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,7 +25,12 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
     try:
         taxonomy = load_taxonomy(args.taxonomy)
         settings = load_settings(args.config)
-        pipeline = Pipeline(cve_source or UnconfiguredSource(), web_source or UnconfiguredWeb(), classifier or UnconfiguredClassifier(), database or Database(settings.database))
+        pipeline = Pipeline(
+            cve_source or NVDClient(settings),
+            web_source or CachedWebClient(settings),
+            classifier or VLLMClassifier(settings),
+            database or Database(settings.database),
+        )
         results = pipeline.run(args.cve_ids, taxonomy)
         print(json.dumps([result.to_dict() for result in results], indent=2))
         return 0 if all(result.status != "failed" for result in results) else 2
