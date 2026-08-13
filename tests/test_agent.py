@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import httpx
 
 from cve_agent.adapters import CachedWebClient
+from cve_agent.adapters import TavilySearchProvider
 from cve_agent.agent import InvestigationAgent
 from cve_agent.config import Settings
 from cve_agent.models import CVERecord, InvestigationState, SearchResult
@@ -15,6 +16,8 @@ def settings(tmp_path):
         model="fixture-model", endpoint="https://fixture.test/v1", api_key=None,
         max_tokens=500, temperature=0.0, top_p=1.0, llm_timeout=5, enable_thinking=False,
         nvd_base_url="https://nvd.test", nvd_timeout=5, retry_count=0, web_timeout=5,
+        web_provider="tavily", tavily_base_url="https://api.tavily.com", tavily_max_results=5,
+        tavily_search_depth="basic", tavily_api_key=None,
         cache_dir=tmp_path / "cache", max_document_chars=10000, max_preview_chars=1000,
         database=tmp_path / "db.sqlite", token_budget=5000, max_agent_turns=8,
         max_search_calls=2, max_fetch_calls=2, max_investigation_seconds=30,
@@ -28,6 +31,11 @@ class FixtureWeb:
     def fetch(self, url):
         from cve_agent.models import Document
         return Document(url, "Advisory", "The issue causes memory corruption in aggregate processing.", document_id="doc-1")
+
+
+class FailingFetchWeb(FixtureWeb):
+    def fetch(self, url):
+        raise httpx.HTTPStatusError("forbidden", request=httpx.Request("GET", url), response=httpx.Response(403, request=httpx.Request("GET", url)))
 
 
 class ToolCall:
@@ -94,3 +102,22 @@ def test_agent_stops_when_turn_limit_is_reached(tmp_path):
     )
     assert result.status == "not_enough_information"
     assert result.operational["stop_reason"] == "investigation_limit"
+
+
+def test_tavily_search_provider_maps_results_and_authenticates(tmp_path):
+    configured = settings(tmp_path).__class__(**{**settings(tmp_path).__dict__, "tavily_api_key": "tvly-fixture"})
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"results": [{"title": "Advisory", "url": "https://fixture.test/advisory", "content": "memory corruption"}]}))
+    provider = TavilySearchProvider(configured, http_client=httpx.Client(transport=transport))
+    results = provider.search("CVE-1")
+    assert results == [SearchResult("Advisory", "https://fixture.test/advisory", "memory corruption")]
+
+
+def test_fetch_failure_is_returned_to_agent_instead_of_escaping(tmp_path):
+    agent = InvestigationAgent(settings(tmp_path), FailingFetchWeb(), AgentClient())
+    failed_urls = set()
+    result = agent._execute("fetch", {"url": "https://fixture.test/forbidden"}, InvestigationState(), {}, 0, 0, failed_urls)
+    assert result["url"] == "https://fixture.test/forbidden"
+    assert "HTTPStatusError" in result["error"]
+    assert "Continue with another source" in result["error"]
+    repeated = agent._execute("fetch", {"url": "https://fixture.test/forbidden"}, InvestigationState(), {}, 0, 0, failed_urls)
+    assert "already failed" in repeated["error"]

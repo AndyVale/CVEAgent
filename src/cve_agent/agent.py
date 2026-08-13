@@ -31,6 +31,7 @@ class InvestigationAgent:
         fetches = 0
         turns = 0
         seen_calls: set[tuple[str, str]] = set()
+        failed_fetches: set[str] = set()
         usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         base_messages = [{"role": "system", "content": self._system_prompt()}, {"role": "user", "content": json.dumps(self._context(cve, taxonomy, state), ensure_ascii=False)}]
         exchange: list[dict[str, Any]] = []
@@ -66,16 +67,19 @@ class InvestigationAgent:
             for call in message.tool_calls:
                 name = call.function.name
                 arguments = json.loads(call.function.arguments)
-                logger.info("[%s] tool requested: %s", cve.cve_id, name)
+                logger.info("[%s] tool requested: %s params=%s", cve.cve_id, name, self._log_arguments(arguments))
                 key = (name, json.dumps(arguments, sort_keys=True))
                 if key in seen_calls and name != "finish_investigation":
                     result = {"error": "duplicate tool call; choose a different action"}
                 else:
                     seen_calls.add(key)
-                    result = self._execute(name, arguments, state, documents, searches, fetches)
+                    result = self._execute(name, arguments, state, documents, searches, fetches, failed_fetches)
                     if name == "search" and "error" not in result: searches += 1
                     if name == "fetch" and "error" not in result: fetches += 1
-                logger.info("[%s] tool completed: %s%s", cve.cve_id, name, " (error)" if "error" in result else "")
+                if "error" in result:
+                    logger.warning("[%s] tool completed: %s error=%s", cve.cve_id, name, result["error"])
+                else:
+                    logger.info("[%s] tool completed: %s%s", cve.cve_id, name, " (success)")
                 if name == "finish_investigation":
                     try:
                         final_result = self._finish(cve, arguments, taxonomy, state, usage, started, turns)
@@ -87,17 +91,29 @@ class InvestigationAgent:
                 current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)})
             exchange = current_exchange
 
-    def _execute(self, name, arguments, state, documents, searches, fetches):
+    def _execute(self, name, arguments, state, documents, searches, fetches, failed_fetches):
         if name == "search":
             if searches >= self.settings.max_search_calls:
                 return {"error": "search limit reached"}
-            results = self.web_source.search(arguments["query"])
+            try:
+                results = self.web_source.search(arguments["query"])
+            except Exception as exc:
+                logger.warning("search failed type=%s message=%s", type(exc).__name__, exc)
+                return {"error": self._tool_error("search", exc)}
             logger.info("search returned %d result(s)", len(results))
             return {"results": [asdict(item) for item in results[:10]]}
         if name == "fetch":
             if fetches >= self.settings.max_fetch_calls:
                 return {"error": "fetch limit reached"}
-            document = self.web_source.fetch(arguments["url"])
+            url = arguments["url"]
+            if url in failed_fetches:
+                return {"error": "this URL already failed during the current investigation; choose another source"}
+            try:
+                document = self.web_source.fetch(url)
+            except Exception as exc:
+                failed_fetches.add(url)
+                logger.warning("fetch failed url=%s type=%s message=%s", url, type(exc).__name__, exc)
+                return {"error": self._tool_error("fetch", exc), "url": url}
             document_id = document.document_id or arguments["url"]
             documents[document_id] = document
             state.visited_urls.append(document.url) if document.url not in state.visited_urls else None
@@ -111,6 +127,23 @@ class InvestigationAgent:
             logger.info("recorded evidence document=%s evidence_count=%d", arguments["document_id"], len(state.evidence))
             return {"recorded": True, "evidence_count": len(state.evidence)}
         return {"error": f"unknown tool: {name}"}
+
+    @staticmethod
+    def _tool_error(operation: str, exc: Exception) -> str:
+        return f"{operation} failed ({type(exc).__name__}): {exc}. Continue with another source or finish with the evidence already available."
+
+    @staticmethod
+    def _log_arguments(arguments: dict[str, Any]) -> str:
+        """Return tool parameters safe for verbose logs; no secrets are accepted here."""
+        if "url" in arguments:
+            return f"url={arguments['url']}"
+        if "query" in arguments:
+            return f"query={arguments['query']!r}"
+        if "document_id" in arguments:
+            return f"document_id={arguments['document_id']} quote_chars={len(arguments.get('quote', ''))}"
+        if "status" in arguments:
+            return f"status={arguments['status']} labels={len(arguments.get('labels', []))}"
+        return "<none>"
 
     def _finish(self, cve, arguments, taxonomy, state, usage, started, turns):
         status = arguments.get("status")

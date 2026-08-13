@@ -83,6 +83,17 @@ The bounded investigation agent is implemented. It uses only `search`, `fetch`, 
 of the active prompt, and only explicitly recorded quotes are promoted into future context.
 The agent enforces configurable turn, search, fetch, token, and wall-clock limits.
 
+Tavily search is configured through the `TAVILY_API_KEY` environment variable. Fetch
+diagnostics now report cache state, attempts, HTTP status, redirects, content type, byte
+counts, extraction fallback, and typed failure messages without logging page contents or
+secrets. Fetch/search exceptions are returned as recoverable tool errors so one bad URL
+does not abort the entire CVE investigation. The deterministic suite passes (`13 passed`).
+
+Verbose tool logs now include safe parameters and detailed error results. Repeated fetches
+of a URL that already failed are blocked for the current investigation, and low-value
+httpx/httpx2 request logs are suppressed in verbose mode. This keeps the agent trace useful
+without exposing secrets or page contents.
+
 The first live CLI attempt against the configured setup reached the service but this
 environment did not expose `VLLM_API_KEY` and received HTTP 401. The developer-reported
 HTTP 400 was diagnosed separately: the server was not started with vLLM auto-tool-choice

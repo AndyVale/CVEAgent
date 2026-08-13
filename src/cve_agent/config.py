@@ -20,6 +20,11 @@ class Settings:
     nvd_timeout: float
     retry_count: int
     web_timeout: float
+    web_provider: str
+    tavily_base_url: str
+    tavily_max_results: int
+    tavily_search_depth: str
+    tavily_api_key: str | None
     cache_dir: Path
     max_document_chars: int
     max_preview_chars: int
@@ -43,6 +48,9 @@ def load_settings(path: str | Path = "config.toml") -> Settings:
         enable_thinking=bool(runtime.get("enable_thinking", False)),
         nvd_base_url=nvd.get("base_url", "https://services.nvd.nist.gov/rest/json/cves/2.0"),
         nvd_timeout=float(nvd.get("timeout_seconds", 20)), retry_count=int(nvd.get("retry_count", 2)), web_timeout=float(web.get("timeout_seconds", 20)),
+        web_provider=str(web.get("provider", "tavily")), tavily_base_url=str(web.get("tavily_base_url", "https://api.tavily.com")),
+        tavily_max_results=int(web.get("tavily_max_results", 5)), tavily_search_depth=str(web.get("tavily_search_depth", "basic")),
+        tavily_api_key=os.getenv("TAVILY_API_KEY"),
         cache_dir=Path(web.get("cache_dir", ".cache/cve-agent/web")),
         max_document_chars=int(web.get("max_document_chars", 100000)), max_preview_chars=int(web.get("max_preview_chars", 12000)),
         database=Path(storage.get("database", ".data/cve-agent.sqlite3")), token_budget=int(limits.get("token_budget", 12000)),

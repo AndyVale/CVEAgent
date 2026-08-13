@@ -56,5 +56,17 @@ promotion, limits, and final status. Prompts, API keys, and document contents ar
 logged.
 
 The search port remains provider-neutral. Deterministic tests inject a fixture searcher;
-the default CLI does not select a commercial search provider yet, so live investigations
-must either use fetchable NVD references or provide a configured `WebSource` adapter.
+the default CLI uses Tavily when `[web].provider = "tavily"`. Set the API key only in the
+environment:
+
+```bash
+export TAVILY_API_KEY="tvly-..."
+```
+
+The key is never read from or stored in the TOML configuration. Without the key, direct
+URL fetching and NVD references still work, but an agent search request fails clearly.
+
+With `--verbose`, fetch diagnostics include cache hits/misses, retry attempts, HTTP status,
+redirect target, content type, response size, extraction fallback, and typed failure
+messages. A failed source is returned to the agent as a recoverable tool error so it can
+try another source or finish with the evidence already collected.

@@ -7,7 +7,7 @@ import sys
 
 from .config import load_settings
 from .agent import InvestigationAgent
-from .adapters import CachedWebClient, NVDClient
+from .adapters import CachedWebClient, NVDClient, TavilySearchProvider
 from .pipeline import Pipeline
 from .ports import CVESource, Classifier, WebSource
 from .persistence import Database
@@ -27,13 +27,15 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
     args = build_parser().parse_args(argv)
     if args.verbose:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s", stream=sys.stderr, force=True)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpx2").setLevel(logging.WARNING)
     logger = logging.getLogger(__name__)
     try:
         taxonomy = load_taxonomy(args.taxonomy)
         settings = load_settings(args.config)
         logger.info("loaded taxonomy=%s labels=%d", args.taxonomy, len(taxonomy.labels))
         logger.info("processing %d CVE(s)", len(args.cve_ids))
-        active_web_source = web_source or CachedWebClient(settings)
+        active_web_source = web_source or CachedWebClient(settings, searcher=TavilySearchProvider(settings).search if settings.web_provider == "tavily" else None)
         pipeline = Pipeline(
             cve_source or NVDClient(settings),
             active_web_source,

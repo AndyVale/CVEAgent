@@ -30,6 +30,8 @@ def settings(tmp_path):
         model="fixture-model", endpoint="https://203.0.113.10:8000/v1", api_key=None,
         max_tokens=321, temperature=0.0, top_p=0.9, llm_timeout=45, enable_thinking=False,
         nvd_base_url="https://nvd.test", nvd_timeout=5, retry_count=2,
+        web_provider="tavily", tavily_base_url="https://api.tavily.com", tavily_max_results=5,
+        tavily_search_depth="basic", tavily_api_key=None,
         web_timeout=5, cache_dir=tmp_path / "cache", max_document_chars=100000, max_preview_chars=12000,
         database=tmp_path / "db.sqlite", token_budget=1000, max_agent_turns=12,
         max_search_calls=5, max_fetch_calls=8, max_investigation_seconds=300,
