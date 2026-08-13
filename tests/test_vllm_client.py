@@ -28,7 +28,7 @@ class FakeClient:
 def settings(tmp_path):
     return Settings(
         model="fixture-model", endpoint="https://203.0.113.10:8000/v1", api_key=None,
-        max_tokens=321, temperature=0.0, top_p=0.9, llm_timeout=45,
+        max_tokens=321, temperature=0.0, top_p=0.9, llm_timeout=45, enable_thinking=False,
         nvd_base_url="https://nvd.test", nvd_timeout=5, retry_count=2,
         web_timeout=5, cache_dir=tmp_path / "cache", database=tmp_path / "db.sqlite", token_budget=1000,
     )
@@ -45,7 +45,22 @@ def test_vllm_classifier_uses_openai_chat_client(tmp_path):
     assert request["model"] == "fixture-model"
     assert request["max_tokens"] == 321
     assert request["top_p"] == 0.9
+    assert request["response_format"] == {"type": "json_object"}
+    assert request["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
     prompt = json.loads(request["messages"][1]["content"])
     assert prompt["cve"]["references"][0]["url"] == "https://fixture.test/advisory"
     assert result.status == "not_enough_information"
     assert result.operational["token_usage"]["prompt_tokens"] == 10
+
+
+def test_vllm_classifier_accepts_reasoning_wrapper(tmp_path):
+    fake = FakeClient()
+    fake.chat.completions.create = lambda **kwargs: SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='<think>internal reasoning</think>\n{"cve_id":"CVE-1","status":"not_enough_information","labels":[]}'))],
+        usage=None,
+    )
+    result = VLLMClassifier(settings(tmp_path), client=fake).classify(
+        CVERecord("CVE-1", "fixture description"), [],
+        Taxonomy((TaxonomyLabel("CWE-1", "Example", "fixture"),)), InvestigationState(),
+    )
+    assert result.status == "not_enough_information"

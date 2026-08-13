@@ -93,18 +93,50 @@ class VLLMClassifier:
             "taxonomy": taxonomy.to_dict(),
             "investigation": state.to_dict(),
         }
+        classification_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "cve_id": {"type": "string"},
+                "status": {"type": "string", "enum": ["classified", "not_enough_information"]},
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "label": {"type": "string"},
+                            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                            "evidence": {"type": "array", "items": {"type": "object", "additionalProperties": False, "properties": {"url": {"type": "string"}, "quote": {"type": "string"}, "explanation": {"type": "string"}}, "required": ["url", "quote", "explanation"]}},
+                        },
+                        "required": ["label", "confidence", "evidence"],
+                    },
+                },
+            },
+            "required": ["cve_id", "status", "labels"],
+        }
         response = self.client.chat.completions.create(
             model=self.settings.model,
             temperature=self.settings.temperature,
             top_p=self.settings.top_p,
             max_tokens=self.settings.max_tokens,
             messages=[
-                {"role": "system", "content": "Return only valid JSON matching the requested CVE classification schema."},
-                {"role": "user", "content": json.dumps(prompt)},
+                {"role": "system", "content": "You are a CVE multi-label classification agent. Return ONLY one JSON object matching this exact schema: {\"cve_id\": string, \"status\": \"classified\" or \"not_enough_information\", \"labels\": [{\"label\": taxonomy ID, \"confidence\": number from 0 to 1, \"evidence\": [{\"url\": string, \"quote\": string, \"explanation\": string}]}]}. The label field must contain an ID from the supplied taxonomy, never a label name. If the evidence does not support a taxonomy label, return status not_enough_information and labels []. Do not restate the CVE, taxonomy, or prompt. Do not return markdown or explanatory text."},
+                {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
             ],
+            response_format={"type": "json_object"},
+            extra_body={"guided_json": classification_schema, "chat_template_kwargs": {"enable_thinking": self.settings.enable_thinking}},
         )
         content = response.choices[0].message.content or ""
-        decoded = json.loads(content[content.find("{"):content.rfind("}") + 1])
+        if "</think>" in content:
+            content = content.rsplit("</think>", 1)[1]
+        content = content.strip().removeprefix("```json").removesuffix("```").strip()
+        try:
+            decoded = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError("vLLM returned non-JSON classification content") from exc
+        if decoded.get("cve_id") != cve.cve_id:
+            raise ValueError(f"classifier returned CVE ID {decoded.get('cve_id')!r}, expected {cve.cve_id!r}")
         status = decoded.get("status")
         if status not in {"classified", "not_enough_information"}:
             raise ValueError(f"invalid classification status: {status!r}")

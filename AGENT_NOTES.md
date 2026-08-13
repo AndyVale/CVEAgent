@@ -10,6 +10,13 @@ The vLLM adapter now uses the `openai` Python client. Tracked configuration is a
 `config.example.toml`; the real `config.toml` is ignored, and `VLLM_API_KEY` is read only
 from the environment.
 
+The classifier contract was tightened after a live Qwen3 response returned a CVE summary
+instead of a classification object. Requests now include an explicit JSON schema, vLLM
+guided JSON, and `enable_thinking=false` by default; `<think>` wrappers are also handled.
+The deterministic suite passes (`7 passed`). A live retest reached the configured endpoint
+but returned HTTP 401 because `VLLM_API_KEY` is not available in this agent process; rerun
+from the shell where the key is exported.
+
 Fixed vLLM prompt construction to recursively serialize nested dataclasses such as CVE
 references. The deterministic suite passes (`6 passed`). NVD connectivity was verified
 with HTTP 200, but the configured vLLM endpoint `109.134.153.217:8000` timed out during
