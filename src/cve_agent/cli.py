@@ -5,13 +5,13 @@ import json
 import logging
 import sys
 
-from .config import load_settings
-from .agent import InvestigationAgent
-from .adapters import CachedWebClient, NVDClient, TavilySearchProvider
-from .pipeline import Pipeline
-from .ports import CVESource, Classifier, WebSource
-from .persistence import Database
-from .taxonomy import TaxonomyError, load_taxonomy
+from cve_agent.config import load_settings
+from cve_agent.agent import InvestigationAgent
+from cve_agent.adapters import CachedWebClient, NVDClient, TavilySearchProvider
+from cve_agent.pipeline import Pipeline
+from cve_agent.ports import CVESource, Classifier, WebSource
+from cve_agent.persistence import Database
+from cve_agent.taxonomy import TaxonomyError, load_taxonomy
 
 
 def build_parser() -> argparse.ArgumentParser:

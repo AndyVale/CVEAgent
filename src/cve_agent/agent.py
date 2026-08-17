@@ -8,12 +8,12 @@ from typing import Any
 
 from openai import OpenAI
 
-from .config import Settings
-from .llm import call_chat_completion
-from .models import CVERecord, ClassificationResult, Document, Evidence, InvestigationState, LabelClassification, SearchResult
-from .ports import WebSource
-from .schemas import AGENT_TOOLS
-from .taxonomy import Taxonomy
+from cve_agent.config import Settings
+from cve_agent.llm import call_chat_completion
+from cve_agent.models import CVERecord, ClassificationResult, Document, Evidence, InvestigationState, LabelClassification, SearchResult
+from cve_agent.ports import WebSource
+from cve_agent.schemas import AGENT_TOOLS
+from cve_agent.taxonomy import Taxonomy
 
 
 logger = logging.getLogger(__name__)

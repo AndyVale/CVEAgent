@@ -15,9 +15,9 @@ from openai import OpenAI
 import httpx
 import trafilatura
 
-from .config import Settings
-from .llm import call_chat_completion
-from .models import CVERecord, ClassificationResult, Document, Evidence, LabelClassification, Reference, SearchResult
+from cve_agent.config import Settings
+from cve_agent.llm import call_chat_completion
+from cve_agent.models import CVERecord, ClassificationResult, Document, Evidence, LabelClassification, Reference, SearchResult
 
 
 logger = logging.getLogger(__name__)

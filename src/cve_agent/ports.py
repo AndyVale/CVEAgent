@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .models import CVERecord, ClassificationResult, Document, InvestigationState, SearchResult
-from .taxonomy import Taxonomy
+from cve_agent.models import CVERecord, ClassificationResult, Document, InvestigationState, SearchResult
+from cve_agent.taxonomy import Taxonomy
 
 
 class CVESource(Protocol):

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 
-from .models import ClassificationResult, Evidence, InvestigationState
-from .persistence import Database
-from .ports import CVESource, Classifier, WebSource
-from .taxonomy import Taxonomy
+from cve_agent.models import ClassificationResult, Evidence, InvestigationState
+from cve_agent.persistence import Database
+from cve_agent.ports import CVESource, Classifier, WebSource
+from cve_agent.taxonomy import Taxonomy
 
 
 logger = logging.getLogger(__name__)

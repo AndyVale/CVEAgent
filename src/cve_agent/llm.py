@@ -7,7 +7,7 @@ from typing import Any
 from openai import APIConnectionError, APITimeoutError, InternalServerError, OpenAI, RateLimitError
 from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from .config import Settings
+from cve_agent.config import Settings
 
 
 class EmptyCompletionError(RuntimeError):

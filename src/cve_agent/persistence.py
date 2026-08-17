@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import ClassificationResult, InvestigationState
+from cve_agent.models import ClassificationResult, InvestigationState
 
 
 class Database:
