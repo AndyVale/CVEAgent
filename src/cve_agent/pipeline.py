@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from .models import ClassificationResult, InvestigationState
+from .models import ClassificationResult, Evidence, InvestigationState
 from .persistence import Database
 from .ports import CVESource, Classifier, WebSource
 from .taxonomy import Taxonomy
@@ -24,6 +24,13 @@ class Pipeline:
                 try:
                     cve = self.cve_source.get_cve(cve_id)
                     state.facts.append(cve.description)
+                    if cve.description.strip():
+                        state.evidence.append(Evidence(
+                            url=f"https://nvd.nist.gov/vuln/detail/{cve.cve_id}",
+                            quote=cve.description,
+                            explanation="NVD CVE description retrieved at the start of the investigation.",
+                        ))
+                    state.tool_history.append({"tool": "get_cve", "status": "success", "source": "NVD", "reference_count": len(cve.references)})
                     logger.info("[%s] NVD record loaded: %d references", cve_id, len(cve.references))
                     result = self.classifier.classify(cve, [], taxonomy, state)
                     db.save(cve_id, result.status, state, result)

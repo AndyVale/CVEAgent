@@ -89,6 +89,16 @@ returned without another network request, with an instruction to record evidence
 The context includes fetched-document metadata and current tool budgets without adding full
 documents to persistent context. The deterministic suite passes (`17 passed`).
 
+The pipeline now records the NVD description as initial evidence and adds a `get_cve` event
+to the scratchpad before the first model turn. `record_evidence` requires a document and a
+non-empty quote, but no longer rejects non-verbatim wording; it returns `quote_verified` so
+the model and persisted history can distinguish exact from approximate evidence. Tool
+history records searches, fetches, evidence attempts, and finish attempts. The finish tool
+is handled directly rather than reported as an unknown generic tool. Resource exhaustion
+now returns status `partial`, distinct from a deliberate `not_enough_information` result;
+the CLI returns the partial-run exit code for it. Direct NVD-only classification and partial
+CLI exit behavior are covered by tests. The deterministic suite passes (`20 passed`).
+
 Tavily search is configured through the `TAVILY_API_KEY` environment variable. Fetch
 diagnostics now report cache state, attempts, HTTP status, redirects, content type, byte
 counts, extraction fallback, and typed failure messages without logging page contents or

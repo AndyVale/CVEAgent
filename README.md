@@ -30,8 +30,8 @@ remaining sections.
 
 The CLI writes a JSON array to stdout in input order. Per-CVE diagnostics belong to the
 result object; operational diagnostics are written to stderr. Exit code `0` means all CVEs
-completed, `2` means at least one CVE failed, `3` means invalid taxonomy input, and `4`
-means a fatal infrastructure error.
+completed or were conclusively information-limited, `2` means at least one CVE is partial
+or failed, `3` means invalid taxonomy input, and `4` means a fatal infrastructure error.
 
 The local SQLite database stores each CVE's status, result, error, scratchpad, and token
 usage. Its default location is `.data/cve-agent.sqlite3`.
@@ -40,7 +40,13 @@ The investigation agent uses the OpenAI-compatible chat-completions client with 
 search, fetch, record evidence, and finish investigation. Web pages are retrieved with
 `httpx`, cleaned with `trafilatura`, cached locally, and returned to the model only as
 bounded previews. A page enters the retained investigation context only after the agent
-records a verifiable quote from it.
+records an evidence quote from it.
+
+The NVD description is recorded as initial evidence before the first agent turn, so a clear
+CVE can be classified without an unnecessary web fetch. Additional tool activity is kept
+in a compact per-CVE history showing searched queries, fetched URLs, result sizes, and
+errors. Evidence quotes are verified when possible; a non-verbatim quote is retained but
+marked as unverified.
 
 The agent uses standard OpenAI-compatible tool calling. It allows one tool call at a time
 and enforces configurable turn, token, fetch, search, and wall-clock limits. The intended

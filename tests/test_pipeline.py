@@ -16,6 +16,9 @@ class Source:
 
 class Classifier:
     def classify(self, cve, evidence, taxonomy, state):
+        assert state.evidence[0].url == "https://nvd.nist.gov/vuln/detail/CVE-OK"
+        assert state.evidence[0].quote == cve.description
+        assert state.tool_history[0]["tool"] == "get_cve"
         return ClassificationResult(cve.cve_id, "classified", [LabelClassification("CWE-120", .9, ())])
 
 

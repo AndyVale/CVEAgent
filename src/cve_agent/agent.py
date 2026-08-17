@@ -41,10 +41,10 @@ class InvestigationAgent:
             base_messages[1] = {"role": "user", "content": json.dumps(self._context(cve, taxonomy, state, documents, turns, searches, fetches), ensure_ascii=False)}
             if turns >= self.settings.max_agent_turns or time.monotonic() - started >= self.settings.max_investigation_seconds:
                 logger.info("[%s] stopping: investigation limit reached turns=%d", cve.cve_id, turns)
-                return ClassificationResult(cve.cve_id, "not_enough_information", operational={"stop_reason": "investigation_limit", "token_usage": usage})
+                return ClassificationResult(cve.cve_id, "partial", operational={"stop_reason": "investigation_limit", "token_usage": usage})
             if usage["total_tokens"] >= self.settings.token_budget:
                 logger.info("[%s] stopping: token budget reached total_tokens=%d", cve.cve_id, usage["total_tokens"])
-                return ClassificationResult(cve.cve_id, "not_enough_information", operational={"stop_reason": "token_budget", "token_usage": usage})
+                return ClassificationResult(cve.cve_id, "partial", operational={"stop_reason": "token_budget", "token_usage": usage})
             remaining_tokens = max(1, self.settings.token_budget - usage["total_tokens"])
             response = call_chat_completion(
                 self.client,
@@ -69,7 +69,7 @@ class InvestigationAgent:
             logger.info("[%s] agent turn=%d tool_calls=%d tokens=%d", cve.cve_id, turns, len(message.tool_calls or []), usage["total_tokens"])
             if not message.tool_calls:
                 if turns >= self.settings.max_agent_turns:
-                    return ClassificationResult(cve.cve_id, "not_enough_information", operational={"stop_reason": "no_finish_tool", "token_usage": usage})
+                    return ClassificationResult(cve.cve_id, "partial", operational={"stop_reason": "no_finish_tool", "token_usage": usage})
                 exchange = [{"role": "user", "content": "Use one of the provided tools. Finish by calling finish_investigation."}]
                 continue
             assistant_message = message.model_dump(exclude_none=True)
@@ -88,6 +88,8 @@ class InvestigationAgent:
                             result = {"error": "this URL was already attempted; choose another source or finish_investigation"}
                     else:
                         result = {"error": "duplicate tool call; choose a different action or call finish_investigation"}
+                elif name == "finish_investigation":
+                    result = {"ready": True}
                 else:
                     seen_calls.add(key)
                     result = self._execute(name, arguments, state, documents, searches, fetches, failed_fetches)
@@ -100,11 +102,13 @@ class InvestigationAgent:
                 if name == "finish_investigation":
                     try:
                         final_result = self._finish(cve, arguments, taxonomy, state, usage, started, turns)
+                        state.tool_history.append(self._tool_event(name, arguments, {"status": "accepted"}))
                         logger.info("[%s] finish accepted: status=%s labels=%d evidence=%d", cve.cve_id, final_result.status, len(final_result.labels), len(state.evidence))
                         return final_result
                     except ValueError as exc:
                         logger.info("[%s] finish rejected: %s", cve.cve_id, exc)
                         result = {"error": str(exc), "instruction": "Correct the classification and call finish_investigation again."}
+                state.tool_history.append(self._tool_event(name, arguments, result))
                 current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)})
             exchange = current_exchange
 
@@ -142,11 +146,15 @@ class InvestigationAgent:
             return self._document_result(document)
         if name == "record_evidence":
             document = documents.get(arguments["document_id"])
-            if document is None or arguments["quote"] not in document.content:
-                return {"error": "document or exact quote not found"}
-            state.evidence.append(Evidence(document.url, arguments["quote"], arguments["explanation"]))
+            quote = arguments.get("quote", "").strip()
+            if document is None:
+                return {"error": "document not found"}
+            if not quote:
+                return {"error": "quote must not be empty"}
+            verified = quote in document.content
+            state.evidence.append(Evidence(document.url, quote, arguments["explanation"]))
             logger.info("recorded evidence document=%s evidence_count=%d", arguments["document_id"], len(state.evidence))
-            return {"recorded": True, "evidence_count": len(state.evidence)}
+            return {"recorded": True, "quote_verified": verified, "evidence_count": len(state.evidence)}
         return {"error": f"unknown tool: {name}"}
 
     @staticmethod
@@ -183,7 +191,9 @@ class InvestigationAgent:
         return {
             "cve": asdict(cve),
             "taxonomy": taxonomy.to_dict(),
+            "facts": state.facts,
             "recorded_evidence": [asdict(item) for item in state.evidence],
+            "tool_history": state.tool_history,
             "fetched_urls": state.visited_urls,
             "available_documents": [
                 {"document_id": document_id, "url": document.url, "title": document.title, "content_chars": len(document.content)}
@@ -204,12 +214,32 @@ class InvestigationAgent:
         return (
             "You are an evidence-backed CVE classification investigator. Work quickly and stop when the evidence is sufficient. "
             "The NVD record, description, metadata, and references are already supplied; do not fetch the NVD detail page just because it is a reference. "
-            "First decide whether the supplied CVE description already supports a taxonomy label. If one reliable reference can resolve the uncertainty, fetch only that source. "
+            "The initial NVD description is valid evidence and may be sufficient for classification. First decide whether it already supports a taxonomy label. If one reliable reference can resolve the uncertainty, fetch only that source. "
             "Use this short workflow: fetch one strong source, immediately record one exact useful quote, then finish_investigation. "
             "Never fetch the same URL twice, never repeat a search, and do not search for marginal confirmation. "
             "Finish as soon as you can: use classified with only taxonomy IDs supported by recorded evidence, or use not_enough_information when the evidence genuinely cannot support a label. "
             "Do not spend turns restating the problem. Finish only by calling finish_investigation."
         )
+
+    @staticmethod
+    def _tool_event(name, arguments, result):
+        event = {"tool": name, "status": "error" if "error" in result else "success"}
+        if "error" in result:
+            event["error"] = str(result["error"])[:500]
+        if name == "fetch":
+            event.update({
+                "url": arguments.get("url", ""),
+                "document_id": result.get("document_id"),
+                "content_chars": len(result.get("content", "")),
+                "reused": "already fetched" in result.get("instruction", "") or "no network request" in result.get("instruction", ""),
+            })
+        elif name == "search":
+            event.update({"query": arguments.get("query", ""), "result_count": len(result.get("results", []))})
+        elif name == "record_evidence":
+            event.update({"document_id": arguments.get("document_id"), "quote_chars": len(arguments.get("quote", "")), "quote_verified": result.get("quote_verified")})
+        elif name == "finish_investigation":
+            event.update({"requested_status": arguments.get("status"), "label_count": len(arguments.get("labels", []))})
+        return event
 
     def _existing_document_result(self, url, documents):
         for document in documents.values():

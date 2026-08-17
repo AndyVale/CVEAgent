@@ -44,8 +44,10 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
         )
         results = pipeline.run(args.cve_ids, taxonomy)
         print(json.dumps([result.to_dict() for result in results], indent=2))
-        logger.info("run completed: %d succeeded/partial, %d failed", sum(result.status != "failed" for result in results), sum(result.status == "failed" for result in results))
-        return 0 if all(result.status != "failed" for result in results) else 2
+        failed = sum(result.status == "failed" for result in results)
+        incomplete = sum(result.status == "partial" for result in results)
+        logger.info("run completed: %d classified/information-limited, %d partial, %d failed", len(results) - failed - incomplete, incomplete, failed)
+        return 0 if all(result.status in {"classified", "not_enough_information"} for result in results) else 2
     except TaxonomyError as exc:
         print(f"taxonomy error: {exc}", file=sys.stderr)
         return 3

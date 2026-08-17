@@ -49,7 +49,7 @@ class LabelClassification:
     evidence: tuple[Evidence, ...]
 
 
-Status = Literal["classified", "not_enough_information", "failed"]
+Status = Literal["classified", "not_enough_information", "partial", "failed"]
 
 
 @dataclass
@@ -73,6 +73,7 @@ class InvestigationState:
     candidate_labels: list[str] = field(default_factory=list)
     unresolved_questions: list[str] = field(default_factory=list)
     evidence: list[Evidence] = field(default_factory=list)
+    tool_history: list[dict[str, Any]] = field(default_factory=list)
     token_usage: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:

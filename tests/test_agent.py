@@ -7,7 +7,7 @@ from cve_agent.adapters import CachedWebClient
 from cve_agent.adapters import TavilySearchProvider
 from cve_agent.agent import InvestigationAgent
 from cve_agent.config import Settings
-from cve_agent.models import CVERecord, InvestigationState, SearchResult
+from cve_agent.models import CVERecord, Evidence, InvestigationState, SearchResult
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
 
 
@@ -106,6 +106,38 @@ def test_agent_promotes_only_recorded_evidence(tmp_path):
     assert final_context["available_documents"][0]["document_id"] == "doc-1"
 
 
+def test_agent_can_classify_from_initial_nvd_evidence(tmp_path):
+    class FinishClient:
+        def __init__(self):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        def create(self, **kwargs):
+            cve = json.loads(kwargs["messages"][1]["content"])["cve"]
+            call = ToolCall("finish-1", "finish_investigation", {
+                "status": "classified",
+                "labels": [{"label": "CWE-119", "confidence": 0.8, "evidence": [{
+                    "url": f"https://nvd.nist.gov/vuln/detail/{cve['cve_id']}",
+                    "quote": cve["description"],
+                    "explanation": "The NVD description directly supports the label.",
+                }]}],
+            })
+            usage = SimpleNamespace(model_dump=lambda: {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+            return SimpleNamespace(choices=[SimpleNamespace(message=Message([call]))], usage=usage)
+
+    state = InvestigationState(evidence=[Evidence(
+        "https://nvd.nist.gov/vuln/detail/CVE-1",
+        "The vulnerability causes a memory buffer error.",
+        "NVD description",
+    )])
+    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), FinishClient()).classify(
+        CVERecord("CVE-1", "The vulnerability causes a memory buffer error."), [],
+        Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),)), state,
+    )
+    assert result.status == "classified"
+    assert state.tool_history[-1]["tool"] == "finish_investigation"
+    assert state.tool_history[-1]["status"] == "success"
+
+
 def test_cached_web_client_extracts_and_bounds_html(tmp_path):
     transport = httpx.MockTransport(lambda request: httpx.Response(200, text="<html><head><title>Advisory</title></head><body><nav>Noise</nav><main><p>Important vulnerability evidence.</p></main></body></html>"))
     client = CachedWebClient(settings(tmp_path), http_client=httpx.Client(transport=transport))
@@ -123,7 +155,7 @@ def test_agent_stops_when_turn_limit_is_reached(tmp_path):
         CVERecord("CVE-1", "A vulnerability exists."), [],
         Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),)), InvestigationState(),
     )
-    assert result.status == "not_enough_information"
+    assert result.status == "partial"
     assert result.operational["stop_reason"] == "investigation_limit"
 
 
@@ -144,6 +176,25 @@ def test_fetch_failure_is_returned_to_agent_instead_of_escaping(tmp_path):
     assert "Continue with another source" in result["error"]
     repeated = agent._execute("fetch", {"url": "https://fixture.test/forbidden"}, InvestigationState(), {}, 0, 0, failed_urls)
     assert "already failed" in repeated["error"]
+
+
+def test_record_evidence_keeps_unverified_quote_with_marker(tmp_path):
+    agent = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())
+    documents = {}
+    state = InvestigationState()
+    fetched = agent._execute("fetch", {"url": "https://fixture.test/advisory"}, state, documents, 0, 0, set())
+    recorded = agent._execute(
+        "record_evidence",
+        {"document_id": fetched["document_id"], "quote": "The advisory says memory corruption.", "explanation": "Model summary."},
+        state,
+        documents,
+        0,
+        1,
+        set(),
+    )
+    assert recorded["recorded"] is True
+    assert recorded["quote_verified"] is False
+    assert state.evidence[-1].quote == "The advisory says memory corruption."
 
 
 def test_repeated_fetch_reuses_document_without_network_call(tmp_path):
