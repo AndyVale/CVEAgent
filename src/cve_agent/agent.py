@@ -182,9 +182,9 @@ class InvestigationAgent:
             raise ValueError(f"classifier returned labels outside taxonomy: {invalid}")
         if status == "not_enough_information" and labels:
             raise ValueError("not_enough_information results cannot contain labels")
-        all_evidence = { (item.url, item.quote) for item in state.evidence }
-        if any(not item.evidence or any((e.url, e.quote) not in all_evidence for e in item.evidence) for item in labels):
-            raise ValueError("classification evidence must be recorded during the investigation")
+        recorded_urls = {item.url for item in state.evidence}
+        if any(not item.evidence or any(e.url not in recorded_urls for e in item.evidence) for item in labels):
+            raise ValueError("classification evidence must cite a source recorded during the investigation")
         return ClassificationResult(cve.cve_id, status, labels, operational={"turns": turns, "duration_seconds": round(time.monotonic() - started, 3), "token_usage": usage})
 
     def _context(self, cve, taxonomy, state, documents, turns, searches, fetches):
@@ -215,7 +215,7 @@ class InvestigationAgent:
             "You are an evidence-backed CVE classification investigator. Work quickly and stop when the evidence is sufficient. "
             "The NVD record, description, metadata, and references are already supplied; do not fetch the NVD detail page just because it is a reference. "
             "The initial NVD description is valid evidence and may be sufficient for classification. First decide whether it already supports a taxonomy label. If one reliable reference can resolve the uncertainty, fetch only that source. "
-            "Use this short workflow: fetch one strong source, immediately record one exact useful quote, then finish_investigation. "
+            "Use this short workflow: fetch one strong source, immediately record one useful quote (preferably exact), then finish_investigation. "
             "Never fetch the same URL twice, never repeat a search, and do not search for marginal confirmation. "
             "Finish as soon as you can: use classified with only taxonomy IDs supported by recorded evidence, or use not_enough_information when the evidence genuinely cannot support a label. "
             "Do not spend turns restating the problem. Finish only by calling finish_investigation."

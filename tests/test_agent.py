@@ -197,6 +197,31 @@ def test_record_evidence_keeps_unverified_quote_with_marker(tmp_path):
     assert state.evidence[-1].quote == "The advisory says memory corruption."
 
 
+def test_finish_accepts_different_quote_for_recorded_source(tmp_path):
+    agent = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())
+    state = InvestigationState(evidence=[Evidence(
+        "https://fixture.test/advisory", "memory corruption", "Recorded source evidence."
+    )])
+    result = agent._finish(
+        CVERecord("CVE-1", "fixture"),
+        {"status": "classified", "labels": [{
+            "label": "CWE-119",
+            "confidence": 0.8,
+            "evidence": [{
+                "url": "https://fixture.test/advisory",
+                "quote": "The advisory explains that the issue corrupts memory.",
+                "explanation": "This is the model's bounded summary of the recorded source.",
+            }],
+        }]},
+        Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),)),
+        state,
+        {},
+        0,
+        1,
+    )
+    assert result.status == "classified"
+
+
 def test_repeated_fetch_reuses_document_without_network_call(tmp_path):
     class CountingWeb(FixtureWeb):
         def __init__(self):
