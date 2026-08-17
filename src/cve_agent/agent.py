@@ -9,7 +9,7 @@ from typing import Any
 from openai import OpenAI
 
 from cve_agent.config import Settings
-from cve_agent.llm import call_chat_completion
+from cve_agent.llm import RequestPacer, call_chat_completion
 from cve_agent.models import CVERecord, ClassificationResult, ClassificationStatus, Document, Evidence, InvestigationState, InvestigationStopReason, LabelClassification, SearchResult
 from cve_agent.ports import WebSource
 from cve_agent.schemas import AGENT_TOOLS
@@ -22,6 +22,7 @@ class InvestigationAgent:
     def __init__(self, settings: Settings, web_source: WebSource, client: OpenAI | None = None):
         self.settings = settings
         self.web_source = web_source
+        self.request_pacer = RequestPacer(settings.llm_min_request_interval)
         self.client = client or OpenAI(api_key=settings.api_key or "EMPTY", base_url=settings.endpoint, timeout=settings.llm_timeout, max_retries=0)
 
     def classify(self, cve: CVERecord, evidence: list[Document | SearchResult], taxonomy: Taxonomy, state: InvestigationState) -> ClassificationResult:
@@ -50,6 +51,7 @@ class InvestigationAgent:
                 self.client,
                 self.settings,
                 logger,
+                request_pacer=self.request_pacer,
                 model=self.settings.model,
                 temperature=self.settings.temperature,
                 top_p=self.settings.top_p,

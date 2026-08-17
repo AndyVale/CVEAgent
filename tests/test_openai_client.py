@@ -38,7 +38,7 @@ def test_settings_use_openrouter_defaults_and_api_key(tmp_path, monkeypatch):
 def settings(tmp_path):
     return Settings(
         model="fixture-model", endpoint="https://203.0.113.10:8000/v1", api_key=None,
-        max_tokens=321, temperature=0.0, top_p=0.9, llm_timeout=45, llm_retry_count=2, llm_retry_wait=0.01, llm_retry_max_wait=0.02,
+        max_tokens=321, temperature=0.0, top_p=0.9, llm_timeout=45, llm_retry_count=2, llm_retry_wait=0.01, llm_retry_max_wait=0.02, llm_min_request_interval=0.0,
         nvd_base_url="https://nvd.test", nvd_timeout=5, retry_count=2,
         web_provider="tavily", tavily_base_url="https://api.tavily.com", tavily_max_results=5,
         tavily_search_depth="basic", tavily_api_key=None,

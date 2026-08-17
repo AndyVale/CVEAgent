@@ -108,6 +108,10 @@ The investigation and direct-classifier prompts explicitly require complete mult
 evaluation: the model must return every taxonomy label supported by the evidence, not only
 the first match. The deterministic suite passes (`24 passed`).
 
+Verbose CLI startup now prints the effective non-secret configuration. LLM request starts
+are paced by `min_request_interval_seconds`, with the CLI option
+`--llm-min-request-interval` available as a per-run override; retries use the same pacer.
+
 Tavily search is configured through the `TAVILY_API_KEY` environment variable. Fetch
 diagnostics now report cache state, attempts, HTTP status, redirects, content type, byte
 counts, extraction fallback, and typed failure messages without logging page contents or

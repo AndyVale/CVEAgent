@@ -14,7 +14,7 @@ from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
 def settings(tmp_path):
     return Settings(
         model="fixture-model", endpoint="https://fixture.test/v1", api_key=None,
-        max_tokens=500, temperature=0.0, top_p=1.0, llm_timeout=5, llm_retry_count=0, llm_retry_wait=0.01, llm_retry_max_wait=0.02,
+        max_tokens=500, temperature=0.0, top_p=1.0, llm_timeout=5, llm_retry_count=0, llm_retry_wait=0.01, llm_retry_max_wait=0.02, llm_min_request_interval=0.0,
         nvd_base_url="https://nvd.test", nvd_timeout=5, retry_count=0, web_timeout=5,
         web_provider="tavily", tavily_base_url="https://api.tavily.com", tavily_max_results=5,
         tavily_search_depth="basic", tavily_api_key=None,

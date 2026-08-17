@@ -9,6 +9,7 @@ timeout_seconds = 120
 retry_count = 2
 retry_wait_seconds = 1.0
 retry_max_wait_seconds = 8.0
+min_request_interval_seconds = 0.0
 
 [nvd]
 base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"

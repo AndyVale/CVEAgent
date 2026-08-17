@@ -24,7 +24,8 @@ The API key value is never placed in the configuration file. Export the provider
 The runtime section also controls `max_tokens`, `temperature`, `top_p`, request
 `timeout_seconds`, LLM `retry_count`, and the LLM retry backoff. LLM, NVD, and web retries
 are bounded; the LLM wait doubles after each failed interaction up to
-`retry_max_wait_seconds`. Cache
+`retry_max_wait_seconds`. `min_request_interval_seconds` spaces model request starts to
+reduce free-tier rate-limit responses. Cache
 location, SQLite location, and the investigation token budget are configured in the
 remaining sections.
 
@@ -67,6 +68,10 @@ Verbose logs include NVD retrieval, agent turns, tool names, result counts, evid
 promotion, limits, provider response identifiers, and final status. Prompts, API keys, and
 document contents are not logged. Empty provider completions include safe response metadata
 instead of producing an opaque `NoneType` crash.
+
+Verbose startup output also prints the effective model and non-secret configuration. The
+command-line option `--llm-min-request-interval SECONDS` overrides the TOML pacing value for
+the current run.
 
 The search port remains provider-neutral. Deterministic tests inject a fixture searcher;
 the default CLI uses Tavily when `[web].provider = "tavily"`. Set the API key only in the

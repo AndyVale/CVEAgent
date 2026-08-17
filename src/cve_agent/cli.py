@@ -4,8 +4,9 @@ import argparse
 import json
 import logging
 import sys
+from dataclasses import replace
 
-from cve_agent.config import load_settings
+from cve_agent.config import load_settings, public_settings
 from cve_agent.agent import InvestigationAgent
 from cve_agent.adapters import CachedWebClient, NVDClient, TavilySearchProvider
 from cve_agent.pipeline import Pipeline
@@ -20,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--taxonomy", required=True, help="path to taxonomy JSON")
     parser.add_argument("--config", default="config.toml", help="path to TOML configuration")
     parser.add_argument("--verbose", action="store_true", help="log pipeline and agent progress to stderr")
+    parser.add_argument("--llm-min-request-interval", type=float, default=None, metavar="SECONDS", help="minimum seconds between model request starts (overrides config)")
     parser.add_argument("cve_ids", nargs="+", metavar="CVE_ID")
     return parser
 
@@ -34,7 +36,12 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
     try:
         taxonomy = load_taxonomy(args.taxonomy)
         settings = load_settings(args.config)
+        if args.llm_min_request_interval is not None:
+            if args.llm_min_request_interval < 0:
+                raise ValueError("--llm-min-request-interval must be non-negative")
+            settings = replace(settings, llm_min_request_interval=args.llm_min_request_interval)
         logger.info("loaded taxonomy=%s labels=%d", args.taxonomy, len(taxonomy.labels))
+        logger.info("effective configuration:\n%s", json.dumps(public_settings(settings), indent=2, sort_keys=True, default=str))
         logger.info("processing %d CVE(s)", len(args.cve_ids))
         active_web_source = web_source or CachedWebClient(settings, searcher=TavilySearchProvider(settings).search if settings.web_provider == "tavily" else None)
         pipeline = Pipeline(

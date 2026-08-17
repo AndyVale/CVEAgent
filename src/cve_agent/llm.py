@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 from openai import APIConnectionError, APITimeoutError, InternalServerError, OpenAI, RateLimitError
@@ -16,6 +17,23 @@ class EmptyCompletionError(RuntimeError):
     def __init__(self, response: Any):
         self.response = response
         super().__init__(f"LLM returned no usable choices ({response_summary(response)})")
+
+
+class RequestPacer:
+    """Enforce a minimum interval between starts of model requests."""
+
+    def __init__(self, minimum_interval: float):
+        self.minimum_interval = max(0.0, minimum_interval)
+        self._last_request_started: float | None = None
+
+    def wait(self, logger: logging.Logger, context: str) -> None:
+        if self._last_request_started is not None:
+            elapsed = time.monotonic() - self._last_request_started
+            remaining = self.minimum_interval - elapsed
+            if remaining > 0:
+                logger.info("[%s] waiting %.1fs before next LLM request", context, remaining)
+                time.sleep(remaining)
+        self._last_request_started = time.monotonic()
 
 
 def response_summary(response: Any) -> str:
@@ -38,7 +56,7 @@ def response_summary(response: Any) -> str:
     )
 
 
-def call_chat_completion(client: OpenAI, settings: Settings, logger: logging.Logger, *, context: str, **request: Any) -> Any:
+def call_chat_completion(client: OpenAI, settings: Settings, logger: logging.Logger, *, context: str, request_pacer: RequestPacer | None = None, **request: Any) -> Any:
     """Call the provider with bounded exponential retries for transient failures."""
     retryable = (APIConnectionError, APITimeoutError, InternalServerError, RateLimitError, EmptyCompletionError)
 
@@ -60,6 +78,8 @@ def call_chat_completion(client: OpenAI, settings: Settings, logger: logging.Log
         reraise=True,
     ):
         with attempt:
+            if request_pacer is not None:
+                request_pacer.wait(logger, context)
             response = client.chat.completions.create(**request)
             if response is None or not getattr(response, "choices", None):
                 logger.error("[%s] LLM provider returned unusable response: %s", context, response_summary(response))
