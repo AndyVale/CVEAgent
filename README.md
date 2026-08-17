@@ -30,8 +30,9 @@ remaining sections.
 
 The CLI writes a JSON array to stdout in input order. Per-CVE diagnostics belong to the
 result object; operational diagnostics are written to stderr. Exit code `0` means all CVEs
-completed or were conclusively information-limited, `2` means at least one CVE is partial
-or failed, `3` means invalid taxonomy input, and `4` means a fatal infrastructure error.
+were classified, conclusively had no matching taxonomy label, or were information-limited;
+`2` means at least one CVE is partial or failed, `3` means invalid taxonomy input, and `4`
+means a fatal infrastructure error.
 
 The local SQLite database stores each CVE's status, result, error, scratchpad, and token
 usage. Its default location is `.data/cve-agent.sqlite3`.

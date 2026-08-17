@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from cve_agent.adapters import OpenAIClassifier
 import json
 
-from cve_agent.models import CVERecord, Reference
+from cve_agent.models import CVERecord, ClassificationStatus, Reference
 from cve_agent.config import Settings, load_settings
 from cve_agent.models import InvestigationState
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
@@ -101,3 +101,16 @@ def test_openai_classifier_accepts_reasoning_wrapper(tmp_path):
         Taxonomy((TaxonomyLabel("CWE-1", "Example", "fixture"),)), InvestigationState(),
     )
     assert result.status == "not_enough_information"
+
+
+def test_openai_classifier_accepts_no_matching_label(tmp_path):
+    fake = FakeClient()
+    fake.chat.completions.create = lambda **kwargs: SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"cve_id":"CVE-1","status":"' + ClassificationStatus.NO_MATCHING_LABEL.value + '","labels":[]}'))],
+        usage=None,
+    )
+    result = OpenAIClassifier(settings(tmp_path), client=fake).classify(
+        CVERecord("CVE-1", "fixture description"), [],
+        Taxonomy((TaxonomyLabel("CWE-1", "Example", "fixture"),)), InvestigationState(),
+    )
+    assert result.status == ClassificationStatus.NO_MATCHING_LABEL

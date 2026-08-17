@@ -7,7 +7,7 @@ from cve_agent.adapters import CachedWebClient
 from cve_agent.adapters import TavilySearchProvider
 from cve_agent.agent import InvestigationAgent
 from cve_agent.config import Settings
-from cve_agent.models import CVERecord, Evidence, InvestigationState, SearchResult
+from cve_agent.models import CVERecord, ClassificationStatus, Evidence, InvestigationState, SearchResult
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
 
 
@@ -220,6 +220,20 @@ def test_finish_accepts_different_quote_for_recorded_source(tmp_path):
         1,
     )
     assert result.status == "classified"
+
+
+def test_finish_supports_no_matching_label_status(tmp_path):
+    agent = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())
+    result = agent._finish(
+        CVERecord("CVE-1", "fixture"),
+        {"status": ClassificationStatus.NO_MATCHING_LABEL.value, "labels": []},
+        Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),)),
+        InvestigationState(),
+        {},
+        0,
+        1,
+    )
+    assert result.status == ClassificationStatus.NO_MATCHING_LABEL
 
 
 def test_repeated_fetch_reuses_document_without_network_call(tmp_path):

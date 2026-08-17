@@ -99,6 +99,11 @@ now returns status `partial`, distinct from a deliberate `not_enough_information
 the CLI returns the partial-run exit code for it. Direct NVD-only classification and partial
 CLI exit behavior are covered by tests. The deterministic suite passes (`20 passed`).
 
+Classification statuses are centralized in `ClassificationStatus`: `classified`,
+`no_matching_label`, `not_enough_information`, `partial`, and `failed`. The first three are
+classification outcomes; `partial` and `failed` represent operational incompleteness.
+Investigation stop reasons are centralized separately.
+
 Tavily search is configured through the `TAVILY_API_KEY` environment variable. Fetch
 diagnostics now report cache state, attempts, HTTP status, redirects, content type, byte
 counts, extraction fallback, and typed failure messages without logging page contents or

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from cve_agent.models import ClassificationResult, Evidence, InvestigationState
+from cve_agent.models import ClassificationResult, ClassificationStatus, Evidence, InvestigationState
 from cve_agent.persistence import Database
 from cve_agent.ports import CVESource, Classifier, WebSource
 from cve_agent.taxonomy import Taxonomy
@@ -37,7 +37,7 @@ class Pipeline:
                     logger.info("[%s] completed status=%s", cve_id, result.status)
                 except Exception as exc:  # isolate CVE failures; database errors escape from save
                     logger.exception("[%s] investigation failed", cve_id)
-                    result = ClassificationResult(cve_id, "failed", error=str(exc))
-                    db.save(cve_id, "failed", state, result, str(exc))
+                    result = ClassificationResult(cve_id, ClassificationStatus.FAILED, error=str(exc))
+                    db.save(cve_id, ClassificationStatus.FAILED, state, result, str(exc))
                 results.append(result)
         return results

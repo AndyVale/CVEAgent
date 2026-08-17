@@ -10,7 +10,7 @@ from openai import OpenAI
 
 from cve_agent.config import Settings
 from cve_agent.llm import call_chat_completion
-from cve_agent.models import CVERecord, ClassificationResult, Document, Evidence, InvestigationState, LabelClassification, SearchResult
+from cve_agent.models import CVERecord, ClassificationResult, ClassificationStatus, Document, Evidence, InvestigationState, InvestigationStopReason, LabelClassification, SearchResult
 from cve_agent.ports import WebSource
 from cve_agent.schemas import AGENT_TOOLS
 from cve_agent.taxonomy import Taxonomy
@@ -41,10 +41,10 @@ class InvestigationAgent:
             base_messages[1] = {"role": "user", "content": json.dumps(self._context(cve, taxonomy, state, documents, turns, searches, fetches), ensure_ascii=False)}
             if turns >= self.settings.max_agent_turns or time.monotonic() - started >= self.settings.max_investigation_seconds:
                 logger.info("[%s] stopping: investigation limit reached turns=%d", cve.cve_id, turns)
-                return ClassificationResult(cve.cve_id, "partial", operational={"stop_reason": "investigation_limit", "token_usage": usage})
+                return ClassificationResult(cve.cve_id, ClassificationStatus.PARTIAL, operational={"stop_reason": InvestigationStopReason.INVESTIGATION_LIMIT, "token_usage": usage})
             if usage["total_tokens"] >= self.settings.token_budget:
                 logger.info("[%s] stopping: token budget reached total_tokens=%d", cve.cve_id, usage["total_tokens"])
-                return ClassificationResult(cve.cve_id, "partial", operational={"stop_reason": "token_budget", "token_usage": usage})
+                return ClassificationResult(cve.cve_id, ClassificationStatus.PARTIAL, operational={"stop_reason": InvestigationStopReason.TOKEN_BUDGET, "token_usage": usage})
             remaining_tokens = max(1, self.settings.token_budget - usage["total_tokens"])
             response = call_chat_completion(
                 self.client,
@@ -69,7 +69,7 @@ class InvestigationAgent:
             logger.info("[%s] agent turn=%d tool_calls=%d tokens=%d", cve.cve_id, turns, len(message.tool_calls or []), usage["total_tokens"])
             if not message.tool_calls:
                 if turns >= self.settings.max_agent_turns:
-                    return ClassificationResult(cve.cve_id, "partial", operational={"stop_reason": "no_finish_tool", "token_usage": usage})
+                    return ClassificationResult(cve.cve_id, ClassificationStatus.PARTIAL, operational={"stop_reason": InvestigationStopReason.NO_FINISH_TOOL, "token_usage": usage})
                 exchange = [{"role": "user", "content": "Use one of the provided tools. Finish by calling finish_investigation."}]
                 continue
             assistant_message = message.model_dump(exclude_none=True)
@@ -175,13 +175,18 @@ class InvestigationAgent:
         return "<none>"
 
     def _finish(self, cve, arguments, taxonomy, state, usage, started, turns):
-        status = arguments.get("status")
+        try:
+            status = ClassificationStatus(arguments.get("status"))
+        except ValueError as exc:
+            raise ValueError(f"invalid classification status: {arguments.get('status')!r}") from exc
         labels = [LabelClassification(item["label"], float(item["confidence"]), tuple(Evidence(**e) for e in item["evidence"])) for item in arguments.get("labels", [])]
         invalid = [item.label for item in labels if item.label not in taxonomy.by_id]
         if invalid:
             raise ValueError(f"classifier returned labels outside taxonomy: {invalid}")
-        if status == "not_enough_information" and labels:
-            raise ValueError("not_enough_information results cannot contain labels")
+        if status in {ClassificationStatus.NOT_ENOUGH_INFORMATION, ClassificationStatus.NO_MATCHING_LABEL} and labels:
+            raise ValueError(f"{status.value} results cannot contain labels")
+        if status == ClassificationStatus.CLASSIFIED and not labels:
+            raise ValueError("classified results must contain at least one label")
         recorded_urls = {item.url for item in state.evidence}
         if any(not item.evidence or any(e.url not in recorded_urls for e in item.evidence) for item in labels):
             raise ValueError("classification evidence must cite a source recorded during the investigation")
@@ -217,7 +222,7 @@ class InvestigationAgent:
             "The initial NVD description is valid evidence and may be sufficient for classification. First decide whether it already supports a taxonomy label. If one reliable reference can resolve the uncertainty, fetch only that source. "
             "Use this short workflow: fetch one strong source, immediately record one useful quote (preferably exact), then finish_investigation. "
             "Never fetch the same URL twice, never repeat a search, and do not search for marginal confirmation. "
-            "Finish as soon as you can: use classified with only taxonomy IDs supported by recorded evidence, or use not_enough_information when the evidence genuinely cannot support a label. "
+            "Finish as soon as you can: use classified with only taxonomy IDs supported by recorded evidence, use no_matching_label when the evidence is sufficient but no taxonomy entry applies, or use not_enough_information when the evidence genuinely cannot support a decision. "
             "Do not spend turns restating the problem. Finish only by calling finish_investigation."
         )
 

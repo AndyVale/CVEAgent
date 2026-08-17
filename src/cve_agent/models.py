@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal
+from enum import StrEnum
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -49,16 +50,30 @@ class LabelClassification:
     evidence: tuple[Evidence, ...]
 
 
-Status = Literal["classified", "not_enough_information", "partial", "failed"]
+class ClassificationStatus(StrEnum):
+    CLASSIFIED = "classified"
+    NO_MATCHING_LABEL = "no_matching_label"
+    NOT_ENOUGH_INFORMATION = "not_enough_information"
+    PARTIAL = "partial"
+    FAILED = "failed"
+
+
+class InvestigationStopReason(StrEnum):
+    INVESTIGATION_LIMIT = "investigation_limit"
+    TOKEN_BUDGET = "token_budget"
+    NO_FINISH_TOOL = "no_finish_tool"
 
 
 @dataclass
 class ClassificationResult:
     cve_id: str
-    status: Status
+    status: ClassificationStatus
     labels: list[LabelClassification] = field(default_factory=list)
     error: str | None = None
     operational: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.status = ClassificationStatus(self.status)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -11,6 +11,7 @@ from cve_agent.adapters import CachedWebClient, NVDClient, TavilySearchProvider
 from cve_agent.pipeline import Pipeline
 from cve_agent.ports import CVESource, Classifier, WebSource
 from cve_agent.persistence import Database
+from cve_agent.models import ClassificationStatus
 from cve_agent.taxonomy import TaxonomyError, load_taxonomy
 
 
@@ -44,10 +45,10 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
         )
         results = pipeline.run(args.cve_ids, taxonomy)
         print(json.dumps([result.to_dict() for result in results], indent=2))
-        failed = sum(result.status == "failed" for result in results)
-        incomplete = sum(result.status == "partial" for result in results)
+        failed = sum(result.status == ClassificationStatus.FAILED for result in results)
+        incomplete = sum(result.status == ClassificationStatus.PARTIAL for result in results)
         logger.info("run completed: %d classified/information-limited, %d partial, %d failed", len(results) - failed - incomplete, incomplete, failed)
-        return 0 if all(result.status in {"classified", "not_enough_information"} for result in results) else 2
+        return 0 if all(result.status in {ClassificationStatus.CLASSIFIED, ClassificationStatus.NO_MATCHING_LABEL, ClassificationStatus.NOT_ENOUGH_INFORMATION} for result in results) else 2
     except TaxonomyError as exc:
         print(f"taxonomy error: {exc}", file=sys.stderr)
         return 3

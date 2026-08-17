@@ -17,7 +17,7 @@ import trafilatura
 
 from cve_agent.config import Settings
 from cve_agent.llm import call_chat_completion
-from cve_agent.models import CVERecord, ClassificationResult, Document, Evidence, LabelClassification, Reference, SearchResult
+from cve_agent.models import CVERecord, ClassificationResult, ClassificationStatus, Document, Evidence, LabelClassification, Reference, SearchResult
 
 
 logger = logging.getLogger(__name__)
@@ -185,7 +185,7 @@ class OpenAIClassifier:
             top_p=self.settings.top_p,
             max_tokens=self.settings.max_tokens,
             messages=[
-                {"role": "system", "content": "You are a CVE multi-label classification agent. Return ONLY one JSON object matching this exact schema: {\"cve_id\": string, \"status\": \"classified\" or \"not_enough_information\", \"labels\": [{\"label\": taxonomy ID, \"confidence\": number from 0 to 1, \"evidence\": [{\"url\": string, \"quote\": string, \"explanation\": string}]}]}. The label field must contain an ID from the supplied taxonomy, never a label name. If the evidence does not support a taxonomy label, return status not_enough_information and labels []. Do not restate the CVE, taxonomy, or prompt. Do not return markdown or explanatory text."},
+                {"role": "system", "content": f"You are a CVE multi-label classification agent. Return ONLY one JSON object matching this exact schema: {{\"cve_id\": string, \"status\": one of {[status.value for status in (ClassificationStatus.CLASSIFIED, ClassificationStatus.NO_MATCHING_LABEL, ClassificationStatus.NOT_ENOUGH_INFORMATION)]}, \"labels\": [{{\"label\": taxonomy ID, \"confidence\": number from 0 to 1, \"evidence\": [{{\"url\": string, \"quote\": string, \"explanation\": string}}]}}]}}. The label field must contain an ID from the supplied taxonomy, never a label name. Use no_matching_label when the evidence is sufficient but no taxonomy label applies; use not_enough_information only when the evidence is insufficient. Do not return labels for either of those statuses. Do not restate the CVE, taxonomy, or prompt. Do not return markdown or explanatory text."},
                 {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
             ],
             response_format={"type": "json_object"},
@@ -201,8 +201,10 @@ class OpenAIClassifier:
         if decoded.get("cve_id") != cve.cve_id:
             raise ValueError(f"classifier returned CVE ID {decoded.get('cve_id')!r}, expected {cve.cve_id!r}")
         status = decoded.get("status")
-        if status not in {"classified", "not_enough_information"}:
-            raise ValueError(f"invalid classification status: {status!r}")
+        try:
+            status = ClassificationStatus(status)
+        except ValueError as exc:
+            raise ValueError(f"invalid classification status: {status!r}") from exc
         labels = [LabelClassification(x["label"], float(x["confidence"]), tuple(Evidence(**e) for e in x.get("evidence", []))) for x in decoded.get("labels", [])]
         allowed = taxonomy.by_id
         invalid = [x.label for x in labels if x.label not in allowed]
@@ -210,7 +212,9 @@ class OpenAIClassifier:
             raise ValueError(f"classifier returned labels outside taxonomy: {invalid}")
         if any(not 0 <= x.confidence <= 1 or not x.evidence for x in labels):
             raise ValueError("each selected label requires confidence in [0, 1] and supporting evidence")
-        if status == "not_enough_information" and labels:
-            raise ValueError("not_enough_information results cannot contain labels")
+        if status in {ClassificationStatus.NOT_ENOUGH_INFORMATION, ClassificationStatus.NO_MATCHING_LABEL} and labels:
+            raise ValueError(f"{status.value} results cannot contain labels")
+        if status == ClassificationStatus.CLASSIFIED and not labels:
+            raise ValueError("classified results must contain at least one label")
         usage = response.usage.model_dump() if response.usage else {}
         return ClassificationResult(cve.cve_id, status, labels, operational={"token_usage": usage})
