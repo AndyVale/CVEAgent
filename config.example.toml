@@ -1,12 +1,14 @@
 [runtime]
-# Remote vLLM OpenAI-compatible base URL. Include /v1, but not /chat/completions.
-endpoint = "http://YOUR_VAST_IP:8000/v1"
-model = "Qwen/Qwen3-8B"
+# OpenAI-compatible provider base URL
+endpoint = "https://openrouter.ai/api/v1"
+model = "nvidia/nemotron-3-ultra-550b-a55b:free"
 max_tokens = 2048
 temperature = 0.0
 top_p = 1.0
 timeout_seconds = 120
-enable_thinking = false
+retry_count = 2
+retry_wait_seconds = 1.0
+retry_max_wait_seconds = 8.0
 
 [nvd]
 base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"

@@ -136,6 +136,12 @@ When implementing integrations with external APIs or websites:
 - do not retry errors indefinitely;
 - keep tests deterministic by replacing live services with mocks or fixed cached fixtures.
 
+The LLM integration uses the OpenAI Python client against an OpenAI-compatible provider.
+Keep the endpoint, model, and non-secret runtime parameters in the ignored local
+`config.toml` (with `config.example.toml` as the tracked template), and read credentials
+from environment variables such as `API_KEY`. Do not add provider-specific request
+extensions unless they are required by the configured provider and covered by tests.
+
 A retry library such as `tenacity` may be used when it improves clarity and correctness, but do not introduce it automatically if a small existing implementation is sufficient.
 
 ## Git workflow

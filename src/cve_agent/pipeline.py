@@ -24,7 +24,6 @@ class Pipeline:
                 try:
                     cve = self.cve_source.get_cve(cve_id)
                     state.facts.append(cve.description)
-                    state.visited_urls.extend(ref.url for ref in cve.references)
                     logger.info("[%s] NVD record loaded: %d references", cve_id, len(cve.references))
                     result = self.classifier.classify(cve, [], taxonomy, state)
                     db.save(cve_id, result.status, state, result)

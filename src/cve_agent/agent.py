@@ -9,6 +9,7 @@ from typing import Any
 from openai import OpenAI
 
 from .config import Settings
+from .llm import call_chat_completion
 from .models import CVERecord, ClassificationResult, Document, Evidence, InvestigationState, LabelClassification, SearchResult
 from .ports import WebSource
 from .schemas import AGENT_TOOLS
@@ -21,7 +22,7 @@ class InvestigationAgent:
     def __init__(self, settings: Settings, web_source: WebSource, client: OpenAI | None = None):
         self.settings = settings
         self.web_source = web_source
-        self.client = client or OpenAI(api_key=settings.api_key or "EMPTY", base_url=settings.endpoint, timeout=settings.llm_timeout, max_retries=settings.retry_count)
+        self.client = client or OpenAI(api_key=settings.api_key or "EMPTY", base_url=settings.endpoint, timeout=settings.llm_timeout, max_retries=0)
 
     def classify(self, cve: CVERecord, evidence: list[Document | SearchResult], taxonomy: Taxonomy, state: InvestigationState) -> ClassificationResult:
         logger.info("[%s] agent started: taxonomy_labels=%d", cve.cve_id, len(taxonomy.labels))
@@ -33,23 +34,32 @@ class InvestigationAgent:
         seen_calls: set[tuple[str, str]] = set()
         failed_fetches: set[str] = set()
         usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        base_messages = [{"role": "system", "content": self._system_prompt()}, {"role": "user", "content": json.dumps(self._context(cve, taxonomy, state), ensure_ascii=False)}]
+        base_messages = [{"role": "system", "content": self._system_prompt()}, {"role": "user", "content": json.dumps(self._context(cve, taxonomy, state, documents, turns, searches, fetches), ensure_ascii=False)}]
         exchange: list[dict[str, Any]] = []
 
         while True:
-            base_messages[1] = {"role": "user", "content": json.dumps(self._context(cve, taxonomy, state), ensure_ascii=False)}
+            base_messages[1] = {"role": "user", "content": json.dumps(self._context(cve, taxonomy, state, documents, turns, searches, fetches), ensure_ascii=False)}
             if turns >= self.settings.max_agent_turns or time.monotonic() - started >= self.settings.max_investigation_seconds:
                 logger.info("[%s] stopping: investigation limit reached turns=%d", cve.cve_id, turns)
                 return ClassificationResult(cve.cve_id, "not_enough_information", operational={"stop_reason": "investigation_limit", "token_usage": usage})
             if usage["total_tokens"] >= self.settings.token_budget:
                 logger.info("[%s] stopping: token budget reached total_tokens=%d", cve.cve_id, usage["total_tokens"])
                 return ClassificationResult(cve.cve_id, "not_enough_information", operational={"stop_reason": "token_budget", "token_usage": usage})
-            # `required` works with vLLM servers that do not enable the optional
-            # auto-tool-choice mode. Every turn must therefore produce one tool
-            # call, including the terminal finish_investigation call.
-            tool_choice: Any = "required"
             remaining_tokens = max(1, self.settings.token_budget - usage["total_tokens"])
-            response = self.client.chat.completions.create(model=self.settings.model, temperature=self.settings.temperature, top_p=self.settings.top_p, max_tokens=min(self.settings.max_tokens, remaining_tokens), messages=base_messages + exchange, tools=AGENT_TOOLS, tool_choice=tool_choice, extra_body={"chat_template_kwargs": {"enable_thinking": self.settings.enable_thinking}})
+            response = call_chat_completion(
+                self.client,
+                self.settings,
+                logger,
+                model=self.settings.model,
+                temperature=self.settings.temperature,
+                top_p=self.settings.top_p,
+                max_tokens=min(self.settings.max_tokens, remaining_tokens),
+                messages=base_messages + exchange,
+                tools=AGENT_TOOLS,
+                tool_choice="auto",
+                parallel_tool_calls=False,
+                context=cve.cve_id,
+            )
             turns += 1
             turn_usage = response.usage.model_dump() if response.usage else {}
             for key in usage:
@@ -70,7 +80,14 @@ class InvestigationAgent:
                 logger.info("[%s] tool requested: %s params=%s", cve.cve_id, name, self._log_arguments(arguments))
                 key = (name, json.dumps(arguments, sort_keys=True))
                 if key in seen_calls and name != "finish_investigation":
-                    result = {"error": "duplicate tool call; choose a different action"}
+                    if name == "fetch":
+                        result = self._existing_document_result(arguments["url"], documents)
+                        if result:
+                            result["instruction"] = "This URL was already fetched. Do not fetch it again; record an exact quote from this preview now, or call finish_investigation."
+                        else:
+                            result = {"error": "this URL was already attempted; choose another source or finish_investigation"}
+                    else:
+                        result = {"error": "duplicate tool call; choose a different action or call finish_investigation"}
                 else:
                     seen_calls.add(key)
                     result = self._execute(name, arguments, state, documents, searches, fetches, failed_fetches)
@@ -103,6 +120,10 @@ class InvestigationAgent:
             logger.info("search returned %d result(s)", len(results))
             return {"results": [asdict(item) for item in results[:10]]}
         if name == "fetch":
+            existing = self._existing_document_result(arguments["url"], documents)
+            if existing:
+                existing["instruction"] = "This URL is already available. Record an exact quote from this preview or call finish_investigation; no network request was made."
+                return existing
             if fetches >= self.settings.max_fetch_calls:
                 return {"error": "fetch limit reached"}
             url = arguments["url"]
@@ -118,7 +139,7 @@ class InvestigationAgent:
             documents[document_id] = document
             state.visited_urls.append(document.url) if document.url not in state.visited_urls else None
             logger.info("fetched document=%s chars=%d", document_id, len(document.content))
-            return {"document_id": document_id, "url": document.url, "title": document.title, "content": document.content[:self.settings.max_preview_chars], "truncated": len(document.content) > self.settings.max_preview_chars}
+            return self._document_result(document)
         if name == "record_evidence":
             document = documents.get(arguments["document_id"])
             if document is None or arguments["quote"] not in document.content:
@@ -158,8 +179,49 @@ class InvestigationAgent:
             raise ValueError("classification evidence must be recorded during the investigation")
         return ClassificationResult(cve.cve_id, status, labels, operational={"turns": turns, "duration_seconds": round(time.monotonic() - started, 3), "token_usage": usage})
 
-    def _context(self, cve, taxonomy, state):
-        return {"cve": asdict(cve), "taxonomy": taxonomy.to_dict(), "recorded_evidence": [asdict(item) for item in state.evidence], "visited_urls": state.visited_urls, "token_usage": state.token_usage}
+    def _context(self, cve, taxonomy, state, documents, turns, searches, fetches):
+        return {
+            "cve": asdict(cve),
+            "taxonomy": taxonomy.to_dict(),
+            "recorded_evidence": [asdict(item) for item in state.evidence],
+            "fetched_urls": state.visited_urls,
+            "available_documents": [
+                {"document_id": document_id, "url": document.url, "title": document.title, "content_chars": len(document.content)}
+                for document_id, document in documents.items()
+            ],
+            "investigation_budget": {
+                "turn": turns,
+                "max_turns": self.settings.max_agent_turns,
+                "searches_used": searches,
+                "max_searches": self.settings.max_search_calls,
+                "fetches_used": fetches,
+                "max_fetches": self.settings.max_fetch_calls,
+            },
+            "token_usage": state.token_usage,
+        }
 
     def _system_prompt(self):
-        return "You are an evidence-backed CVE classification investigator. NVD information is the initial and strongest evidence. Use search and fetch only when they may change the classification. Fetched content is temporary; call record_evidence for concrete quotes worth retaining. Finish only by calling finish_investigation. Use only taxonomy IDs and prefer not_enough_information over speculation."
+        return (
+            "You are an evidence-backed CVE classification investigator. Work quickly and stop when the evidence is sufficient. "
+            "The NVD record, description, metadata, and references are already supplied; do not fetch the NVD detail page just because it is a reference. "
+            "First decide whether the supplied CVE description already supports a taxonomy label. If one reliable reference can resolve the uncertainty, fetch only that source. "
+            "Use this short workflow: fetch one strong source, immediately record one exact useful quote, then finish_investigation. "
+            "Never fetch the same URL twice, never repeat a search, and do not search for marginal confirmation. "
+            "Finish as soon as you can: use classified with only taxonomy IDs supported by recorded evidence, or use not_enough_information when the evidence genuinely cannot support a label. "
+            "Do not spend turns restating the problem. Finish only by calling finish_investigation."
+        )
+
+    def _existing_document_result(self, url, documents):
+        for document in documents.values():
+            if document.url == url:
+                return self._document_result(document)
+        return None
+
+    def _document_result(self, document):
+        return {
+            "document_id": document.document_id or document.url,
+            "url": document.url,
+            "title": document.title,
+            "content": document.content[:self.settings.max_preview_chars],
+            "truncated": len(document.content) > self.settings.max_preview_chars,
+        }

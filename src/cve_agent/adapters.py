@@ -16,8 +16,8 @@ import httpx
 import trafilatura
 
 from .config import Settings
+from .llm import call_chat_completion
 from .models import CVERecord, ClassificationResult, Document, Evidence, LabelClassification, Reference, SearchResult
-from .schemas import CLASSIFICATION_SCHEMA
 
 
 logger = logging.getLogger(__name__)
@@ -158,14 +158,14 @@ class CachedWebClient:
         return document
 
 
-class VLLMClassifier:
+class OpenAIClassifier:
     def __init__(self, settings: Settings, client: OpenAI | None = None):
         self.settings = settings
         self.client = client or OpenAI(
             api_key=settings.api_key or "EMPTY",
             base_url=settings.endpoint,
             timeout=settings.llm_timeout,
-            max_retries=settings.retry_count,
+            max_retries=0,
         )
 
     def classify(self, cve, evidence, taxonomy, state) -> ClassificationResult:
@@ -175,7 +175,11 @@ class VLLMClassifier:
             "taxonomy": taxonomy.to_dict(),
             "investigation": state.to_dict(),
         }
-        response = self.client.chat.completions.create(
+        response = call_chat_completion(
+            self.client,
+            self.settings,
+            logger,
+            context=cve.cve_id,
             model=self.settings.model,
             temperature=self.settings.temperature,
             top_p=self.settings.top_p,
@@ -185,7 +189,6 @@ class VLLMClassifier:
                 {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
             ],
             response_format={"type": "json_object"},
-            extra_body={"guided_json": CLASSIFICATION_SCHEMA, "chat_template_kwargs": {"enable_thinking": self.settings.enable_thinking}},
         )
         content = response.choices[0].message.content or ""
         if "</think>" in content:
@@ -194,7 +197,7 @@ class VLLMClassifier:
         try:
             decoded = json.loads(content)
         except json.JSONDecodeError as exc:
-            raise ValueError("vLLM returned non-JSON classification content") from exc
+            raise ValueError("OpenAI-compatible provider returned non-JSON classification content") from exc
         if decoded.get("cve_id") != cve.cve_id:
             raise ValueError(f"classifier returned CVE ID {decoded.get('cve_id')!r}, expected {cve.cve_id!r}")
         status = decoded.get("status")
