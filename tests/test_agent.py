@@ -106,6 +106,12 @@ def test_agent_promotes_only_recorded_evidence(tmp_path):
     assert final_context["available_documents"][0]["document_id"] == "doc-1"
 
 
+def test_agent_prompt_requires_all_matching_labels(tmp_path):
+    prompt = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())._system_prompt()
+    assert "multi-label task" in prompt
+    assert "every label supported" in prompt
+
+
 def test_agent_can_classify_from_initial_nvd_evidence(tmp_path):
     class FinishClient:
         def __init__(self):

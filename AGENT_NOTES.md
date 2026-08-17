@@ -104,6 +104,10 @@ Classification statuses are centralized in `ClassificationStatus`: `classified`,
 classification outcomes; `partial` and `failed` represent operational incompleteness.
 Investigation stop reasons are centralized separately.
 
+The investigation and direct-classifier prompts explicitly require complete multi-label
+evaluation: the model must return every taxonomy label supported by the evidence, not only
+the first match. The deterministic suite passes (`24 passed`).
+
 Tavily search is configured through the `TAVILY_API_KEY` environment variable. Fetch
 diagnostics now report cache state, attempts, HTTP status, redirects, content type, byte
 counts, extraction fallback, and typed failure messages without logging page contents or

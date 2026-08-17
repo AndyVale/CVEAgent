@@ -222,7 +222,8 @@ class InvestigationAgent:
             "The initial NVD description is valid evidence and may be sufficient for classification. First decide whether it already supports a taxonomy label. If one reliable reference can resolve the uncertainty, fetch only that source. "
             "Use this short workflow: fetch one strong source, immediately record one useful quote (preferably exact), then finish_investigation. "
             "Never fetch the same URL twice, never repeat a search, and do not search for marginal confirmation. "
-            "Finish as soon as you can: use classified with only taxonomy IDs supported by recorded evidence, use no_matching_label when the evidence is sufficient but no taxonomy entry applies, or use not_enough_information when the evidence genuinely cannot support a decision. "
+            "This is a multi-label task: assess the complete supplied taxonomy and select every label supported by the evidence, not just the first or most obvious match. "
+            "Finish as soon as you can: use classified with all supported taxonomy IDs, use no_matching_label when the evidence is sufficient but no taxonomy entry applies, or use not_enough_information when the evidence genuinely cannot support a decision. "
             "Do not spend turns restating the problem. Finish only by calling finish_investigation."
         )
 

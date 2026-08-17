@@ -53,6 +53,8 @@ The agent uses standard OpenAI-compatible tool calling. It allows one tool call 
 and enforces configurable turn, token, fetch, search, and wall-clock limits. The intended
 short workflow is fetch one strong source, record one exact quote, and finish. Repeated
 fetches reuse the in-memory document preview instead of making another request.
+The classification prompt requires evaluating the complete taxonomy and returning every
+label supported by the evidence.
 
 Use `--verbose` to send pipeline and agent progress to `stderr` while keeping the JSON
 classification output on `stdout`:
