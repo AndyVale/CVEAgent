@@ -6,7 +6,7 @@ import logging
 import sys
 from dataclasses import replace
 
-from cve_agent.config import load_settings, public_settings
+from cve_agent.config import format_settings_table, load_settings
 from cve_agent.agent import InvestigationAgent
 from cve_agent.adapters import CachedWebClient, NVDClient, TavilySearchProvider
 from cve_agent.pipeline import Pipeline
@@ -41,7 +41,7 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
                 raise ValueError("--llm-min-request-interval must be non-negative")
             settings = replace(settings, llm_min_request_interval=args.llm_min_request_interval)
         logger.info("loaded taxonomy=%s labels=%d", args.taxonomy, len(taxonomy.labels))
-        logger.info("effective configuration:\n%s", json.dumps(public_settings(settings), indent=2, sort_keys=True, default=str))
+        logger.info("%s", format_settings_table(settings))
         logger.info("processing %d CVE(s)", len(args.cve_ids))
         active_web_source = web_source or CachedWebClient(settings, searcher=TavilySearchProvider(settings).search if settings.web_provider == "tavily" else None)
         pipeline = Pipeline(

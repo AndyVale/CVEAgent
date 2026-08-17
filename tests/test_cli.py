@@ -38,8 +38,10 @@ def test_verbose_keeps_json_on_stdout_and_logs_on_stderr(tmp_path, capsys):
     assert json.loads(captured.out)[0]["cve_id"] == "CVE-1"
     assert "starting investigation" in captured.err
     assert "effective configuration" in captured.err
+    assert "[LLM]" in captured.err
     assert "nvidia/nemotron-3-ultra-550b-a55b:free" in captured.err
-    assert '"api_key":' not in captured.err
+    assert "API key" in captured.err
+    assert '"api_key"' not in captured.err
 
 
 def test_cli_request_interval_overrides_configuration(tmp_path, capsys):
@@ -50,7 +52,8 @@ def test_cli_request_interval_overrides_configuration(tmp_path, capsys):
     exit_code = run(["--verbose", "--llm-min-request-interval", "2.5", "--taxonomy", str(taxonomy_path), "--config", str(config_path), "CVE-1"], cve_source=Source(), web_source=Web(), classifier=Classifier())
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert '"llm_min_request_interval": 2.5' in captured.err
+    assert "Min request interval" in captured.err
+    assert "2.5s" in captured.err
 
 
 def test_partial_result_has_nonzero_exit_code(tmp_path, capsys):

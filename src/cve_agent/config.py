@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -65,11 +65,44 @@ def load_settings(path: str | Path = "config.toml") -> Settings:
     )
 
 
-def public_settings(settings: Settings) -> dict[str, object]:
-    """Return configuration suitable for diagnostic output without secrets."""
-    values = asdict(settings)
-    values.pop("api_key", None)
-    values.pop("tavily_api_key", None)
-    values["api_key_configured"] = bool(settings.api_key)
-    values["tavily_api_key_configured"] = bool(settings.tavily_api_key)
-    return values
+def format_settings_table(settings: Settings) -> str:
+    """Format the effective non-secret settings as a compact grouped table."""
+    groups = [
+        ("LLM", [
+            ("Model", settings.model),
+            ("Endpoint", settings.endpoint),
+            ("Max tokens", settings.max_tokens),
+            ("Temperature / top-p", f"{settings.temperature} / {settings.top_p}"),
+            ("Timeout", f"{settings.llm_timeout}s"),
+            ("Retries", settings.llm_retry_count),
+            ("Retry backoff", f"{settings.llm_retry_wait}s to {settings.llm_retry_max_wait}s"),
+            ("Min request interval", f"{settings.llm_min_request_interval}s"),
+            ("API key", "configured" if settings.api_key else "not configured"),
+        ]),
+        ("Investigation limits", [
+            ("Token budget", settings.token_budget),
+            ("Max turns", settings.max_agent_turns),
+            ("Max searches / fetches", f"{settings.max_search_calls} / {settings.max_fetch_calls}"),
+            ("Max duration", f"{settings.max_investigation_seconds}s"),
+        ]),
+        ("Data sources", [
+            ("NVD", settings.nvd_base_url),
+            ("Web provider", settings.web_provider),
+            ("Tavily endpoint", settings.tavily_base_url),
+            ("Tavily API key", "configured" if settings.tavily_api_key else "not configured"),
+            ("Web timeout / retries", f"{settings.web_timeout}s / {settings.retry_count}"),
+        ]),
+        ("Storage", [
+            ("Database", settings.database),
+            ("Web cache", settings.cache_dir),
+            ("Document / preview chars", f"{settings.max_document_chars} / {settings.max_preview_chars}"),
+        ]),
+    ]
+    label_width = max(len(label) for _, rows in groups for label, _ in rows)
+    lines = ["effective configuration"]
+    for title, rows in groups:
+        lines.extend(["", f"[{title}]"])
+        lines.append(f"  {'Setting':<{label_width}}  Value")
+        lines.append(f"  {'-' * label_width}  {'-' * 32}")
+        lines.extend(f"  {label:<{label_width}}  {value}" for label, value in rows)
+    return "\n".join(lines)

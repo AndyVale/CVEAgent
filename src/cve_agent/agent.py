@@ -219,13 +219,13 @@ class InvestigationAgent:
 
     def _system_prompt(self):
         return (
-            "You are an evidence-backed CVE classification investigator. Work quickly and stop when the evidence is sufficient. "
+            "You are an evidence-backed CVE classification investigator. Work methodically and make a complete classification. "
             "The NVD record, description, metadata, and references are already supplied; do not fetch the NVD detail page just because it is a reference. "
             "The initial NVD description is valid evidence and may be sufficient for classification. First decide whether it already supports a taxonomy label. If one reliable reference can resolve the uncertainty, fetch only that source. "
-            "Use this short workflow: fetch one strong source, immediately record one useful quote (preferably exact), then finish_investigation. "
+            "Use the available evidence and investigate additional sources when needed; record useful evidence and then finish_investigation. "
             "Never fetch the same URL twice, never repeat a search, and do not search for marginal confirmation. "
             "This is a multi-label task: assess the complete supplied taxonomy and select every label supported by the evidence, not just the first or most obvious match. "
-            "Finish as soon as you can: use classified with all supported taxonomy IDs, use no_matching_label when the evidence is sufficient but no taxonomy entry applies, or use not_enough_information when the evidence genuinely cannot support a decision. "
+            "Before finishing, assess every taxonomy label independently and include all labels supported by the evidence. Use classified with all supported taxonomy IDs, no_matching_label when the evidence is sufficient but no taxonomy entry applies, or not_enough_information when the evidence genuinely cannot support a decision. "
             "Do not spend turns restating the problem. Finish only by calling finish_investigation."
         )
 
