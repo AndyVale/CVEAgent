@@ -33,10 +33,13 @@ commit sequence.
 - Separated taxonomy-independent investigation from exhaustive, bounded taxonomy chunk
   evaluation and final candidate adjudication. Added generic hierarchy policies and coverage.
 - Removed the unused one-shot classifier and obsolete pipeline/classifier arguments.
-- Full deterministic suite passes: `26 passed`.
+- Added provider-neutral token estimation, exhaustive-classification preflight, a protected
+  research allowance, configurable finalization overrun, and reported/estimated usage.
+- Unexpected budget exhaustion preserves validated chunk labels and exact coverage as a
+  partial result. Full deterministic suite passes: `29 passed`.
 
 ## Next
 
-1. Commit the exhaustive taxonomy-classification unit.
-2. Add staged budget enforcement, hardened configuration/retrieval, and run-scoped storage.
+1. Commit staged budget enforcement.
+2. Harden configuration/retrieval and add run-scoped storage.
 3. Align fixtures, broaden integration tests, update documentation, and run final checks.

@@ -103,7 +103,7 @@ class InvestigationState:
     visited_urls: list[str] = field(default_factory=list)
     evidence: list[EvidenceRecord] = field(default_factory=list)
     tool_history: list[dict[str, Any]] = field(default_factory=list)
-    token_usage: dict[str, int] = field(default_factory=dict)
+    token_usage: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

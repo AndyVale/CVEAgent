@@ -8,6 +8,7 @@ from typing import Any
 
 from openai import OpenAI
 
+from cve_agent.budget import BudgetExceeded, TokenBudget, create_budget_plan
 from cve_agent.classification import apply_hierarchy_policy, chunk_taxonomy, estimate_tokens, label_dict
 from cve_agent.config import Settings
 from cve_agent.evidence import EvidenceResolutionError, build_passages, resolve_passage
@@ -44,55 +45,72 @@ class InvestigationAgent:
     def classify(self, cve: CVERecord, taxonomy: Taxonomy, state: InvestigationState) -> ClassificationResult:
         logger.info("[%s] agent started: taxonomy_labels=%d", cve.cve_id, len(taxonomy.labels))
         started = time.monotonic()
-        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        research = self._investigate(cve, state, usage, started)
-        if research.summary:
-            state.facts.append(research.summary)
-
         base_context = {"cve": asdict(cve), "facts": state.facts, "evidence": [asdict(item) for item in state.evidence]}
         available_label_tokens = self.settings.max_input_tokens_per_request - estimate_tokens(base_context) - 1200
         chunks = chunk_taxonomy(taxonomy, available_tokens=max(256, available_label_tokens))
+        budget = TokenBudget(create_budget_plan(chunks, self.settings), self.settings)
+        research = self._investigate(cve, state, budget, started)
+        if research.summary:
+            state.facts.append(research.summary)
+
         supported: list[dict[str, Any]] = []
+        validated_candidates = []
         completed_chunks = 0
         evaluated_labels = 0
+        classification_stop_reason: InvestigationStopReason | None = None
         for chunk in chunks:
-            raw_supported = self._classify_chunk(cve, chunk.chunk_id, chunk.labels, state, usage)
+            try:
+                raw_supported = self._classify_chunk(cve, chunk.chunk_id, chunk.labels, state, budget)
+            except BudgetExceeded:
+                classification_stop_reason = InvestigationStopReason.TOKEN_BUDGET
+                break
             if raw_supported:
-                validate_classification(ClassificationStatus.CLASSIFIED, raw_supported, taxonomy, state.evidence)
+                _, materialized = validate_classification(ClassificationStatus.CLASSIFIED, raw_supported, taxonomy, state.evidence)
+                validated_candidates.extend(materialized)
                 supported.extend(raw_supported)
             completed_chunks += 1
             evaluated_labels += len(chunk.labels)
             state.tool_history.append({"tool": "classify_taxonomy_chunk", "status": "success", "chunk_id": chunk.chunk_id, "label_count": len(chunk.labels), "supported_count": len(raw_supported)})
 
-        if supported:
-            status, labels = self._adjudicate(cve, supported, taxonomy, state, usage)
+        coverage_complete = completed_chunks == len(chunks)
+        if supported and coverage_complete:
+            try:
+                status, labels = self._adjudicate(cve, supported, taxonomy, state, budget)
+            except BudgetExceeded:
+                classification_stop_reason = InvestigationStopReason.TOKEN_BUDGET
+                status, labels = ClassificationStatus.PARTIAL, validated_candidates
             labels = apply_hierarchy_policy(labels, taxonomy)
-        else:
+        elif supported:
+            status, labels = ClassificationStatus.PARTIAL, apply_hierarchy_policy(validated_candidates, taxonomy)
+        elif coverage_complete:
             status = ClassificationStatus.NO_MATCHING_LABEL if research.information_status == "sufficient" else ClassificationStatus.NOT_ENOUGH_INFORMATION
             labels = []
+        else:
+            status, labels = ClassificationStatus.PARTIAL, []
 
         coverage = {
             "total_chunks": len(chunks),
             "completed_chunks": completed_chunks,
             "total_labels": len(taxonomy.labels),
             "evaluated_labels": evaluated_labels,
-            "complete": completed_chunks == len(chunks),
+            "complete": coverage_complete,
         }
-        if not research.complete:
+        if not research.complete or not coverage_complete or classification_stop_reason or budget.exhausted:
             status = ClassificationStatus.PARTIAL
-        state.token_usage = usage.copy()
+        state.token_usage = budget.to_dict()
         operational: dict[str, Any] = {
             "turns": research.turns,
             "duration_seconds": round(time.monotonic() - started, 3),
-            "token_usage": usage,
+            "token_usage": budget.to_dict(),
             "coverage": coverage,
             "research_information_status": research.information_status,
         }
-        if research.stop_reason:
-            operational["stop_reason"] = research.stop_reason
+        stop_reason = classification_stop_reason or research.stop_reason
+        if stop_reason:
+            operational["stop_reason"] = stop_reason
         return ClassificationResult(cve.cve_id, status, labels, operational=operational)
 
-    def _investigate(self, cve: CVERecord, state: InvestigationState, usage: dict[str, int], started: float) -> ResearchOutcome:
+    def _investigate(self, cve: CVERecord, state: InvestigationState, budget: TokenBudget, started: float) -> ResearchOutcome:
         documents: dict[str, Document] = {}
         searches = fetches = turns = 0
         seen_calls: set[tuple[str, str]] = set()
@@ -102,20 +120,24 @@ class InvestigationAgent:
             elapsed = time.monotonic() - started
             if turns >= self.settings.max_agent_turns or elapsed >= self.settings.max_investigation_seconds:
                 return ResearchOutcome("insufficient", "Investigation stopped before the model finished.", False, turns, elapsed, InvestigationStopReason.INVESTIGATION_LIMIT)
-            response = self._chat(
-                cve.cve_id,
-                usage,
-                messages=[
-                    {"role": "system", "content": self._system_prompt()},
-                    {"role": "user", "content": json.dumps(self._context(cve, state, documents, turns, searches, fetches), ensure_ascii=False)},
-                ] + exchange,
-                tools=AGENT_TOOLS,
-                tool_choice="auto",
-                parallel_tool_calls=False,
-            )
+            try:
+                response = self._chat(
+                    cve.cve_id,
+                    budget,
+                    "investigation",
+                    messages=[
+                        {"role": "system", "content": self._system_prompt()},
+                        {"role": "user", "content": json.dumps(self._context(cve, state, documents, turns, searches, fetches), ensure_ascii=False)},
+                    ] + exchange,
+                    tools=AGENT_TOOLS,
+                    tool_choice="auto",
+                    parallel_tool_calls=False,
+                )
+            except BudgetExceeded:
+                return ResearchOutcome("insufficient", "Investigation stopped to preserve the classification reserve.", False, turns, elapsed, InvestigationStopReason.TOKEN_BUDGET)
             turns += 1
             message = response.choices[0].message
-            logger.info("[%s] research turn=%d tool_calls=%d tokens=%d", cve.cve_id, turns, len(message.tool_calls or []), usage["total_tokens"])
+            logger.info("[%s] research turn=%d tool_calls=%d tokens=%d", cve.cve_id, turns, len(message.tool_calls or []), budget.total_tokens)
             if not message.tool_calls:
                 exchange = [{"role": "user", "content": "Use a provided tool and finish by calling finish_investigation."}]
                 continue
@@ -154,7 +176,7 @@ class InvestigationAgent:
                 current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)})
             exchange = current_exchange
 
-    def _classify_chunk(self, cve: CVERecord, chunk_id: int, labels: tuple[Any, ...], state: InvestigationState, usage: dict[str, int]) -> list[dict[str, Any]]:
+    def _classify_chunk(self, cve: CVERecord, chunk_id: int, labels: tuple[Any, ...], state: InvestigationState, budget: TokenBudget) -> list[dict[str, Any]]:
         payload = {
             "chunk_id": chunk_id,
             "vulnerability_facts": state.facts,
@@ -163,7 +185,8 @@ class InvestigationAgent:
         }
         response = self._chat(
             cve.cve_id,
-            usage,
+            budget,
+            "classification",
             messages=[
                 {"role": "system", "content": "Evaluate every supplied taxonomy label independently. Return JSON with chunk_id and supported, where supported is an array of {label, confidence, evidence:[{evidence_id, explanation}]}. Include only evidence-backed labels and use only supplied IDs and evidence IDs."},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
@@ -182,7 +205,7 @@ class InvestigationAgent:
             raise ValueError(f"taxonomy chunk returned labels outside its chunk: {outside}")
         return supported
 
-    def _adjudicate(self, cve: CVERecord, candidates: list[dict[str, Any]], taxonomy: Taxonomy, state: InvestigationState, usage: dict[str, int]):
+    def _adjudicate(self, cve: CVERecord, candidates: list[dict[str, Any]], taxonomy: Taxonomy, state: InvestigationState, budget: TokenBudget):
         candidate_ids = {item["label"] for item in candidates}
         payload = {
             "candidates": candidates,
@@ -191,7 +214,8 @@ class InvestigationAgent:
         }
         response = self._chat(
             cve.cve_id,
-            usage,
+            budget,
+            "classification",
             messages=[
                 {"role": "system", "content": "Adjudicate the evidence-backed candidates. Return JSON {status, labels}; status is classified, no_matching_label, or not_enough_information. Each label contains label, confidence, and evidence associations with evidence_id and explanation. Do not add labels outside the candidates."},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
@@ -206,7 +230,8 @@ class InvestigationAgent:
                 raise ValueError(f"adjudicator added non-candidate labels: {outside}")
         return validate_classification(decoded.get("status"), raw_labels, taxonomy, state.evidence)
 
-    def _chat(self, context: str, usage: dict[str, int], **request: Any):
+    def _chat(self, context: str, budget: TokenBudget, stage: str, **request: Any):
+        request_max_tokens = budget.admit(stage, request)
         response = call_chat_completion(
             self.client,
             self.settings,
@@ -216,12 +241,10 @@ class InvestigationAgent:
             model=self.settings.model,
             temperature=self.settings.temperature,
             top_p=self.settings.top_p,
-            max_tokens=self.settings.max_tokens,
+            max_tokens=request_max_tokens,
             **request,
         )
-        turn_usage = response.usage.model_dump() if response.usage else {}
-        for key in usage:
-            usage[key] += int(turn_usage.get(key, 0))
+        budget.record(response, request)
         return response
 
     @staticmethod
