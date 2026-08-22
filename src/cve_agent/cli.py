@@ -6,7 +6,7 @@ import logging
 import sys
 from dataclasses import replace
 
-from cve_agent.config import format_settings_table, load_settings
+from cve_agent.config import format_settings_table, load_settings, non_secret_settings
 from cve_agent.agent import InvestigationAgent
 from cve_agent.adapters import CachedWebClient, NVDClient, TavilySearchProvider
 from cve_agent.pipeline import Pipeline
@@ -48,6 +48,7 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
             cve_source or NVDClient(settings),
             classifier or InvestigationAgent(settings, active_web_source),
             database or Database(settings.database),
+            run_metadata={"model": settings.model, "settings": non_secret_settings(settings)},
         )
         results = pipeline.run(args.cve_ids, taxonomy)
         print(json.dumps([result.to_dict() for result in results], indent=2))

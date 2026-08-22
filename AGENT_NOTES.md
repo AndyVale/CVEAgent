@@ -39,10 +39,11 @@ commit sequence.
   partial result. Full deterministic suite passes: `29 passed`.
 - Split NVD/web retry configuration, added startup validation and config-relative paths,
   streamed bounded text retrieval, and requested/resolved redirect provenance.
-- Full deterministic suite passes: `35 passed`.
+- Added schema-versioned run persistence with incremental run IDs, taxonomy fingerprints,
+  non-secret settings, checkpoints, and fatal persistence error propagation. Removed the
+  ignored legacy local database as authorized. Full deterministic suite passes: `39 passed`.
 
 ## Next
 
-1. Commit configuration and retrieval hardening.
-2. Add run-scoped storage and checkpointing.
-3. Align fixtures, broaden integration tests, update documentation, and run final checks.
+1. Commit run-scoped storage and checkpointing.
+2. Align fixtures, broaden integration tests, update documentation, and run final checks.

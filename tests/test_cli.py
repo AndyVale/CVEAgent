@@ -18,12 +18,12 @@ class Web:
 
 
 class Classifier:
-    def classify(self, cve, taxonomy, state):
+    def classify(self, cve, taxonomy, state, checkpoint=None):
         return ClassificationResult(cve.cve_id, "not_enough_information")
 
 
 class PartialClassifier(Classifier):
-    def classify(self, cve, taxonomy, state):
+    def classify(self, cve, taxonomy, state, checkpoint=None):
         return ClassificationResult(cve.cve_id, "partial", operational={"stop_reason": "token_budget"})
 
 

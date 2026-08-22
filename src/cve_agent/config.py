@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
@@ -155,3 +155,10 @@ def format_settings_table(settings: Settings) -> str:
         lines.append(f"  {'-' * label_width}  {'-' * 32}")
         lines.extend(f"  {label:<{label_width}}  {value}" for label, value in rows)
     return "\n".join(lines)
+
+
+def non_secret_settings(settings: Settings) -> dict[str, object]:
+    values = asdict(settings)
+    values.pop("api_key", None)
+    values.pop("tavily_api_key", None)
+    return {key: str(value) if isinstance(value, Path) else value for key, value in values.items()}

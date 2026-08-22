@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Callable, Protocol
 
 from cve_agent.models import CVERecord, ClassificationResult, Document, InvestigationState, SearchResult
 from cve_agent.taxonomy import Taxonomy
@@ -16,4 +16,4 @@ class WebSource(Protocol):
 
 
 class Classifier(Protocol):
-    def classify(self, cve: CVERecord, taxonomy: Taxonomy, state: InvestigationState) -> ClassificationResult: ...
+    def classify(self, cve: CVERecord, taxonomy: Taxonomy, state: InvestigationState, checkpoint: Callable[[], None] | None = None) -> ClassificationResult: ...

@@ -4,7 +4,7 @@ import json
 import logging
 import time
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Callable
 
 from openai import OpenAI
 
@@ -42,14 +42,15 @@ class InvestigationAgent:
         self.request_pacer = RequestPacer(settings.llm_min_request_interval)
         self.client = client or OpenAI(api_key=settings.api_key or "EMPTY", base_url=settings.endpoint, timeout=settings.llm_timeout, max_retries=0)
 
-    def classify(self, cve: CVERecord, taxonomy: Taxonomy, state: InvestigationState) -> ClassificationResult:
+    def classify(self, cve: CVERecord, taxonomy: Taxonomy, state: InvestigationState, checkpoint: Callable[[], None] | None = None) -> ClassificationResult:
         logger.info("[%s] agent started: taxonomy_labels=%d", cve.cve_id, len(taxonomy.labels))
         started = time.monotonic()
         base_context = {"cve": asdict(cve), "facts": state.facts, "evidence": [asdict(item) for item in state.evidence]}
         available_label_tokens = self.settings.max_input_tokens_per_request - estimate_tokens(base_context) - 1200
         chunks = chunk_taxonomy(taxonomy, available_tokens=max(256, available_label_tokens))
         budget = TokenBudget(create_budget_plan(chunks, self.settings), self.settings)
-        research = self._investigate(cve, state, budget, started)
+        checkpoint_fn = checkpoint or (lambda: None)
+        research = self._investigate(cve, state, budget, started, checkpoint_fn)
         if research.summary:
             state.facts.append(research.summary)
 
@@ -71,6 +72,8 @@ class InvestigationAgent:
             completed_chunks += 1
             evaluated_labels += len(chunk.labels)
             state.tool_history.append({"tool": "classify_taxonomy_chunk", "status": "success", "chunk_id": chunk.chunk_id, "label_count": len(chunk.labels), "supported_count": len(raw_supported)})
+            state.token_usage = budget.to_dict()
+            checkpoint_fn()
 
         coverage_complete = completed_chunks == len(chunks)
         if supported and coverage_complete:
@@ -110,7 +113,7 @@ class InvestigationAgent:
             operational["stop_reason"] = stop_reason
         return ClassificationResult(cve.cve_id, status, labels, operational=operational)
 
-    def _investigate(self, cve: CVERecord, state: InvestigationState, budget: TokenBudget, started: float) -> ResearchOutcome:
+    def _investigate(self, cve: CVERecord, state: InvestigationState, budget: TokenBudget, started: float, checkpoint: Callable[[], None]) -> ResearchOutcome:
         documents: dict[str, Document] = {}
         searches = fetches = turns = 0
         seen_calls: set[tuple[str, str]] = set()
@@ -152,6 +155,8 @@ class InvestigationAgent:
                 except (json.JSONDecodeError, ValueError) as exc:
                     result = {"error": f"invalid tool arguments: {exc}", "instruction": "Correct the arguments and call a provided tool again."}
                     state.tool_history.append(self._tool_event(name, {}, result))
+                    state.token_usage = budget.to_dict()
+                    checkpoint()
                     current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)})
                     continue
 
@@ -160,6 +165,8 @@ class InvestigationAgent:
                     try:
                         outcome = self._research_finish(arguments, turns, time.monotonic() - started)
                         state.tool_history.append(self._tool_event(name, arguments, {"status": "accepted"}))
+                        state.token_usage = budget.to_dict()
+                        checkpoint()
                         return outcome
                     except ValueError as exc:
                         result = {"error": str(exc), "instruction": "Correct the finish arguments and try again."}
@@ -173,6 +180,8 @@ class InvestigationAgent:
                     if name == "fetch" and "error" not in result:
                         fetches += 1
                 state.tool_history.append(self._tool_event(name, arguments, result))
+                state.token_usage = budget.to_dict()
+                checkpoint()
                 current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)})
             exchange = current_exchange
 
