@@ -23,6 +23,9 @@ class Pipeline:
 
     def run(self, cve_ids: list[str], taxonomy: Taxonomy) -> list[ClassificationResult]:
         results: list[ClassificationResult] = []
+        preflight = getattr(self.classifier, "preflight", None)
+        if preflight is not None:
+            preflight(taxonomy)
         taxonomy_json = json.dumps(taxonomy.to_dict(), ensure_ascii=False, sort_keys=True)
         with self.database as db:
             run_id = db.start_run(

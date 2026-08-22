@@ -41,3 +41,19 @@ def test_pipeline_preserves_order_and_isolates_cve_failure(tmp_path):
         assert db.get(run_id, "CVE-OK")["status"] == "classified"
         assert db.get(run_id, "CVE-BAD")["error"] == "fixture failure"
         assert db.get_run(run_id)["status"] == "completed_with_failures"
+
+
+def test_preflight_failure_happens_before_source_or_database_side_effects(tmp_path):
+    class PreflightClassifier(Classifier):
+        def preflight(self, taxonomy):
+            raise BudgetPreflightError("fixture preflight failure")
+
+    source = Source()
+    path = tmp_path / "unused.sqlite3"
+    with pytest.raises(BudgetPreflightError, match="fixture preflight failure"):
+        Pipeline(source, PreflightClassifier(), Database(path)).run(["CVE-OK"], Taxonomy((TaxonomyLabel("GENERIC", "Generic", "generic"),)))
+    assert source.calls == []
+    assert not path.exists()
+import pytest
+
+from cve_agent.budget import BudgetPreflightError

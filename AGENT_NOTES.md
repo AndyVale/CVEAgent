@@ -42,6 +42,7 @@ commit sequence.
 - Added schema-versioned run persistence with incremental run IDs, taxonomy fingerprints,
   non-secret settings, checkpoints, and fatal persistence error propagation. Removed the
   ignored legacy local database as authorized. Full deterministic suite passes: `39 passed`.
+- Budget preflight now runs before NVD, database creation, or other pipeline side effects.
 
 ## Next
 

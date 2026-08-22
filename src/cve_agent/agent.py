@@ -42,6 +42,10 @@ class InvestigationAgent:
         self.request_pacer = RequestPacer(settings.llm_min_request_interval)
         self.client = client or OpenAI(api_key=settings.api_key or "EMPTY", base_url=settings.endpoint, timeout=settings.llm_timeout, max_retries=0)
 
+    def preflight(self, taxonomy: Taxonomy) -> None:
+        chunks = chunk_taxonomy(taxonomy, available_tokens=max(256, self.settings.max_input_tokens_per_request - 1200))
+        create_budget_plan(chunks, self.settings)
+
     def classify(self, cve: CVERecord, taxonomy: Taxonomy, state: InvestigationState, checkpoint: Callable[[], None] | None = None) -> ClassificationResult:
         logger.info("[%s] agent started: taxonomy_labels=%d", cve.cve_id, len(taxonomy.labels))
         started = time.monotonic()
