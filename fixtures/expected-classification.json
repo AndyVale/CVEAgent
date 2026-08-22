@@ -1,1 +1,17 @@
-{"cve_id": "CVE-2026-0001", "status": "classified", "labels": [{"label": "CWE-120", "confidence": 0.95, "evidence": [{"url": "https://example.test/advisory", "quote": "does not validate input length", "explanation": "The advisory directly describes an unchecked buffer copy."}]}]}
+{
+  "cve_id": "CVE-2026-0001",
+  "status": "classified",
+  "labels": [
+    {
+      "label": "CWE-120",
+      "confidence": 0.95,
+      "evidence": [
+        {
+          "url": "https://example.test/advisory",
+          "quote": "A buffer copy in Example Product does not validate input length.",
+          "explanation": "The advisory directly describes an unchecked buffer copy."
+        }
+      ]
+    }
+  ]
+}

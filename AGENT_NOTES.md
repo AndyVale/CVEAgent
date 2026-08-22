@@ -44,8 +44,11 @@ commit sequence.
   ignored legacy local database as authorized. Full deterministic suite passes: `39 passed`.
 - Budget preflight now runs before NVD, database creation, or other pipeline side effects.
 - Verbose CLI logging uses a scoped package handler and restores logging state after each run.
+- Aligned placeholder fixtures, added an active fixture-driven integration test and strict
+  validator tests, verified production contains no fixture/CWE identifiers, and moved pytest
+  to the uv development dependency group. Full deterministic suite passes: `44 passed`.
 
 ## Next
 
-1. Commit run-scoped storage and checkpointing.
-2. Align fixtures, broaden integration tests, update documentation, and run final checks.
+1. Commit fixture and integration-test alignment.
+2. Update user/specification documentation and run final checks.

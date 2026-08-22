@@ -1,1 +1,79 @@
-{"labels": [{"id": "CWE-120", "name": "Buffer Copy without Checking Size of Input", "description": "The product copies an input buffer without verifying that the destination is large enough."}, {"id": "CWE-79", "name": "Improper Neutralization of Input During Web Page Generation", "description": "The product does not neutralize user-controllable input before placing it in web output."}]}
+{
+  "labels": [
+    {
+      "id": "XSS",
+      "name": "Cross-site Scripting",
+      "description": "Malicious scripts are injected into web pages and executed in the victim's browser."
+    },
+    {
+      "id": "SQLi",
+      "name": "SQL Injection",
+      "description": "Malicious SQL queries are injected to manipulate the database."
+    },
+    {
+      "id": "CSRF",
+      "name": "Cross-Site Request Forgery",
+      "description": "Unverified requests are executed on behalf of an authenticated user without their consent."
+    },
+    {
+      "id": "SSRF",
+      "name": "Server-Side Request Forgery",
+      "description": "The server is coerced into making requests to unintended internal or external resources."
+    },
+    {
+      "id": "PathTraversal",
+      "name": "Path Traversal",
+      "description": "Manipulation of file paths (e.g., '../') to access files or directories outside the intended scope."
+    },
+    {
+      "id": "CommandInjection",
+      "name": "Command Injection",
+      "description": "Unvalidated input is used to construct system shell commands. Covers OS Command Injection."
+    },
+    {
+      "id": "CodeInjection",
+      "name": "Code Injection",
+      "description": "Unvalidated input is executed as code by the application's interpreter (e.g., PHP, Python, Java)."
+    },
+    {
+      "id": "UntrustedDeserialization",
+      "name": "Deserialization of Untrusted Data",
+      "description": "Unsafe restoration of objects from data streams, leading to RCE or logic manipulation."
+    },
+    {
+      "id": "BufferOverflow",
+      "name": "Buffer Overflow",
+      "description": "Writing data past buffer boundaries on the stack or heap. explicitly covers Out-of-bounds Write."
+    },
+    {
+      "id": "OutOfBoundsRead",
+      "name": "Out-of-bounds Read",
+      "description": "Reading data past allocated memory boundaries. Use this for memory-based information leaks."
+    },
+    {
+      "id": "UseAfterFree",
+      "name": "Use After Free",
+      "description": "Accessing memory after it has been explicitly freed. A specific memory corruption distinct from overflows."
+    },
+    {
+      "id": "AccessControl",
+      "name": "Broken Access Control",
+      "description": "Failure to manage user privileges. Covers Missing Authentication, Authorization Bypass, and Privilege Escalation."
+    },
+    {
+      "id": "InfoLeak",
+      "name": "Exposure of Sensitive Information",
+      "description": "Logical exposure of private data (credentials, PII) via logs or responses. (Distinct from memory-based Out-Of-Bounds Read)."
+    },
+    {
+      "id": "ResourceExhaustion",
+      "name": "Resource Exhaustion",
+      "description": "Uncontrolled allocation of resources (memory, CPU, disk) causing Denial of Service (DoS). Covers Null Pointer Dereferences if they cause crashes."
+    },
+    {
+      "id": "InputValidation",
+      "name": "Improper Input Validation",
+      "description": "General failure to validate data correctness. Catch-all for Dangerous File Uploads, Integer Overflows, and Format Strings."
+    }
+  ]
+}
