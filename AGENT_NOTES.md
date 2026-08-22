@@ -37,9 +37,12 @@ commit sequence.
   research allowance, configurable finalization overrun, and reported/estimated usage.
 - Unexpected budget exhaustion preserves validated chunk labels and exact coverage as a
   partial result. Full deterministic suite passes: `29 passed`.
+- Split NVD/web retry configuration, added startup validation and config-relative paths,
+  streamed bounded text retrieval, and requested/resolved redirect provenance.
+- Full deterministic suite passes: `35 passed`.
 
 ## Next
 
-1. Commit staged budget enforcement.
-2. Harden configuration/retrieval and add run-scoped storage.
+1. Commit configuration and retrieval hardening.
+2. Add run-scoped storage and checkpointing.
 3. Align fixtures, broaden integration tests, update documentation, and run final checks.

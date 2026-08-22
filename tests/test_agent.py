@@ -15,10 +15,10 @@ def settings(tmp_path):
         model="fixture-model", endpoint="https://fixture.test/v1", api_key=None,
         max_tokens=500, temperature=0.0, top_p=1.0, llm_timeout=5, llm_retry_count=0,
         llm_retry_wait=0.01, llm_retry_max_wait=0.02, llm_min_request_interval=0.0,
-        nvd_base_url="https://nvd.test", nvd_timeout=5, retry_count=0, web_timeout=5,
+        nvd_base_url="https://nvd.test", nvd_timeout=5, nvd_retry_count=0, web_timeout=5, web_retry_count=0,
         web_provider="tavily", tavily_base_url="https://api.tavily.com", tavily_max_results=5,
         tavily_search_depth="basic", tavily_api_key=None, cache_dir=tmp_path / "cache",
-        max_document_chars=10000, max_preview_chars=1000, database=tmp_path / "db.sqlite",
+        max_document_chars=10000, max_preview_chars=1000, max_download_bytes=100000, database=tmp_path / "db.sqlite",
         token_budget=5000, max_agent_turns=8, max_search_calls=1, max_fetch_calls=1,
         max_investigation_seconds=30,
     )
@@ -184,6 +184,38 @@ def test_cached_web_client_extracts_html(tmp_path):
     document = CachedWebClient(settings(tmp_path), http_client=httpx.Client(transport=transport)).fetch("https://fixture.test/page")
     assert "Important vulnerability evidence" in document.content
     assert "<main>" not in document.content
+
+
+def test_cached_web_client_records_redirect_provenance(tmp_path):
+    def handler(request):
+        if request.url.path == "/start":
+            return httpx.Response(302, headers={"location": "/final"})
+        return httpx.Response(200, headers={"content-type": "text/plain"}, text="Resolved vulnerability evidence.")
+
+    client = CachedWebClient(settings(tmp_path), http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    document = client.fetch("https://fixture.test/start")
+    assert document.requested_url == "https://fixture.test/start"
+    assert document.url == "https://fixture.test/final"
+    assert document.redirect_chain == ("https://fixture.test/start", "https://fixture.test/final")
+
+
+def test_cached_web_client_rejects_large_or_non_text_responses(tmp_path):
+    small_limit = settings(tmp_path).__class__(**{**settings(tmp_path).__dict__, "max_download_bytes": 5})
+    large_transport = httpx.MockTransport(lambda request: httpx.Response(200, headers={"content-type": "text/plain"}, content=b"too large"))
+    try:
+        CachedWebClient(small_limit, http_client=httpx.Client(transport=large_transport)).fetch("https://fixture.test/large")
+    except ValueError as exc:
+        assert "max_download_bytes" in str(exc)
+    else:
+        raise AssertionError("expected the streamed size limit to reject the response")
+
+    binary_transport = httpx.MockTransport(lambda request: httpx.Response(200, headers={"content-type": "application/octet-stream"}, content=b"binary"))
+    try:
+        CachedWebClient(settings(tmp_path), http_client=httpx.Client(transport=binary_transport)).fetch("https://fixture.test/binary")
+    except ValueError as exc:
+        assert "unsupported content type" in str(exc)
+    else:
+        raise AssertionError("expected binary content to be rejected")
 
 
 def test_tavily_search_provider_maps_results(tmp_path):

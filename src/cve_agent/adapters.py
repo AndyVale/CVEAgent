@@ -38,7 +38,7 @@ class NVDClient:
 
     def get_cve(self, cve_id: str) -> CVERecord:
         url = f"{self.settings.nvd_base_url}?{urllib.parse.urlencode({'cveId': cve_id})}"
-        payload = _request_json(url, self.settings.nvd_timeout, self.settings.retry_count)
+        payload = _request_json(url, self.settings.nvd_timeout, self.settings.nvd_retry_count)
         vulnerabilities = payload.get("vulnerabilities", [])
         if not vulnerabilities:
             raise LookupError(f"CVE not found: {cve_id}")
@@ -67,7 +67,7 @@ class TavilySearchProvider:
             "include_raw_content": False,
         }
         headers = {"Authorization": f"Bearer {self.settings.tavily_api_key}", "Content-Type": "application/json"}
-        for attempt in range(self.settings.retry_count + 1):
+        for attempt in range(self.settings.web_retry_count + 1):
             try:
                 if self.http_client is None:
                     with httpx.Client(timeout=self.settings.web_timeout, headers={"User-Agent": "cve-agent/0.1"}) as client:
@@ -84,7 +84,7 @@ class TavilySearchProvider:
             except RuntimeError:
                 raise
             except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError, httpx.HTTPStatusError):
-                if attempt >= self.settings.retry_count:
+                if attempt >= self.settings.web_retry_count:
                     raise
                 time.sleep(0.2 * (2**attempt))
         raise RuntimeError("Tavily search failed")
@@ -116,40 +116,76 @@ class CachedWebClient:
     def fetch(self, url: str) -> Document:
         path = self._cache("fetch", url)
         if path.exists():
-            document = Document(**json.loads(path.read_text(encoding="utf-8")))
+            cached = json.loads(path.read_text(encoding="utf-8"))
+            cached["redirect_chain"] = tuple(cached.get("redirect_chain", ()))
+            document = Document(**cached)
             logger.info("fetch cache hit url=%s document_id=%s chars=%d", url, document.document_id, len(document.content))
             return document
         logger.info("fetch cache miss url=%s", url)
-        for attempt in range(self.settings.retry_count + 1):
+        for attempt in range(self.settings.web_retry_count + 1):
             try:
-                logger.info("fetch attempt=%d/%d url=%s", attempt + 1, self.settings.retry_count + 1, url)
-                if self.http_client is None:
-                    with httpx.Client(timeout=self.settings.web_timeout, follow_redirects=True, headers={"User-Agent": "cve-agent/0.1"}) as client:
-                        response = client.get(url)
-                else:
-                    response = self.http_client.get(url)
-                logger.info("fetch response status=%d final_url=%s content_type=%s bytes=%d", response.status_code, response.url, response.headers.get("content-type", "unknown"), len(response.content))
-                response.raise_for_status()
-                raw_response = response.text
+                logger.info("fetch attempt=%d/%d url=%s", attempt + 1, self.settings.web_retry_count + 1, url)
+                raw_bytes, response_url, redirect_chain, content_type, encoding = self._download(url)
+                logger.info("fetch response final_url=%s content_type=%s bytes=%d", response_url, content_type or "unknown", len(raw_bytes))
+                raw_response = raw_bytes.decode(encoding or "utf-8", errors="replace")
                 break
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 retryable = status == 408 or status == 425 or status == 429 or status >= 500
                 logger.warning("fetch HTTP failure status=%d retryable=%s url=%s", status, retryable, url)
-                if not retryable or attempt >= self.settings.retry_count:
+                if not retryable or attempt >= self.settings.web_retry_count:
                     raise
                 time.sleep(0.2 * (2**attempt))
             except httpx.RequestError as exc:
                 logger.warning("fetch network failure type=%s message=%s url=%s", type(exc).__name__, str(exc), url)
-                if attempt >= self.settings.retry_count:
+                if attempt >= self.settings.web_retry_count:
                     raise
                 time.sleep(0.2 * (2**attempt))
         raw_content = raw_response[: self.settings.max_document_chars]
-        content = trafilatura.extract(raw_content, url=url, include_comments=False, include_tables=True) or raw_content
+        content = trafilatura.extract(raw_content, url=response_url, include_comments=False, include_tables=True) or raw_content
         content = content[: self.settings.max_document_chars]
         logger.info("fetch extracted url=%s raw_chars=%d extracted_chars=%d extraction_used_fallback=%s", url, len(raw_response), len(content), content == raw_content)
-        metadata = trafilatura.extract_metadata(raw_content, default_url=url) if raw_content else None
+        metadata = trafilatura.extract_metadata(raw_content, default_url=response_url) if raw_content else None
         title = (metadata.title or "") if metadata else ""
-        document = Document(url=url, title=title, content=content, metadata={"truncated": len(raw_response) > len(raw_content)}, document_id=hashlib.sha256(url.encode()).hexdigest()[:16])
+        document = Document(
+            url=response_url,
+            title=title,
+            content=content,
+            metadata={"truncated": len(raw_response) > len(raw_content), "download_bytes": len(raw_bytes), "content_type": content_type},
+            document_id=hashlib.sha256(url.encode()).hexdigest()[:16],
+            requested_url=url,
+            redirect_chain=redirect_chain,
+        )
         path.write_text(json.dumps(document.__dict__), encoding="utf-8")
         return document
+
+    def _download(self, url: str) -> tuple[bytes, str, tuple[str, ...], str, str | None]:
+        client = self.http_client or httpx.Client(timeout=self.settings.web_timeout, headers={"User-Agent": "cve-agent/0.1"})
+        close_client = self.http_client is None
+        try:
+            with client.stream("GET", url, follow_redirects=True) as response:
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                if content_type and not _is_text_content_type(content_type):
+                    raise ValueError(f"unsupported content type: {content_type}")
+                chunks: list[bytes] = []
+                size = 0
+                for chunk in response.iter_bytes():
+                    size += len(chunk)
+                    if size > self.settings.max_download_bytes:
+                        raise ValueError(f"response exceeds max_download_bytes={self.settings.max_download_bytes}")
+                    chunks.append(chunk)
+                chain = tuple(str(item.url) for item in response.history) + (str(response.url),)
+                return b"".join(chunks), str(response.url), chain, content_type, response.encoding
+        finally:
+            if close_client:
+                client.close()
+
+
+def _is_text_content_type(content_type: str) -> bool:
+    return content_type.startswith("text/") or content_type in {
+        "application/json",
+        "application/xml",
+        "application/xhtml+xml",
+        "application/rss+xml",
+    }
