@@ -3,15 +3,16 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from openai import OpenAI
 
+from cve_agent.classification import apply_hierarchy_policy, chunk_taxonomy, estimate_tokens, label_dict
 from cve_agent.config import Settings
 from cve_agent.evidence import EvidenceResolutionError, build_passages, resolve_passage
 from cve_agent.llm import RequestPacer, call_chat_completion
-from cve_agent.models import CVERecord, ClassificationResult, ClassificationStatus, Document, EvidenceRecord, InvestigationState, InvestigationStopReason, SearchResult
+from cve_agent.models import CVERecord, ClassificationResult, ClassificationStatus, Document, EvidenceRecord, InvestigationState, InvestigationStopReason
 from cve_agent.ports import WebSource
 from cve_agent.schemas import AGENT_TOOLS
 from cve_agent.taxonomy import Taxonomy
@@ -21,64 +22,105 @@ from cve_agent.validation import validate_classification
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class ResearchOutcome:
+    information_status: str
+    summary: str
+    complete: bool
+    turns: int
+    duration_seconds: float
+    stop_reason: InvestigationStopReason | None = None
+
+
 class InvestigationAgent:
+    """Collect generic vulnerability evidence, then exhaustively classify a taxonomy."""
+
     def __init__(self, settings: Settings, web_source: WebSource, client: OpenAI | None = None):
         self.settings = settings
         self.web_source = web_source
         self.request_pacer = RequestPacer(settings.llm_min_request_interval)
         self.client = client or OpenAI(api_key=settings.api_key or "EMPTY", base_url=settings.endpoint, timeout=settings.llm_timeout, max_retries=0)
 
-    def classify(self, cve: CVERecord, evidence: list[Document | SearchResult], taxonomy: Taxonomy, state: InvestigationState) -> ClassificationResult:
+    def classify(self, cve: CVERecord, taxonomy: Taxonomy, state: InvestigationState) -> ClassificationResult:
         logger.info("[%s] agent started: taxonomy_labels=%d", cve.cve_id, len(taxonomy.labels))
         started = time.monotonic()
+        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        research = self._investigate(cve, state, usage, started)
+        if research.summary:
+            state.facts.append(research.summary)
+
+        base_context = {"cve": asdict(cve), "facts": state.facts, "evidence": [asdict(item) for item in state.evidence]}
+        available_label_tokens = self.settings.max_input_tokens_per_request - estimate_tokens(base_context) - 1200
+        chunks = chunk_taxonomy(taxonomy, available_tokens=max(256, available_label_tokens))
+        supported: list[dict[str, Any]] = []
+        completed_chunks = 0
+        evaluated_labels = 0
+        for chunk in chunks:
+            raw_supported = self._classify_chunk(cve, chunk.chunk_id, chunk.labels, state, usage)
+            if raw_supported:
+                validate_classification(ClassificationStatus.CLASSIFIED, raw_supported, taxonomy, state.evidence)
+                supported.extend(raw_supported)
+            completed_chunks += 1
+            evaluated_labels += len(chunk.labels)
+            state.tool_history.append({"tool": "classify_taxonomy_chunk", "status": "success", "chunk_id": chunk.chunk_id, "label_count": len(chunk.labels), "supported_count": len(raw_supported)})
+
+        if supported:
+            status, labels = self._adjudicate(cve, supported, taxonomy, state, usage)
+            labels = apply_hierarchy_policy(labels, taxonomy)
+        else:
+            status = ClassificationStatus.NO_MATCHING_LABEL if research.information_status == "sufficient" else ClassificationStatus.NOT_ENOUGH_INFORMATION
+            labels = []
+
+        coverage = {
+            "total_chunks": len(chunks),
+            "completed_chunks": completed_chunks,
+            "total_labels": len(taxonomy.labels),
+            "evaluated_labels": evaluated_labels,
+            "complete": completed_chunks == len(chunks),
+        }
+        if not research.complete:
+            status = ClassificationStatus.PARTIAL
+        state.token_usage = usage.copy()
+        operational: dict[str, Any] = {
+            "turns": research.turns,
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "token_usage": usage,
+            "coverage": coverage,
+            "research_information_status": research.information_status,
+        }
+        if research.stop_reason:
+            operational["stop_reason"] = research.stop_reason
+        return ClassificationResult(cve.cve_id, status, labels, operational=operational)
+
+    def _investigate(self, cve: CVERecord, state: InvestigationState, usage: dict[str, int], started: float) -> ResearchOutcome:
         documents: dict[str, Document] = {}
-        searches = 0
-        fetches = 0
-        turns = 0
+        searches = fetches = turns = 0
         seen_calls: set[tuple[str, str]] = set()
         failed_fetches: set[str] = set()
-        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        base_messages = [{"role": "system", "content": self._system_prompt()}, {"role": "user", "content": json.dumps(self._context(cve, taxonomy, state, documents, turns, searches, fetches), ensure_ascii=False)}]
         exchange: list[dict[str, Any]] = []
-
         while True:
-            base_messages[1] = {"role": "user", "content": json.dumps(self._context(cve, taxonomy, state, documents, turns, searches, fetches), ensure_ascii=False)}
-            if turns >= self.settings.max_agent_turns or time.monotonic() - started >= self.settings.max_investigation_seconds:
-                logger.info("[%s] stopping: investigation limit reached turns=%d", cve.cve_id, turns)
-                return ClassificationResult(cve.cve_id, ClassificationStatus.PARTIAL, operational={"stop_reason": InvestigationStopReason.INVESTIGATION_LIMIT, "token_usage": usage})
-            if usage["total_tokens"] >= self.settings.token_budget:
-                logger.info("[%s] stopping: token budget reached total_tokens=%d", cve.cve_id, usage["total_tokens"])
-                return ClassificationResult(cve.cve_id, ClassificationStatus.PARTIAL, operational={"stop_reason": InvestigationStopReason.TOKEN_BUDGET, "token_usage": usage})
-            remaining_tokens = max(1, self.settings.token_budget - usage["total_tokens"])
-            response = call_chat_completion(
-                self.client,
-                self.settings,
-                logger,
-                request_pacer=self.request_pacer,
-                model=self.settings.model,
-                temperature=self.settings.temperature,
-                top_p=self.settings.top_p,
-                max_tokens=min(self.settings.max_tokens, remaining_tokens),
-                messages=base_messages + exchange,
+            elapsed = time.monotonic() - started
+            if turns >= self.settings.max_agent_turns or elapsed >= self.settings.max_investigation_seconds:
+                return ResearchOutcome("insufficient", "Investigation stopped before the model finished.", False, turns, elapsed, InvestigationStopReason.INVESTIGATION_LIMIT)
+            response = self._chat(
+                cve.cve_id,
+                usage,
+                messages=[
+                    {"role": "system", "content": self._system_prompt()},
+                    {"role": "user", "content": json.dumps(self._context(cve, state, documents, turns, searches, fetches), ensure_ascii=False)},
+                ] + exchange,
                 tools=AGENT_TOOLS,
                 tool_choice="auto",
                 parallel_tool_calls=False,
-                context=cve.cve_id,
             )
             turns += 1
-            turn_usage = response.usage.model_dump() if response.usage else {}
-            for key in usage:
-                usage[key] += int(turn_usage.get(key, 0))
-            state.token_usage = usage.copy()
             message = response.choices[0].message
-            logger.info("[%s] agent turn=%d tool_calls=%d tokens=%d", cve.cve_id, turns, len(message.tool_calls or []), usage["total_tokens"])
+            logger.info("[%s] research turn=%d tool_calls=%d tokens=%d", cve.cve_id, turns, len(message.tool_calls or []), usage["total_tokens"])
             if not message.tool_calls:
-                if turns >= self.settings.max_agent_turns:
-                    return ClassificationResult(cve.cve_id, ClassificationStatus.PARTIAL, operational={"stop_reason": InvestigationStopReason.NO_FINISH_TOOL, "token_usage": usage})
-                exchange = [{"role": "user", "content": "Use one of the provided tools. Finish by calling finish_investigation."}]
+                exchange = [{"role": "user", "content": "Use a provided tool and finish by calling finish_investigation."}]
                 continue
-            assistant_message = message.model_dump(exclude_none=True)
-            current_exchange = [{"role": "assistant", **assistant_message}]
+
+            current_exchange = [{"role": "assistant", **message.model_dump(exclude_none=True)}]
             for call in message.tool_calls:
                 name = call.function.name
                 try:
@@ -89,42 +131,112 @@ class InvestigationAgent:
                     result = {"error": f"invalid tool arguments: {exc}", "instruction": "Correct the arguments and call a provided tool again."}
                     state.tool_history.append(self._tool_event(name, {}, result))
                     current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)})
-                    logger.warning("[%s] tool rejected: %s", cve.cve_id, result["error"])
                     continue
-                logger.info("[%s] tool requested: %s params=%s", cve.cve_id, name, self._log_arguments(arguments))
+
                 key = (name, json.dumps(arguments, sort_keys=True))
-                if key in seen_calls and name != "finish_investigation":
-                    if name == "fetch":
-                        result = self._existing_document_result(arguments["url"], documents)
-                        if result:
-                            result["instruction"] = "This URL was already fetched. Do not fetch it again; record an exact quote from this preview now, or call finish_investigation."
-                        else:
-                            result = {"error": "this URL was already attempted; choose another source or finish_investigation"}
-                    else:
-                        result = {"error": "duplicate tool call; choose a different action or call finish_investigation"}
-                elif name == "finish_investigation":
-                    result = {"ready": True}
+                if name == "finish_investigation":
+                    try:
+                        outcome = self._research_finish(arguments, turns, time.monotonic() - started)
+                        state.tool_history.append(self._tool_event(name, arguments, {"status": "accepted"}))
+                        return outcome
+                    except ValueError as exc:
+                        result = {"error": str(exc), "instruction": "Correct the finish arguments and try again."}
+                elif key in seen_calls:
+                    result = self._duplicate_result(name, arguments, documents)
                 else:
                     seen_calls.add(key)
                     result = self._execute(name, arguments, state, documents, searches, fetches, failed_fetches)
-                    if name == "search" and "error" not in result: searches += 1
-                    if name == "fetch" and "error" not in result: fetches += 1
-                if "error" in result:
-                    logger.warning("[%s] tool completed: %s error=%s", cve.cve_id, name, result["error"])
-                else:
-                    logger.info("[%s] tool completed: %s%s", cve.cve_id, name, " (success)")
-                if name == "finish_investigation":
-                    try:
-                        final_result = self._finish(cve, arguments, taxonomy, state, usage, started, turns)
-                        state.tool_history.append(self._tool_event(name, arguments, {"status": "accepted"}))
-                        logger.info("[%s] finish accepted: status=%s labels=%d evidence=%d", cve.cve_id, final_result.status, len(final_result.labels), len(state.evidence))
-                        return final_result
-                    except ValueError as exc:
-                        logger.info("[%s] finish rejected: %s", cve.cve_id, exc)
-                        result = {"error": str(exc), "instruction": "Correct the classification and call finish_investigation again."}
+                    if name == "search" and "error" not in result:
+                        searches += 1
+                    if name == "fetch" and "error" not in result:
+                        fetches += 1
                 state.tool_history.append(self._tool_event(name, arguments, result))
                 current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)})
             exchange = current_exchange
+
+    def _classify_chunk(self, cve: CVERecord, chunk_id: int, labels: tuple[Any, ...], state: InvestigationState, usage: dict[str, int]) -> list[dict[str, Any]]:
+        payload = {
+            "chunk_id": chunk_id,
+            "vulnerability_facts": state.facts,
+            "evidence": [asdict(item) for item in state.evidence],
+            "labels": [label_dict(item) for item in labels],
+        }
+        response = self._chat(
+            cve.cve_id,
+            usage,
+            messages=[
+                {"role": "system", "content": "Evaluate every supplied taxonomy label independently. Return JSON with chunk_id and supported, where supported is an array of {label, confidence, evidence:[{evidence_id, explanation}]}. Include only evidence-backed labels and use only supplied IDs and evidence IDs."},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            response_format={"type": "json_object"},
+        )
+        decoded = self._decode_json_content(response)
+        if decoded.get("chunk_id") != chunk_id:
+            raise ValueError(f"classifier returned chunk_id {decoded.get('chunk_id')!r}, expected {chunk_id}")
+        supported = decoded.get("supported")
+        if not isinstance(supported, list):
+            raise ValueError("taxonomy chunk response requires a supported array")
+        allowed = {item.id for item in labels}
+        outside = [item.get("label") for item in supported if not isinstance(item, dict) or item.get("label") not in allowed]
+        if outside:
+            raise ValueError(f"taxonomy chunk returned labels outside its chunk: {outside}")
+        return supported
+
+    def _adjudicate(self, cve: CVERecord, candidates: list[dict[str, Any]], taxonomy: Taxonomy, state: InvestigationState, usage: dict[str, int]):
+        candidate_ids = {item["label"] for item in candidates}
+        payload = {
+            "candidates": candidates,
+            "candidate_definitions": [label_dict(label) for label in taxonomy.labels if label.id in candidate_ids],
+            "evidence": [asdict(item) for item in state.evidence],
+        }
+        response = self._chat(
+            cve.cve_id,
+            usage,
+            messages=[
+                {"role": "system", "content": "Adjudicate the evidence-backed candidates. Return JSON {status, labels}; status is classified, no_matching_label, or not_enough_information. Each label contains label, confidence, and evidence associations with evidence_id and explanation. Do not add labels outside the candidates."},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            response_format={"type": "json_object"},
+        )
+        decoded = self._decode_json_content(response)
+        raw_labels = decoded.get("labels")
+        if isinstance(raw_labels, list):
+            outside = [item.get("label") for item in raw_labels if not isinstance(item, dict) or item.get("label") not in candidate_ids]
+            if outside:
+                raise ValueError(f"adjudicator added non-candidate labels: {outside}")
+        return validate_classification(decoded.get("status"), raw_labels, taxonomy, state.evidence)
+
+    def _chat(self, context: str, usage: dict[str, int], **request: Any):
+        response = call_chat_completion(
+            self.client,
+            self.settings,
+            logger,
+            context=context,
+            request_pacer=self.request_pacer,
+            model=self.settings.model,
+            temperature=self.settings.temperature,
+            top_p=self.settings.top_p,
+            max_tokens=self.settings.max_tokens,
+            **request,
+        )
+        turn_usage = response.usage.model_dump() if response.usage else {}
+        for key in usage:
+            usage[key] += int(turn_usage.get(key, 0))
+        return response
+
+    @staticmethod
+    def _decode_json_content(response: Any) -> dict[str, Any]:
+        content = (response.choices[0].message.content or "").strip()
+        if "</think>" in content:
+            content = content.rsplit("</think>", 1)[1].strip()
+        content = content.removeprefix("```json").removesuffix("```").strip()
+        try:
+            decoded = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError("provider returned non-JSON classification content") from exc
+        if not isinstance(decoded, dict):
+            raise ValueError("classification response must be a JSON object")
+        return decoded
 
     def _execute(self, name, arguments, state, documents, searches, fetches, failed_fetches):
         if name == "search":
@@ -133,30 +245,26 @@ class InvestigationAgent:
             try:
                 results = self.web_source.search(arguments["query"])
             except Exception as exc:
-                logger.warning("search failed type=%s message=%s", type(exc).__name__, exc)
                 return {"error": self._tool_error("search", exc)}
-            logger.info("search returned %d result(s)", len(results))
             return {"results": [asdict(item) for item in results[:10]]}
         if name == "fetch":
             existing = self._existing_document_result(arguments["url"], documents)
             if existing:
-                existing["instruction"] = "This URL is already available. Record an exact quote from this preview or call finish_investigation; no network request was made."
+                existing["instruction"] = "This URL is already available; record a passage or finish."
                 return existing
             if fetches >= self.settings.max_fetch_calls:
                 return {"error": "fetch limit reached"}
             url = arguments["url"]
             if url in failed_fetches:
-                return {"error": "this URL already failed during the current investigation; choose another source"}
+                return {"error": "this URL already failed during the current investigation"}
             try:
                 document = self.web_source.fetch(url)
             except Exception as exc:
                 failed_fetches.add(url)
-                logger.warning("fetch failed url=%s type=%s message=%s", url, type(exc).__name__, exc)
                 return {"error": self._tool_error("fetch", exc), "url": url}
-            document_id = document.document_id or arguments["url"]
-            documents[document_id] = document
-            state.visited_urls.append(document.url) if document.url not in state.visited_urls else None
-            logger.info("fetched document=%s chars=%d", document_id, len(document.content))
+            documents[document.document_id or url] = document
+            if document.url not in state.visited_urls:
+                state.visited_urls.append(document.url)
             return self._document_result(document)
         if name == "record_evidence":
             document = documents.get(arguments["document_id"])
@@ -164,82 +272,51 @@ class InvestigationAgent:
                 return {"error": "document not found"}
             passages = build_passages(document.document_id or document.url, document.content, max_chars=self.settings.max_preview_chars)
             try:
-                passage = resolve_passage(
-                    passages,
-                    passage_id=str(arguments.get("passage_id", "")).strip(),
-                    quote_anchor=str(arguments.get("quote_anchor", "")).strip(),
-                )
+                passage = resolve_passage(passages, passage_id=str(arguments.get("passage_id", "")).strip(), quote_anchor=str(arguments.get("quote_anchor", "")).strip())
             except EvidenceResolutionError as exc:
                 return {"error": str(exc), "available_passage_ids": [item.passage_id for item in passages]}
-            record = EvidenceRecord(
-                evidence_id=passage.passage_id,
-                url=document.url,
-                quote=passage.text,
-                source_type="web",
-                requested_url=document.requested_url or document.url,
-                verification="passage_id" if arguments.get("passage_id") else "fuzzy_anchor",
-            )
+            record = EvidenceRecord(passage.passage_id, document.url, passage.text, "web", document.requested_url or document.url, "passage_id" if arguments.get("passage_id") else "fuzzy_anchor")
             if all(existing.evidence_id != record.evidence_id for existing in state.evidence):
                 state.evidence.append(record)
-            logger.info("recorded evidence document=%s evidence_count=%d", arguments["document_id"], len(state.evidence))
             return {"recorded": True, "evidence_id": record.evidence_id, "quote": record.quote, "evidence_count": len(state.evidence)}
         return {"error": f"unknown tool: {name}"}
 
     @staticmethod
-    def _tool_error(operation: str, exc: Exception) -> str:
-        return f"{operation} failed ({type(exc).__name__}): {exc}. Continue with another source or finish with the evidence already available."
+    def _research_finish(arguments: dict[str, Any], turns: int, duration: float) -> ResearchOutcome:
+        status = arguments.get("information_status")
+        summary = arguments.get("summary")
+        if status not in {"sufficient", "insufficient"}:
+            raise ValueError("information_status must be sufficient or insufficient")
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError("summary must be a non-empty string")
+        return ResearchOutcome(status, summary.strip(), True, turns, duration)
 
-    @staticmethod
-    def _log_arguments(arguments: dict[str, Any]) -> str:
-        """Return tool parameters safe for verbose logs; no secrets are accepted here."""
-        if "url" in arguments:
-            return f"url={arguments['url']}"
-        if "query" in arguments:
-            return f"query={arguments['query']!r}"
-        if "document_id" in arguments:
-            return f"document_id={arguments['document_id']} quote_chars={len(arguments.get('quote', ''))}"
-        if "status" in arguments:
-            return f"status={arguments['status']} labels={len(arguments.get('labels', []))}"
-        return "<none>"
-
-    def _finish(self, cve, arguments, taxonomy, state, usage, started, turns):
-        status, labels = validate_classification(arguments.get("status"), arguments.get("labels"), taxonomy, state.evidence)
-        return ClassificationResult(cve.cve_id, status, labels, operational={"turns": turns, "duration_seconds": round(time.monotonic() - started, 3), "token_usage": usage})
-
-    def _context(self, cve, taxonomy, state, documents, turns, searches, fetches):
+    def _context(self, cve, state, documents, turns, searches, fetches):
         return {
             "cve": asdict(cve),
-            "taxonomy": taxonomy.to_dict(),
             "facts": state.facts,
             "recorded_evidence": [asdict(item) for item in state.evidence],
             "tool_history": state.tool_history,
-            "fetched_urls": state.visited_urls,
-            "available_documents": [
-                {"document_id": document_id, "url": document.url, "title": document.title, "content_chars": len(document.content)}
-                for document_id, document in documents.items()
-            ],
-            "investigation_budget": {
-                "turn": turns,
-                "max_turns": self.settings.max_agent_turns,
-                "searches_used": searches,
-                "max_searches": self.settings.max_search_calls,
-                "fetches_used": fetches,
-                "max_fetches": self.settings.max_fetch_calls,
-            },
-            "token_usage": state.token_usage,
+            "available_documents": [{"document_id": key, "url": value.url, "title": value.title} for key, value in documents.items()],
+            "investigation_budget": {"turn": turns, "max_turns": self.settings.max_agent_turns, "searches_used": searches, "max_searches": self.settings.max_search_calls, "fetches_used": fetches, "max_fetches": self.settings.max_fetch_calls},
         }
 
-    def _system_prompt(self):
+    @staticmethod
+    def _system_prompt() -> str:
         return (
-            "You are an evidence-backed CVE classification investigator. Work methodically and make a complete classification. "
-            "The NVD record, description, metadata, and references are already supplied; do not fetch the NVD detail page just because it is a reference. "
-            "The initial NVD description is valid evidence and may be sufficient for classification. First decide whether it already supports a taxonomy label. If one reliable reference can resolve the uncertainty, fetch only that source. "
-            "Use the available evidence and investigate additional sources when needed; record useful evidence by passage ID and then finish_investigation. "
-            "Never fetch the same URL twice, never repeat a search, and do not search for marginal confirmation. "
-            "This is a multi-label task: assess the complete supplied taxonomy and select every label supported by the evidence, not just the first or most obvious match. "
-            "Before finishing, assess every taxonomy label independently and include all labels supported by the evidence. Use classified with all supported taxonomy IDs, no_matching_label when the evidence is sufficient but no taxonomy entry applies, or not_enough_information when the evidence genuinely cannot support a decision. "
-            "Do not spend turns restating the problem. Finish only by calling finish_investigation."
+            "Investigate the vulnerability mechanism without assigning taxonomy labels. The NVD record and description are supplied and may already be sufficient. "
+            "Use one strong reference when clarification is needed, record exact passages by passage ID, avoid duplicate searches or fetches, and finish with a concise factual summary. "
+            "Do not infer or mention labels from any particular taxonomy."
         )
+
+    @staticmethod
+    def _tool_error(operation: str, exc: Exception) -> str:
+        return f"{operation} failed ({type(exc).__name__}): {exc}. Continue with another source or finish with available evidence."
+
+    def _duplicate_result(self, name, arguments, documents):
+        if name == "fetch":
+            return self._existing_document_result(arguments.get("url", ""), documents) or {"error": "this URL was already attempted"}
+        return {"error": "duplicate tool call"}
 
     @staticmethod
     def _tool_event(name, arguments, result):
@@ -247,32 +324,21 @@ class InvestigationAgent:
         if "error" in result:
             event["error"] = str(result["error"])[:500]
         if name == "fetch":
-            event.update({
-                "url": arguments.get("url", ""),
-                "document_id": result.get("document_id"),
-                "content_chars": len(result.get("content", "")),
-                "reused": "already fetched" in result.get("instruction", "") or "no network request" in result.get("instruction", ""),
-            })
+            event.update({"url": arguments.get("url", ""), "document_id": result.get("document_id")})
         elif name == "search":
             event.update({"query": arguments.get("query", ""), "result_count": len(result.get("results", []))})
         elif name == "record_evidence":
             event.update({"document_id": arguments.get("document_id"), "passage_id": arguments.get("passage_id"), "evidence_id": result.get("evidence_id")})
         elif name == "finish_investigation":
-            event.update({"requested_status": arguments.get("status"), "label_count": len(arguments.get("labels", []))})
+            event.update({"information_status": arguments.get("information_status")})
         return event
 
     def _existing_document_result(self, url, documents):
         for document in documents.values():
-            if document.url == url:
+            if document.url == url or document.requested_url == url:
                 return self._document_result(document)
         return None
 
     def _document_result(self, document):
         passages = build_passages(document.document_id or document.url, document.content, max_chars=self.settings.max_preview_chars)
-        return {
-            "document_id": document.document_id or document.url,
-            "url": document.url,
-            "title": document.title,
-            "passages": [asdict(passage) for passage in passages],
-            "truncated": len(document.content) > self.settings.max_preview_chars,
-        }
+        return {"document_id": document.document_id or document.url, "url": document.url, "title": document.title, "passages": [asdict(item) for item in passages], "truncated": len(document.content) > self.settings.max_preview_chars}

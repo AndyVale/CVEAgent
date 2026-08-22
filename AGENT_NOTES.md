@@ -30,11 +30,13 @@ commit sequence.
   centralized classification validator.
 - Changed agent classification output to reference evidence IDs; backend materializes exact
   quotes and canonical URLs. Removed URL spelling correction logic.
-- Focused evidence/pipeline/taxonomy tests pass: `18 passed`.
+- Separated taxonomy-independent investigation from exhaustive, bounded taxonomy chunk
+  evaluation and final candidate adjudication. Added generic hierarchy policies and coverage.
+- Removed the unused one-shot classifier and obsolete pipeline/classifier arguments.
+- Full deterministic suite passes: `26 passed`.
 
 ## Next
 
-1. Commit the canonical-evidence unit.
-2. Separate taxonomy-independent investigation from exhaustive chunk classification.
-3. Add staged budget enforcement, hardened configuration/retrieval, and run-scoped storage.
-4. Align fixtures, broaden integration tests, update documentation, and run final checks.
+1. Commit the exhaustive taxonomy-classification unit.
+2. Add staged budget enforcement, hardened configuration/retrieval, and run-scoped storage.
+3. Align fixtures, broaden integration tests, update documentation, and run final checks.

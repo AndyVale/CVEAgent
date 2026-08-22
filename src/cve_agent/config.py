@@ -37,6 +37,8 @@ class Settings:
     max_search_calls: int
     max_fetch_calls: int
     max_investigation_seconds: float
+    max_input_tokens_per_request: int = 12000
+    finalization_overrun_percent: float = 15.0
 
 
 def load_settings(path: str | Path = "config.toml") -> Settings:

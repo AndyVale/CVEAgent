@@ -46,7 +46,6 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
         active_web_source = web_source or CachedWebClient(settings, searcher=TavilySearchProvider(settings).search if settings.web_provider == "tavily" else None)
         pipeline = Pipeline(
             cve_source or NVDClient(settings),
-            active_web_source,
             classifier or InvestigationAgent(settings, active_web_source),
             database or Database(settings.database),
         )

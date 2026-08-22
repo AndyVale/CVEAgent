@@ -3,24 +3,24 @@ from types import SimpleNamespace
 
 import httpx
 
-from cve_agent.adapters import CachedWebClient
-from cve_agent.adapters import TavilySearchProvider
+from cve_agent.adapters import CachedWebClient, TavilySearchProvider
 from cve_agent.agent import InvestigationAgent
 from cve_agent.config import Settings
-from cve_agent.models import CVERecord, ClassificationStatus, EvidenceRecord, InvestigationState, SearchResult
+from cve_agent.models import CVERecord, ClassificationStatus, Document, EvidenceRecord, InvestigationState, SearchResult
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
 
 
 def settings(tmp_path):
     return Settings(
         model="fixture-model", endpoint="https://fixture.test/v1", api_key=None,
-        max_tokens=500, temperature=0.0, top_p=1.0, llm_timeout=5, llm_retry_count=0, llm_retry_wait=0.01, llm_retry_max_wait=0.02, llm_min_request_interval=0.0,
+        max_tokens=500, temperature=0.0, top_p=1.0, llm_timeout=5, llm_retry_count=0,
+        llm_retry_wait=0.01, llm_retry_max_wait=0.02, llm_min_request_interval=0.0,
         nvd_base_url="https://nvd.test", nvd_timeout=5, retry_count=0, web_timeout=5,
         web_provider="tavily", tavily_base_url="https://api.tavily.com", tavily_max_results=5,
-        tavily_search_depth="basic", tavily_api_key=None,
-        cache_dir=tmp_path / "cache", max_document_chars=10000, max_preview_chars=1000,
-        database=tmp_path / "db.sqlite", token_budget=5000, max_agent_turns=8,
-        max_search_calls=1, max_fetch_calls=1, max_investigation_seconds=30,
+        tavily_search_depth="basic", tavily_api_key=None, cache_dir=tmp_path / "cache",
+        max_document_chars=10000, max_preview_chars=1000, database=tmp_path / "db.sqlite",
+        token_budget=5000, max_agent_turns=8, max_search_calls=1, max_fetch_calls=1,
+        max_investigation_seconds=30,
     )
 
 
@@ -29,239 +29,127 @@ class FixtureWeb:
         return [SearchResult("Advisory", "https://fixture.test/advisory", "memory corruption")]
 
     def fetch(self, url):
-        from cve_agent.models import Document
         return Document(url, "Advisory", "The issue causes memory corruption in aggregate processing.", document_id="doc-1")
 
 
 class FailingFetchWeb(FixtureWeb):
     def fetch(self, url):
-        raise httpx.HTTPStatusError("forbidden", request=httpx.Request("GET", url), response=httpx.Response(403, request=httpx.Request("GET", url)))
+        request = httpx.Request("GET", url)
+        raise httpx.HTTPStatusError("forbidden", request=request, response=httpx.Response(403, request=request))
 
 
 class ToolCall:
     def __init__(self, call_id, name, arguments):
         self.id = call_id
-        self.function = SimpleNamespace(name=name, arguments=json.dumps(arguments))
+        self.function = SimpleNamespace(name=name, arguments=arguments if isinstance(arguments, str) else json.dumps(arguments))
 
 
 class Message:
-    def __init__(self, calls):
-        self.tool_calls = calls
-        self.content = None
+    def __init__(self, calls=None, content=None):
+        self.tool_calls = calls or []
+        self.content = content
 
     def model_dump(self, exclude_none=True):
-        return {"role": "assistant", "tool_calls": [{"id": call.id, "type": "function", "function": {"name": call.function.name, "arguments": call.function.arguments}} for call in self.tool_calls]}
+        result = {"role": "assistant"}
+        if self.tool_calls:
+            result["tool_calls"] = [{"id": call.id, "type": "function", "function": {"name": call.function.name, "arguments": call.function.arguments}} for call in self.tool_calls]
+        if self.content is not None:
+            result["content"] = self.content
+        return result
 
 
-class AgentClient:
-    def __init__(self):
+def response(message, total=15):
+    usage = SimpleNamespace(model_dump=lambda: {"prompt_tokens": total - 5, "completion_tokens": 5, "total_tokens": total})
+    return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)
+
+
+class FullFlowClient:
+    def __init__(self, *, malformed_first=False):
         self.requests = []
-        self.steps = [
-            ("search", {"query": "CVE-1 aggregate memory corruption"}),
-            ("fetch", {"url": "https://fixture.test/advisory"}),
-            ("record_evidence", {"document_id": "doc-1", "passage_id": "doc-1:p1", "quote_anchor": ""}),
-            ("finish_investigation", {"status": "classified", "labels": [{"label": "CWE-119", "confidence": 0.9, "evidence": [{"evidence_id": "doc-1:p1", "explanation": "The advisory directly describes the impact."}]}]}),
-        ]
+        self.research_step = -1 if malformed_first else 0
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
 
     def create(self, **kwargs):
         self.requests.append(kwargs)
-        name, arguments = self.steps[len(self.requests) - 1]
-        usage = SimpleNamespace(model_dump=lambda: {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
-        return SimpleNamespace(choices=[SimpleNamespace(message=Message([ToolCall(f"call-{len(self.requests)}", name, arguments)]))], usage=usage)
+        if "tools" in kwargs:
+            if self.research_step == -1:
+                self.research_step = 0
+                return response(Message([ToolCall("bad", "search", "{")]))
+            steps = [
+                ("search", {"query": "generic vulnerability mechanism"}),
+                ("fetch", {"url": "https://fixture.test/advisory"}),
+                ("record_evidence", {"document_id": "doc-1", "passage_id": "doc-1:p1", "quote_anchor": ""}),
+                ("finish_investigation", {"information_status": "sufficient", "summary": "The product corrupts memory while processing aggregate input."}),
+            ]
+            name, arguments = steps[self.research_step]
+            self.research_step += 1
+            return response(Message([ToolCall(f"call-{self.research_step}", name, arguments)]))
+        system = kwargs["messages"][0]["content"]
+        if system.startswith("Evaluate every"):
+            payload = json.loads(kwargs["messages"][1]["content"])
+            return response(Message(content=json.dumps({"chunk_id": payload["chunk_id"], "supported": [{
+                "label": payload["labels"][0]["id"], "confidence": 0.9,
+                "evidence": [{"evidence_id": "doc-1:p1", "explanation": "The exact passage supports the label."}],
+            }]})))
+        return response(Message(content=json.dumps({"status": "classified", "labels": [{
+            "label": "MEMORY", "confidence": 0.9,
+            "evidence": [{"evidence_id": "doc-1:p1", "explanation": "The exact passage supports the label."}],
+        }]})))
+
+
+def taxonomy():
+    return Taxonomy((TaxonomyLabel("MEMORY", "Memory Safety Error", "Invalid memory access or corruption."),))
+
+
+def test_agent_collects_evidence_then_classifies_complete_taxonomy(tmp_path):
+    client = FullFlowClient()
+    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(CVERecord("VULN-1", "A vulnerability exists."), taxonomy(), InvestigationState())
+    assert result.status == ClassificationStatus.CLASSIFIED
+    assert result.labels[0].label == "MEMORY"
+    assert result.labels[0].evidence[0].quote == "The issue causes memory corruption in aggregate processing."
+    assert result.operational["coverage"]["complete"] is True
+    research_contexts = [json.loads(item["messages"][1]["content"]) for item in client.requests if "tools" in item]
+    assert all("taxonomy" not in context for context in research_contexts)
+
+
+def test_malformed_tool_arguments_are_recoverable(tmp_path):
+    client = FullFlowClient(malformed_first=True)
+    state = InvestigationState()
+    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(CVERecord("VULN-1", "fixture"), taxonomy(), state)
+    assert result.status == ClassificationStatus.CLASSIFIED
+    assert state.tool_history[0]["status"] == "error"
+    assert "invalid tool arguments" in state.tool_history[0]["error"]
 
 
 def test_agent_reports_empty_provider_response(tmp_path):
-    class EmptyResponseClient:
-        def __init__(self):
-            self.chat = SimpleNamespace(completions=SimpleNamespace(create=lambda **kwargs: SimpleNamespace(
-                id="req-empty", model="fixture-model", choices=None, error=None
-            )))
-
-    client = EmptyResponseClient()
-    taxonomy = Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),))
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kwargs: SimpleNamespace(id="empty", choices=None, error=None))))
     try:
-        InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(
-            CVERecord("CVE-1", "A vulnerability exists."), [], taxonomy, InvestigationState()
-        )
+        InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(CVERecord("VULN-1", "fixture"), taxonomy(), InvestigationState())
     except RuntimeError as exc:
         assert "no usable choices" in str(exc)
-        assert "req-empty" in str(exc)
     else:
-        raise AssertionError("expected empty provider response to fail clearly")
+        raise AssertionError("expected empty completion failure")
 
 
-def test_agent_promotes_only_recorded_evidence(tmp_path):
-    client = AgentClient()
-    taxonomy = Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),))
-    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(CVERecord("CVE-1", "A vulnerability exists."), [], taxonomy, InvestigationState())
-    assert result.status == "classified"
-    assert result.labels[0].label == "CWE-119"
-    assert len(client.requests) == 4
-    assert all(request["tool_choice"] == "auto" for request in client.requests)
-    assert all(request["parallel_tool_calls"] is False for request in client.requests)
-    final_context = json.loads(client.requests[-1]["messages"][1]["content"])
-    assert final_context["recorded_evidence"][0]["quote"] == "The issue causes memory corruption in aggregate processing."
-    assert final_context["fetched_urls"] == ["https://fixture.test/advisory"]
-    assert final_context["available_documents"][0]["document_id"] == "doc-1"
+def test_agent_marks_result_partial_when_research_limit_is_reached(tmp_path):
+    configured = settings(tmp_path).__class__(**{**settings(tmp_path).__dict__, "max_agent_turns": 1})
 
-
-def test_agent_prompt_requires_all_matching_labels(tmp_path):
-    prompt = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())._system_prompt()
-    assert "multi-label task" in prompt
-    assert "every label supported" in prompt
-
-
-def test_agent_can_classify_from_initial_nvd_evidence(tmp_path):
-    class FinishClient:
-        def __init__(self):
-            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
-
+    class LimitedClient(FullFlowClient):
         def create(self, **kwargs):
-            cve = json.loads(kwargs["messages"][1]["content"])["cve"]
-            call = ToolCall("finish-1", "finish_investigation", {
-                "status": "classified",
-                "labels": [{"label": "CWE-119", "confidence": 0.8, "evidence": [{
-                    "evidence_id": "nvd-description",
-                    "explanation": "The NVD description directly supports the label.",
-                }]}],
-            })
-            usage = SimpleNamespace(model_dump=lambda: {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
-            return SimpleNamespace(choices=[SimpleNamespace(message=Message([call]))], usage=usage)
+            if "tools" not in kwargs:
+                system = kwargs["messages"][0]["content"]
+                if system.startswith("Evaluate every"):
+                    payload = json.loads(kwargs["messages"][1]["content"])
+                    return response(Message(content=json.dumps({"chunk_id": payload["chunk_id"], "supported": []})))
+            return super().create(**kwargs)
 
-    state = InvestigationState(evidence=[EvidenceRecord(
-        "nvd-description", "https://nvd.nist.gov/vuln/detail/CVE-1",
-        "The vulnerability causes a memory buffer error.", "nvd_description",
-    )])
-    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), FinishClient()).classify(
-        CVERecord("CVE-1", "The vulnerability causes a memory buffer error."), [],
-        Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),)), state,
-    )
-    assert result.status == "classified"
-    assert state.tool_history[-1]["tool"] == "finish_investigation"
-    assert state.tool_history[-1]["status"] == "success"
-
-
-def test_cached_web_client_extracts_and_bounds_html(tmp_path):
-    transport = httpx.MockTransport(lambda request: httpx.Response(200, text="<html><head><title>Advisory</title></head><body><nav>Noise</nav><main><p>Important vulnerability evidence.</p></main></body></html>"))
-    client = CachedWebClient(settings(tmp_path), http_client=httpx.Client(transport=transport))
-    document = client.fetch("https://fixture.test/page")
-    assert document.document_id
-    assert "Important vulnerability evidence." in document.content
-    assert "<main>" not in document.content
-
-
-def test_agent_stops_when_turn_limit_is_reached(tmp_path):
-    client = AgentClient()
-    configured = settings(tmp_path)
-    configured = configured.__class__(**{**configured.__dict__, "max_agent_turns": 1})
-    result = InvestigationAgent(configured, FixtureWeb(), client).classify(
-        CVERecord("CVE-1", "A vulnerability exists."), [],
-        Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),)), InvestigationState(),
-    )
-    assert result.status == "partial"
+    result = InvestigationAgent(configured, FixtureWeb(), LimitedClient()).classify(CVERecord("VULN-1", "fixture"), taxonomy(), InvestigationState())
+    assert result.status == ClassificationStatus.PARTIAL
     assert result.operational["stop_reason"] == "investigation_limit"
+    assert result.operational["coverage"]["complete"] is True
 
 
-def test_tavily_search_provider_maps_results_and_authenticates(tmp_path):
-    configured = settings(tmp_path).__class__(**{**settings(tmp_path).__dict__, "tavily_api_key": "tvly-fixture"})
-    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"results": [{"title": "Advisory", "url": "https://fixture.test/advisory", "content": "memory corruption"}]}))
-    provider = TavilySearchProvider(configured, http_client=httpx.Client(transport=transport))
-    results = provider.search("CVE-1")
-    assert results == [SearchResult("Advisory", "https://fixture.test/advisory", "memory corruption")]
-
-
-def test_fetch_failure_is_returned_to_agent_instead_of_escaping(tmp_path):
-    agent = InvestigationAgent(settings(tmp_path), FailingFetchWeb(), AgentClient())
-    failed_urls = set()
-    result = agent._execute("fetch", {"url": "https://fixture.test/forbidden"}, InvestigationState(), {}, 0, 0, failed_urls)
-    assert result["url"] == "https://fixture.test/forbidden"
-    assert "HTTPStatusError" in result["error"]
-    assert "Continue with another source" in result["error"]
-    repeated = agent._execute("fetch", {"url": "https://fixture.test/forbidden"}, InvestigationState(), {}, 0, 0, failed_urls)
-    assert "already failed" in repeated["error"]
-
-
-def test_record_evidence_resolves_fuzzy_anchor_to_exact_passage(tmp_path):
-    agent = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())
-    documents = {}
-    state = InvestigationState()
-    fetched = agent._execute("fetch", {"url": "https://fixture.test/advisory"}, state, documents, 0, 0, set())
-    recorded = agent._execute(
-        "record_evidence",
-        {"document_id": fetched["document_id"], "passage_id": "", "quote_anchor": "issue causes memory corruption aggregate processing"},
-        state,
-        documents,
-        0,
-        1,
-        set(),
-    )
-    assert recorded["recorded"] is True
-    assert recorded["evidence_id"] == "doc-1:p1"
-    assert state.evidence[-1].quote == "The issue causes memory corruption in aggregate processing."
-    assert state.evidence[-1].verification == "fuzzy_anchor"
-
-
-def test_finish_materializes_application_owned_quote(tmp_path):
-    agent = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())
-    state = InvestigationState(evidence=[EvidenceRecord(
-        "doc-1:p1", "https://fixture.test/advisory", "memory corruption", "web"
-    )])
-    result = agent._finish(
-        CVERecord("CVE-1", "fixture"),
-        {"status": "classified", "labels": [{
-            "label": "CWE-119",
-            "confidence": 0.8,
-            "evidence": [{"evidence_id": "doc-1:p1", "explanation": "The source supports this label."}],
-        }]},
-        Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),)),
-        state,
-        {},
-        0,
-        1,
-    )
-    assert result.status == "classified"
-    assert result.labels[0].evidence[0].quote == "memory corruption"
-
-
-def test_finish_rejects_unknown_evidence_id(tmp_path):
-    agent = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())
-    state = InvestigationState(evidence=[EvidenceRecord("known", "https://fixture.test/a", "evidence", "web")])
-    try:
-        agent._finish(
-            CVERecord("CVE-1", "fixture"),
-            {"status": "classified", "labels": [{
-                "label": "CWE-119",
-                "confidence": 0.8,
-                "evidence": [{"evidence_id": "unknown", "explanation": "source"}],
-            }]},
-            Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),)),
-            state,
-            {},
-            0,
-            1,
-        )
-    except ValueError as exc:
-        assert "unknown evidence_id" in str(exc)
-    else:
-        raise AssertionError("expected unknown evidence ID to be rejected")
-
-
-def test_finish_supports_no_matching_label_status(tmp_path):
-    agent = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())
-    result = agent._finish(
-        CVERecord("CVE-1", "fixture"),
-        {"status": ClassificationStatus.NO_MATCHING_LABEL.value, "labels": []},
-        Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),)),
-        InvestigationState(),
-        {},
-        0,
-        1,
-    )
-    assert result.status == ClassificationStatus.NO_MATCHING_LABEL
-
-
-def test_repeated_fetch_reuses_document_without_network_call(tmp_path):
+def test_record_evidence_resolves_anchor_and_reuses_fetch(tmp_path):
     class CountingWeb(FixtureWeb):
         def __init__(self):
             self.fetches = 0
@@ -271,11 +159,35 @@ def test_repeated_fetch_reuses_document_without_network_call(tmp_path):
             return super().fetch(url)
 
     web = CountingWeb()
-    agent = InvestigationAgent(settings(tmp_path), web, AgentClient())
-    documents = {}
-    state = InvestigationState()
+    agent = InvestigationAgent(settings(tmp_path), web, FullFlowClient())
+    documents, state = {}, InvestigationState()
     first = agent._execute("fetch", {"url": "https://fixture.test/advisory"}, state, documents, 0, 0, set())
     second = agent._execute("fetch", {"url": "https://fixture.test/advisory"}, state, documents, 0, 1, set())
+    recorded = agent._execute("record_evidence", {"document_id": "doc-1", "passage_id": "", "quote_anchor": "issue causes memory corruption aggregate processing"}, state, documents, 0, 1, set())
     assert web.fetches == 1
     assert second["document_id"] == first["document_id"]
-    assert "no network request was made" in second["instruction"]
+    assert recorded["evidence_id"] == "doc-1:p1"
+    assert state.evidence[0].verification == "fuzzy_anchor"
+
+
+def test_fetch_failure_is_recoverable(tmp_path):
+    agent = InvestigationAgent(settings(tmp_path), FailingFetchWeb(), FullFlowClient())
+    failed_urls = set()
+    result = agent._execute("fetch", {"url": "https://fixture.test/forbidden"}, InvestigationState(), {}, 0, 0, failed_urls)
+    assert "HTTPStatusError" in result["error"]
+    repeated = agent._execute("fetch", {"url": "https://fixture.test/forbidden"}, InvestigationState(), {}, 0, 0, failed_urls)
+    assert "already failed" in repeated["error"]
+
+
+def test_cached_web_client_extracts_html(tmp_path):
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, text="<html><body><main><p>Important vulnerability evidence with enough context for reliable extraction.</p></main></body></html>"))
+    document = CachedWebClient(settings(tmp_path), http_client=httpx.Client(transport=transport)).fetch("https://fixture.test/page")
+    assert "Important vulnerability evidence" in document.content
+    assert "<main>" not in document.content
+
+
+def test_tavily_search_provider_maps_results(tmp_path):
+    configured = settings(tmp_path).__class__(**{**settings(tmp_path).__dict__, "tavily_api_key": "fixture-key"})
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"results": [{"title": "Advisory", "url": "https://fixture.test/advisory", "content": "memory corruption"}]}))
+    results = TavilySearchProvider(configured, http_client=httpx.Client(transport=transport)).search("VULN-1")
+    assert results == [SearchResult("Advisory", "https://fixture.test/advisory", "memory corruption")]

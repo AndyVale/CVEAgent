@@ -15,7 +15,7 @@ class Source:
 
 
 class Classifier:
-    def classify(self, cve, evidence, taxonomy, state):
+    def classify(self, cve, taxonomy, state):
         assert state.evidence[0].url == "https://nvd.nist.gov/vuln/detail/CVE-OK"
         assert state.evidence[0].quote == cve.description
         assert state.tool_history[0]["tool"] == "get_cve"
@@ -32,7 +32,7 @@ def test_pipeline_preserves_order_and_isolates_cve_failure(tmp_path):
     taxonomy = Taxonomy((TaxonomyLabel("CWE-120", "Buffer Copy", "copy without bounds"),))
     with Database(tmp_path / "results.sqlite") as db:
         pass
-    results = Pipeline(source, Web(), Classifier(), Database(tmp_path / "results.sqlite")).run(["CVE-OK", "CVE-BAD"], taxonomy)
+    results = Pipeline(source, Classifier(), Database(tmp_path / "results.sqlite")).run(["CVE-OK", "CVE-BAD"], taxonomy)
     assert [x.cve_id for x in results] == ["CVE-OK", "CVE-BAD"]
     assert results[0].status == "classified"
     assert results[1].status == "failed"

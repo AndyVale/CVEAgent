@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 
 class TaxonomyError(ValueError):
     """Raised when a taxonomy violates the input contract."""
+
+
+class HierarchyPolicy(StrEnum):
+    MOST_SPECIFIC = "most_specific"
+    INCLUDE_ANCESTORS = "include_ancestors"
 
 
 @dataclass(frozen=True)
@@ -22,6 +28,7 @@ class TaxonomyLabel:
 @dataclass(frozen=True)
 class Taxonomy:
     labels: tuple[TaxonomyLabel, ...]
+    hierarchy_policy: HierarchyPolicy = HierarchyPolicy.MOST_SPECIFIC
 
     @property
     def by_id(self) -> dict[str, TaxonomyLabel]:
@@ -31,13 +38,18 @@ class Taxonomy:
         return tuple(label for label in self.labels if label.parent == label_id)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"labels": [{"id": x.id, "name": x.name, "description": x.description, **({"parent": x.parent} if x.parent else {}), **x.extra} for x in self.labels]}
+        return {"hierarchy_policy": self.hierarchy_policy.value, "labels": [{"id": x.id, "name": x.name, "description": x.description, **({"parent": x.parent} if x.parent else {}), **x.extra} for x in self.labels]}
 
 
 def load_taxonomy(path: str | Path) -> Taxonomy:
     with Path(path).open(encoding="utf-8") as handle:
         raw = json.load(handle)
     entries = raw.get("labels") if isinstance(raw, dict) else raw
+    policy_value = raw.get("hierarchy_policy", HierarchyPolicy.MOST_SPECIFIC.value) if isinstance(raw, dict) else HierarchyPolicy.MOST_SPECIFIC.value
+    try:
+        hierarchy_policy = HierarchyPolicy(policy_value)
+    except ValueError as exc:
+        raise TaxonomyError(f"invalid hierarchy_policy: {policy_value!r}") from exc
     if not isinstance(entries, list):
         raise TaxonomyError("taxonomy must be a JSON array or an object with a labels array")
     labels: list[TaxonomyLabel] = []
@@ -68,4 +80,4 @@ def load_taxonomy(path: str | Path) -> Taxonomy:
                 raise TaxonomyError(f"cyclic taxonomy hierarchy involving {current!r}")
             seen.add(current)
             current = by_id[current].parent  # type: ignore[assignment]
-    return Taxonomy(tuple(labels))
+    return Taxonomy(tuple(labels), hierarchy_policy)

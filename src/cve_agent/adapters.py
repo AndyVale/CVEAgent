@@ -7,17 +7,14 @@ import urllib.error
 import urllib.request
 import hashlib
 import logging
-from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from openai import OpenAI
 import httpx
 import trafilatura
 
 from cve_agent.config import Settings
-from cve_agent.llm import RequestPacer, call_chat_completion
-from cve_agent.models import CVERecord, ClassificationResult, ClassificationStatus, Document, Evidence, LabelClassification, Reference, SearchResult
+from cve_agent.models import CVERecord, Document, Reference, SearchResult
 
 
 logger = logging.getLogger(__name__)
@@ -156,67 +153,3 @@ class CachedWebClient:
         document = Document(url=url, title=title, content=content, metadata={"truncated": len(raw_response) > len(raw_content)}, document_id=hashlib.sha256(url.encode()).hexdigest()[:16])
         path.write_text(json.dumps(document.__dict__), encoding="utf-8")
         return document
-
-
-class OpenAIClassifier:
-    def __init__(self, settings: Settings, client: OpenAI | None = None):
-        self.settings = settings
-        self.request_pacer = RequestPacer(settings.llm_min_request_interval)
-        self.client = client or OpenAI(
-            api_key=settings.api_key or "EMPTY",
-            base_url=settings.endpoint,
-            timeout=settings.llm_timeout,
-            max_retries=0,
-        )
-
-    def classify(self, cve, evidence, taxonomy, state) -> ClassificationResult:
-        prompt = {
-            "cve": asdict(cve) if is_dataclass(cve) else cve,
-            "evidence": [asdict(item) if is_dataclass(item) else item for item in evidence],
-            "taxonomy": taxonomy.to_dict(),
-            "investigation": state.to_dict(),
-        }
-        response = call_chat_completion(
-            self.client,
-            self.settings,
-            logger,
-            context=cve.cve_id,
-            request_pacer=self.request_pacer,
-            model=self.settings.model,
-            temperature=self.settings.temperature,
-            top_p=self.settings.top_p,
-            max_tokens=self.settings.max_tokens,
-            messages=[
-                {"role": "system", "content": f"You are a CVE multi-label classification agent. Return ONLY one JSON object matching this exact schema: {{\"cve_id\": string, \"status\": one of {[status.value for status in (ClassificationStatus.CLASSIFIED, ClassificationStatus.NO_MATCHING_LABEL, ClassificationStatus.NOT_ENOUGH_INFORMATION)]}, \"labels\": [{{\"label\": taxonomy ID, \"confidence\": number from 0 to 1, \"evidence\": [{{\"url\": string, \"quote\": string, \"explanation\": string}}]}}]}}. This is multi-label classification: assess the complete supplied taxonomy and return every label supported by the evidence, not only the first match. The label field must contain an ID from the supplied taxonomy, never a label name. Use no_matching_label when the evidence is sufficient but no taxonomy label applies; use not_enough_information only when the evidence is insufficient. Do not return labels for either of those statuses. Do not restate the CVE, taxonomy, or prompt. Do not return markdown or explanatory text."},
-                {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
-            ],
-            response_format={"type": "json_object"},
-        )
-        content = response.choices[0].message.content or ""
-        if "</think>" in content:
-            content = content.rsplit("</think>", 1)[1]
-        content = content.strip().removeprefix("```json").removesuffix("```").strip()
-        try:
-            decoded = json.loads(content)
-        except json.JSONDecodeError as exc:
-            raise ValueError("OpenAI-compatible provider returned non-JSON classification content") from exc
-        if decoded.get("cve_id") != cve.cve_id:
-            raise ValueError(f"classifier returned CVE ID {decoded.get('cve_id')!r}, expected {cve.cve_id!r}")
-        status = decoded.get("status")
-        try:
-            status = ClassificationStatus(status)
-        except ValueError as exc:
-            raise ValueError(f"invalid classification status: {status!r}") from exc
-        labels = [LabelClassification(x["label"], float(x["confidence"]), tuple(Evidence(**e) for e in x.get("evidence", []))) for x in decoded.get("labels", [])]
-        allowed = taxonomy.by_id
-        invalid = [x.label for x in labels if x.label not in allowed]
-        if invalid:
-            raise ValueError(f"classifier returned labels outside taxonomy: {invalid}")
-        if any(not 0 <= x.confidence <= 1 or not x.evidence for x in labels):
-            raise ValueError("each selected label requires confidence in [0, 1] and supporting evidence")
-        if status in {ClassificationStatus.NOT_ENOUGH_INFORMATION, ClassificationStatus.NO_MATCHING_LABEL} and labels:
-            raise ValueError(f"{status.value} results cannot contain labels")
-        if status == ClassificationStatus.CLASSIFIED and not labels:
-            raise ValueError("classified results must contain at least one label")
-        usage = response.usage.model_dump() if response.usage else {}
-        return ClassificationResult(cve.cve_id, status, labels, operational={"token_usage": usage})
