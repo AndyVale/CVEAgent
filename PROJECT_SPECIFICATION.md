@@ -16,18 +16,21 @@ The task is multi-label classification. The classification system is intended to
 
 The classifier should favor evidence-backed decisions and should prefer `not_enough_information` over unsupported speculation.
 
-## Initial architecture
+## Architecture
 
-The system is composed of a single classification agent.
+The system is coordinated by a single per-CVE classification agent with distinct evidence
+investigation and taxonomy-classification phases.
 
-The agent:
+The system:
 
 - receives a CVE ID and a user-supplied taxonomy;
 - queries the NVD API first;
 - treats the NVD CVE description as the strongest initial evidence;
 - may dynamically investigate additional sources on the web;
 - maintains an evolving investigation scratchpad for the current CVE;
-- uses the taxonomy to understand the available labels and their definitions;
+- investigates the vulnerability mechanism without exposing the complete taxonomy to every
+  research turn;
+- evaluates every supplied taxonomy label in bounded exhaustive chunks;
 - produces a structured JSON classification result.
 
 The agent has no file-system access and must operate only through the tools exposed to it.
@@ -45,6 +48,10 @@ A basic taxonomy entry contains:
 - `description`: textual definition of the label.
 
 Hierarchical taxonomies may additionally represent parent/child relationships. A label may refer to a parent label by identifier. The implementation should derive child relationships rather than requiring duplicated parent and child references.
+
+A taxonomy may define `hierarchy_policy` as `most_specific` or `include_ancestors`.
+The default is `most_specific`. Hierarchy behavior belongs to the supplied taxonomy and must
+not be inferred from CWE or any other particular taxonomy family.
 
 The classifier MUST only emit label IDs that exist in the supplied taxonomy.
 
@@ -101,7 +108,7 @@ The system provides search/fetch tooling for web investigation.
 
 The classifier may decide dynamically which searches or pages are useful. Do not force a rigid sequence of searches beyond the requirement that NVD is queried first.
 
-Retrieved contents should be cached when appropriate so that repeated investigations and tests do not unnecessarily repeat network requests.
+Retrieved contents should be cached when appropriate so that repeated investigations and tests do not unnecessarily repeat network requests. Downloads must be bounded while streaming, restricted to supported textual content, and retain requested and resolved URL provenance.
 
 Transient web-search failures should be retried using a bounded retry policy. A retry mechanism such as `tenacity` may be used by the implementation. The retry count and backoff are implementation concerns; the agent should not assume that unlimited retries are available.
 
@@ -131,7 +138,12 @@ Do not use the scratchpad as persistent learning across CVEs.
 
 Every assigned label must be supported by evidence.
 
-Evidence should be as concrete and source-grounded as possible. When available, include:
+Evidence must be application-owned and source-grounded. Fetched previews are divided into
+stable passages. The model selects an exact passage ID or supplies an approximate anchor that
+the application accepts only when it resolves uniquely. Final label decisions reference an
+evidence ID; the application materializes the exact quote and canonical resolved URL.
+
+When available, include:
 
 - the source URL;
 - a relevant quotation or excerpt from the source;
@@ -171,7 +183,12 @@ The agent should decide when to stop by considering, together:
 
 The goal is to stop when further investigation has diminishing expected value, without unnecessarily overengineering the investigation process.
 
-Token usage is a hard resource constraint. If the token limit prevents completion of a full investigation, the agent must produce the best structured answer supported by the evidence already collected. It may return `not_enough_information` when appropriate and must explicitly report that the investigation was constrained by the token limit.
+Token usage is a staged resource constraint. Before investigation, the system reserves the
+estimated cost of exhaustive taxonomy evaluation and final adjudication. Investigation cannot
+consume that reserve. A configurable bounded finalization overrun may be used only by the
+classification phases. If unexpected usage prevents completion, the agent must return a
+`partial` result containing validated labels, exact taxonomy coverage, and the stop reason.
+Complete outcomes require every taxonomy chunk to have been evaluated.
 
 ## Output format
 
@@ -209,7 +226,7 @@ When the CVE cannot be classified reliably from the available information:
 }
 ```
 
-The implementation may extend the schema with operational metadata needed for reproducibility and persistence, but the classification information itself must remain explicit and machine-readable.
+The implementation may extend the schema with operational metadata needed for reproducibility and persistence, including run ID, taxonomy coverage, token usage, and stop reason, but the classification information itself must remain explicit and machine-readable.
 
 The label field MUST contain taxonomy IDs, not newly generated label names.
 
@@ -217,7 +234,9 @@ Confidence is the classifier's reported confidence for the selected label. Confi
 
 ## Failure and operational behavior
 
-The system should preserve partial investigation state and the associated error when an investigation is aborted by an unrecoverable failure.
+The system should checkpoint partial investigation state after NVD retrieval, evidence changes,
+and completed taxonomy chunks. Persisted records are scoped by run ID and input position so
+repeated classification of the same CVE does not overwrite prior experiments.
 
 An interrupted CVE does not need to be automatically resumed in the initial implementation.
 

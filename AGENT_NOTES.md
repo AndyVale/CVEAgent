@@ -1,10 +1,10 @@
 # Agent Notes
 
-## Current focus
+## Current status
 
-Implement the approved taxonomy-agnostic classification refactor in logical commits.
-The user approved replacing the former URL-correction commit and approved the planned
-commit sequence.
+The approved taxonomy-agnostic classification refactor is implemented. The obsolete
+URL-correction commit was replaced with logical canonical-evidence, exhaustive-classification,
+budget, retrieval, persistence, test, and documentation commits.
 
 ## Confirmed design
 
@@ -47,8 +47,13 @@ commit sequence.
 - Aligned placeholder fixtures, added an active fixture-driven integration test and strict
   validator tests, verified production contains no fixture/CWE identifiers, and moved pytest
   to the uv development dependency group. Full deterministic suite passes: `44 passed`.
+- Added bounded correction attempts for malformed taxonomy-chunk/final JSON and consistent
+  preflight/classification chunk planning. Updated README and project specification.
+- Final validation: `45 passed`, bytecode compilation passes, diff check passes, and the
+  example taxonomy passes preflight with `config.example.toml`.
 
-## Next
+## Remaining work
 
-1. Commit fixture and integration-test alignment.
-2. Update user/specification documentation and run final checks.
+- The partial-positive labelled-dataset evaluation command remains intentionally deferred.
+- NVD weakness assignments remain intentionally excluded and can be added later as an
+  optional evidence source without changing the taxonomy contract.

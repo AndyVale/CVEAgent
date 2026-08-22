@@ -1,90 +1,139 @@
 # CVEAgent
 
-CVEAgent is an evidence-backed, multi-label CVE classification system. The initial
-implementation provides the taxonomy contract, NVD/web/LLM adapter interfaces, local
-SQLite persistence, and a JSON CLI foundation.
+CVEAgent investigates CVEs and performs evidence-backed, multi-label classification against
+an arbitrary taxonomy supplied by the user. CWE is supported as one possible taxonomy, but
+the implementation contains no CWE-specific classification rules and does not use NVD's
+weakness assignments.
 
-## Development
+## Setup
 
-The project uses Python and `uv`:
+The project uses Python 3.11+ and `uv`:
 
-```text
-uv run cve-agent --taxonomy fixtures/example_taxonomy.json CVE-2026-0001
+```bash
+uv sync --dev
+cp config.example.toml config.toml
+export API_KEY="your-provider-key"
 ```
 
-Copy [config.example.toml](config.example.toml) to `config.toml` and edit the local copy.
-The real `config.toml` is ignored by Git. The default runtime targets OpenRouter at
-`https://openrouter.ai/api/v1` and the configured model is
-`nvidia/nemotron-3-ultra-550b-a55b:free`. You can change `[runtime].endpoint` and
-`[runtime].model` for another OpenAI-compatible provider or model.
+`config.toml` and local credentials are ignored by Git. `API_KEY` is sent to the configured
+OpenAI-compatible endpoint. Tavily search is optional and uses `TAVILY_API_KEY`.
 
-The API key value is never placed in the configuration file. Export the provider key as
-`API_KEY` before running the CLI. The OpenAI Python client sends it as a bearer token.
+## Taxonomies
 
-The runtime section also controls `max_tokens`, `temperature`, `top_p`, request
-`timeout_seconds`, LLM `retry_count`, and the LLM retry backoff. LLM, NVD, and web retries
-are bounded; the LLM wait doubles after each failed interaction up to
-`retry_max_wait_seconds`. `min_request_interval_seconds` spaces model request starts to
-reduce free-tier rate-limit responses. Cache
-location, SQLite location, and the investigation token budget are configured in the
-remaining sections.
+Every invocation requires a JSON taxonomy. Labels need only stable IDs, names, and textual
+descriptions:
 
-The CLI writes a JSON array to stdout in input order. Per-CVE diagnostics belong to the
-result object; operational diagnostics are written to stderr. Exit code `0` means all CVEs
-were classified, conclusively had no matching taxonomy label, or were information-limited;
-`2` means at least one CVE is partial or failed, `3` means invalid taxonomy input, and `4`
-means a fatal infrastructure error.
+```json
+{
+  "hierarchy_policy": "most_specific",
+  "labels": [
+    {
+      "id": "CUSTOM-ROOT",
+      "name": "Generic parent concept",
+      "description": "Definition supplied by the taxonomy owner."
+    },
+    {
+      "id": "CUSTOM-CHILD",
+      "name": "Specific child concept",
+      "description": "A more specific definition.",
+      "parent": "CUSTOM-ROOT"
+    }
+  ]
+}
+```
 
-The local SQLite database stores each CVE's status, result, error, scratchpad, and token
-usage. Its default location is `.data/cve-agent.sqlite3`.
+`hierarchy_policy` is optional and defaults to `most_specific`, which suppresses a selected
+ancestor when a selected descendant exists. `include_ancestors` adds every ancestor of a
+supported label. Array-only taxonomies remain supported and use the default policy.
 
-The investigation agent uses the OpenAI-compatible chat-completions client with four bounded actions:
-search, fetch, record evidence, and finish investigation. Web pages are retrieved with
-`httpx`, cleaned with `trafilatura`, cached locally, and returned to the model only as
-bounded previews. A page enters the retained investigation context only after the agent
-records an evidence quote from it.
+Validation rejects missing fields, duplicate IDs, unknown parents, hierarchy cycles, and
+unknown hierarchy policies. Extra label fields are preserved but do not affect classification.
 
-The NVD description is recorded as initial evidence before the first agent turn, so a clear
-CVE can be classified without an unnecessary web fetch. Additional tool activity is kept
-in a compact per-CVE history showing searched queries, fetched URLs, result sizes, and
-errors. Evidence quotes are verified when possible; a non-verbatim quote is retained but
-marked as unverified.
+## Running classifications
 
-The agent uses standard OpenAI-compatible tool calling. It allows one tool call at a time
-and enforces configurable turn, token, fetch, search, and wall-clock limits. The intended
-short workflow is fetch one strong source, record one exact quote, and finish. Repeated
-fetches reuse the in-memory document preview instead of making another request.
-The classification prompt requires evaluating the complete taxonomy and returning every
-label supported by the evidence.
+```bash
+uv run cve-agent --taxonomy fixtures/example_taxonomy.json CVE-2025-6965
+```
 
-Use `--verbose` to send pipeline and agent progress to `stderr` while keeping the JSON
-classification output on `stdout`:
+Multiple CVEs are processed independently and emitted in input order. Use `--verbose` for
+safe progress diagnostics on stderr while stdout remains valid JSON:
 
-```text
+```bash
 uv run cve-agent --verbose --taxonomy fixtures/example_taxonomy.json CVE-2025-6965
 ```
 
-Verbose logs include NVD retrieval, agent turns, tool names, result counts, evidence
-promotion, limits, provider response identifiers, and final status. Prompts, API keys, and
-document contents are not logged. Empty provider completions include safe response metadata
-instead of producing an opaque `NoneType` crash.
+`--llm-min-request-interval SECONDS` overrides model pacing for one invocation.
 
-Verbose startup output also prints the effective model and non-secret configuration. The
-command-line option `--llm-min-request-interval SECONDS` overrides the TOML pacing value for
-the current run.
+## Classification flow
 
-The search port remains provider-neutral. Deterministic tests inject a fixture searcher;
-the default CLI uses Tavily when `[web].provider = "tavily"`. Set the API key only in the
-environment:
+For each CVE, the system:
+
+1. retrieves NVD first and records its English description as exact initial evidence;
+2. investigates the vulnerability mechanism without seeing or assigning taxonomy labels;
+3. exposes fetched sources as stable, bounded passages;
+4. records exact evidence by passage ID, with unique fuzzy-anchor resolution as a fallback;
+5. evaluates every taxonomy label in bounded chunks;
+6. adjudicates the supported candidates and applies the taxonomy hierarchy policy.
+
+Final model decisions reference evidence IDs rather than writing quotes or URLs. The
+application materializes the canonical resolved URL and exact stored passage into the public
+JSON result. Search snippets are leads, never evidence.
+
+Complete `classified` and `no_matching_label` results require 100% taxonomy coverage.
+Operational metadata includes chunk/label coverage, token usage, stop reason, and run ID.
+
+## Budgets
+
+`token_budget` is the base per-CVE prompt-plus-completion budget. Before NVD or database
+work begins, CVEAgent estimates the exhaustive taxonomy scan and final adjudication cost. If
+that minimum cannot fit inside the base budget plus `finalization_overrun_percent`, the run
+fails preflight without external side effects.
+
+Classification tokens are reserved before investigation. Research cannot consume the
+reserve or overrun allowance; only taxonomy scanning and final adjudication may enter the
+configured overrun. Provider usage is used when available and conservatively estimated
+otherwise. Unexpected exhaustion returns `partial` with validated labels and exact coverage.
+
+`max_input_tokens_per_request` controls taxonomy chunk size. Large or unusually verbose
+taxonomies may require raising `token_budget`; preflight reports its estimated minimum.
+
+## Web retrieval and cache
+
+The default search provider is Tavily. Set `[web].provider = "none"` to disable search while
+retaining direct fetching of NVD references. NVD and web retries are configured independently.
+
+Downloads are streamed, limited by `max_download_bytes`, restricted to textual content types,
+and then extracted and bounded by `max_document_chars` and `max_preview_chars`. Evidence uses
+the final response URL while retaining the requested URL and redirect chain.
+
+Searches and fetched documents are cached under `[web].cache_dir`. The cache has no automatic
+expiry. To reset it, delete only the configured cache directory; with the example configuration:
 
 ```bash
-export TAVILY_API_KEY="tvly-..."
+rm -r .cache/cve-agent/web
 ```
 
-The key is never read from or stored in the TOML configuration. Without the key, direct
-URL fetching and NVD references still work, but an agent search request fails clearly.
+## Persistence and exit codes
 
-With `--verbose`, fetch diagnostics include cache hits/misses, retry attempts, HTTP status,
-redirect target, content type, response size, extraction fallback, and typed failure
-messages. A failed source is returned to the agent as a recoverable tool error so it can
-try another source or finish with the evidence already collected.
+SQLite stores separate runs rather than overwriting by CVE ID. Each run records an incremental
+run ID, taxonomy fingerprint, model, non-secret effective settings, timestamps, status, and
+per-CVE checkpoints/results. Checkpoints are written after NVD retrieval, evidence changes,
+and completed taxonomy chunks.
+
+The current schema is version 2. A legacy development database is not migrated automatically;
+remove the configured database explicitly when the CLI reports an incompatible schema.
+
+Exit codes are:
+
+- `0`: every CVE is classified, has no matching label, or lacks sufficient information;
+- `2`: at least one CVE is partial or failed;
+- `3`: invalid taxonomy input;
+- `4`: fatal configuration, preflight, provider-initialization, or persistence error.
+
+## Development
+
+Tests are deterministic and require no live web or model service:
+
+```bash
+uv run pytest -q
+```
