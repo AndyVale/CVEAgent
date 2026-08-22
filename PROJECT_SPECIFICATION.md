@@ -230,7 +230,11 @@ The implementation may extend the schema with operational metadata needed for re
 
 The label field MUST contain taxonomy IDs, not newly generated label names.
 
-Confidence is the classifier's reported confidence for the selected label. Confidence should not be treated as a replacement for supporting evidence.
+Confidence is the classifier's reported confidence for the selected label and is materialized
+as a number in the `[0, 1]` range. The provider is instructed to return a JSON number. For
+provider compatibility, the application may deterministically normalize common qualitative
+or percentage forms, must log that normalization, and must reject unknown forms. Confidence
+should not be treated as a replacement for supporting evidence.
 
 ## Failure and operational behavior
 

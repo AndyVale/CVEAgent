@@ -1,9 +1,59 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from cve_agent.models import ClassificationStatus, Evidence, EvidenceRecord, LabelClassification
 from cve_agent.taxonomy import Taxonomy
+
+
+logger = logging.getLogger(__name__)
+
+_QUALITATIVE_CONFIDENCE = {
+    "low": 0.35,
+    "medium": 0.60,
+    "high": 0.85,
+}
+
+
+def normalize_classification_labels(raw_labels: Any) -> list[dict[str, Any]]:
+    """Normalize narrow, deterministic provider deviations in label payloads."""
+    if not isinstance(raw_labels, list):
+        raise ValueError("labels must be an array")
+
+    normalized_labels: list[dict[str, Any]] = []
+    for raw_label in raw_labels:
+        if not isinstance(raw_label, dict):
+            raise ValueError("each label must be an object")
+        label_id = raw_label.get("label")
+        confidence_value = raw_label.get("confidence")
+        try:
+            confidence = _normalize_confidence(confidence_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid confidence for {label_id!r}") from exc
+        if confidence != confidence_value:
+            logger.warning(
+                "normalized model confidence for label %r from %r to %.2f",
+                label_id,
+                confidence_value,
+                confidence,
+            )
+        normalized_labels.append({**raw_label, "confidence": confidence})
+    return normalized_labels
+
+
+def _normalize_confidence(value: Any) -> float:
+    if isinstance(value, bool):
+        raise TypeError("boolean confidence is invalid")
+    if isinstance(value, str):
+        stripped = value.strip()
+        qualitative = " ".join(stripped.casefold().replace("-", " ").replace("_", " ").split())
+        if qualitative in _QUALITATIVE_CONFIDENCE:
+            return _QUALITATIVE_CONFIDENCE[qualitative]
+        if stripped.endswith("%"):
+            return float(stripped[:-1].strip()) / 100
+        value = stripped
+    return float(value)
 
 
 def validate_classification(
@@ -23,25 +73,19 @@ def validate_classification(
         ClassificationStatus.NOT_ENOUGH_INFORMATION,
     }:
         raise ValueError(f"status {status.value!r} is not a complete classification outcome")
-    if not isinstance(raw_labels, list):
-        raise ValueError("labels must be an array")
+    normalized_labels = normalize_classification_labels(raw_labels)
 
     evidence_by_id = {record.evidence_id: record for record in evidence_records}
     labels: list[LabelClassification] = []
     seen_labels: set[str] = set()
-    for raw_label in raw_labels:
-        if not isinstance(raw_label, dict):
-            raise ValueError("each label must be an object")
+    for raw_label in normalized_labels:
         label_id = raw_label.get("label")
         if label_id not in taxonomy.by_id:
             raise ValueError(f"classifier returned label outside taxonomy: {label_id!r}")
         if label_id in seen_labels:
             raise ValueError(f"classifier returned duplicate label: {label_id!r}")
         seen_labels.add(label_id)
-        try:
-            confidence = float(raw_label.get("confidence"))
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"invalid confidence for {label_id!r}") from exc
+        confidence = raw_label["confidence"]
         if not 0 <= confidence <= 1:
             raise ValueError(f"confidence for {label_id!r} must be in [0, 1]")
         raw_evidence = raw_label.get("evidence")

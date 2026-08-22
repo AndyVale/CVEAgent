@@ -17,7 +17,7 @@ from cve_agent.models import CVERecord, ClassificationResult, ClassificationStat
 from cve_agent.ports import WebSource
 from cve_agent.schemas import AGENT_TOOLS
 from cve_agent.taxonomy import Taxonomy
-from cve_agent.validation import validate_classification
+from cve_agent.validation import normalize_classification_labels, validate_classification
 
 
 logger = logging.getLogger(__name__)
@@ -198,23 +198,33 @@ class InvestigationAgent:
             "labels": [label_dict(item) for item in labels],
         }
         messages = [
-            {"role": "system", "content": "Evaluate every supplied taxonomy label independently. Return JSON with chunk_id and supported, where supported is an array of {label, confidence, evidence:[{evidence_id, explanation}]}. Include only evidence-backed labels and use only supplied IDs and evidence IDs."},
+            {"role": "system", "content": "Evaluate every supplied taxonomy label independently. Return one JSON object with chunk_id and supported, where supported is an array of {label, confidence, evidence:[{evidence_id, explanation}]}. Confidence must be a JSON number from 0.0 to 1.0, never a word such as high. Include only evidence-backed labels and use only supplied IDs and evidence IDs."},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ]
         allowed = {item.id for item in labels}
+        chunk_taxonomy = Taxonomy(tuple(labels))
         for correction_attempt in range(2):
             response = self._chat(cve.cve_id, budget, "classification", messages=messages, response_format={"type": "json_object"})
             try:
-                decoded = self._decode_json_content(response)
-                if decoded.get("chunk_id") != chunk_id:
-                    raise ValueError(f"classifier returned chunk_id {decoded.get('chunk_id')!r}, expected {chunk_id}")
-                supported = decoded.get("supported")
+                decoded = self._decode_json_content(response, allow_array=True)
+                if isinstance(decoded, list):
+                    supported = decoded
+                else:
+                    returned_chunk_id = decoded.get("chunk_id", chunk_id)
+                    if returned_chunk_id != chunk_id:
+                        raise ValueError(f"classifier returned chunk_id {returned_chunk_id!r}, expected {chunk_id}")
+                    supported = decoded.get("supported")
+                    if supported is None:
+                        supported = decoded.get("supported_labels", decoded.get("labels"))
                 if not isinstance(supported, list):
                     raise ValueError("taxonomy chunk response requires a supported array")
-                outside = [item.get("label") for item in supported if not isinstance(item, dict) or item.get("label") not in allowed]
+                outside = [item.get("label") if isinstance(item, dict) else item for item in supported if not isinstance(item, dict) or item.get("label") not in allowed]
                 if outside:
                     raise ValueError(f"taxonomy chunk returned labels outside its chunk: {outside}")
-                return supported
+                normalized = normalize_classification_labels(supported)
+                if normalized:
+                    validate_classification(ClassificationStatus.CLASSIFIED, normalized, chunk_taxonomy, state.evidence)
+                return normalized
             except ValueError as exc:
                 if correction_attempt:
                     raise
@@ -232,16 +242,18 @@ class InvestigationAgent:
             "evidence": [asdict(item) for item in state.evidence],
         }
         messages = [
-            {"role": "system", "content": "Adjudicate the evidence-backed candidates. Return JSON {status, labels}; status is classified, no_matching_label, or not_enough_information. Each label contains label, confidence, and evidence associations with evidence_id and explanation. Do not add labels outside the candidates."},
+            {"role": "system", "content": "Adjudicate the evidence-backed candidates. Return one JSON object {status, labels}; status is classified, no_matching_label, or not_enough_information. Each label contains label, confidence, and evidence associations with evidence_id and explanation. Confidence must be a JSON number from 0.0 to 1.0, never a word such as high. Do not add labels outside the candidates."},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ]
         for correction_attempt in range(2):
             response = self._chat(cve.cve_id, budget, "classification", messages=messages, response_format={"type": "json_object"})
             try:
-                decoded = self._decode_json_content(response)
+                decoded = self._decode_json_content(response, allow_array=True)
+                if isinstance(decoded, list):
+                    decoded = {"status": ClassificationStatus.CLASSIFIED, "labels": decoded}
                 raw_labels = decoded.get("labels")
                 if isinstance(raw_labels, list):
-                    outside = [item.get("label") for item in raw_labels if not isinstance(item, dict) or item.get("label") not in candidate_ids]
+                    outside = [item.get("label") if isinstance(item, dict) else item for item in raw_labels if not isinstance(item, dict) or item.get("label") not in candidate_ids]
                     if outside:
                         raise ValueError(f"adjudicator added non-candidate labels: {outside}")
                 return validate_classification(decoded.get("status"), raw_labels, taxonomy, state.evidence)
@@ -272,7 +284,7 @@ class InvestigationAgent:
         return response
 
     @staticmethod
-    def _decode_json_content(response: Any) -> dict[str, Any]:
+    def _decode_json_content(response: Any, *, allow_array: bool = False) -> dict[str, Any] | list[Any]:
         content = (response.choices[0].message.content or "").strip()
         if "</think>" in content:
             content = content.rsplit("</think>", 1)[1].strip()
@@ -281,7 +293,7 @@ class InvestigationAgent:
             decoded = json.loads(content)
         except json.JSONDecodeError as exc:
             raise ValueError("provider returned non-JSON classification content") from exc
-        if not isinstance(decoded, dict):
+        if not isinstance(decoded, dict) and not (allow_array and isinstance(decoded, list)):
             raise ValueError("classification response must be a JSON object")
         return decoded
 

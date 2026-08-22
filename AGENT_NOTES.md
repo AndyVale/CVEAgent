@@ -51,6 +51,11 @@ budget, retrieval, persistence, test, and documentation commits.
   preflight/classification chunk planning. Updated README and project specification.
 - Final validation: `45 passed`, bytecode compilation passes, diff check passes, and the
   example taxonomy passes preflight with `config.example.toml`.
+- Fixed live-provider recovery after chunk responses returned qualitative confidence or a
+  top-level JSON array. Full chunk validation now happens inside the bounded correction loop;
+  known confidence words/percentages are normalized centrally and unknown forms are corrected.
+- Current validation after the live-provider fixes: `53 passed`; bytecode compilation and
+  diff checks pass.
 
 ## Remaining work
 

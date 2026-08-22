@@ -64,10 +64,13 @@ def response(message, total=15):
 
 
 class FullFlowClient:
-    def __init__(self, *, malformed_first=False, malformed_chunk=False):
+    def __init__(self, *, malformed_first=False, malformed_chunk=False, invalid_chunk_confidence=False, qualitative_chunk_confidence=False, array_chunk=False):
         self.requests = []
         self.research_step = -1 if malformed_first else 0
         self.malformed_chunk = malformed_chunk
+        self.invalid_chunk_confidence = invalid_chunk_confidence
+        self.qualitative_chunk_confidence = qualitative_chunk_confidence
+        self.array_chunk = array_chunk
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
 
     def create(self, **kwargs):
@@ -91,10 +94,18 @@ class FullFlowClient:
                 self.malformed_chunk = False
                 return response(Message(content='{"wrong":"shape"}'))
             payload = json.loads(kwargs["messages"][1]["content"])
-            return response(Message(content=json.dumps({"chunk_id": payload["chunk_id"], "supported": [{
-                "label": payload["labels"][0]["id"], "confidence": 0.9,
+            confidence = 0.9
+            if self.invalid_chunk_confidence:
+                self.invalid_chunk_confidence = False
+                confidence = "very certain"
+            elif self.qualitative_chunk_confidence:
+                confidence = "high"
+            supported = [{
+                "label": payload["labels"][0]["id"], "confidence": confidence,
                 "evidence": [{"evidence_id": "doc-1:p1", "explanation": "The exact passage supports the label."}],
-            }]})))
+            }]
+            content = supported if self.array_chunk else {"chunk_id": payload["chunk_id"], "supported": supported}
+            return response(Message(content=json.dumps(content)))
         return response(Message(content=json.dumps({"status": "classified", "labels": [{
             "label": "MEMORY", "confidence": 0.9,
             "evidence": [{"evidence_id": "doc-1:p1", "explanation": "The exact passage supports the label."}],
@@ -132,6 +143,31 @@ def test_malformed_taxonomy_chunk_gets_one_correction_attempt(tmp_path):
     chunk_requests = [item for item in client.requests if item["messages"][0]["content"].startswith("Evaluate every")]
     assert len(chunk_requests) == 2
     assert "response was invalid" in chunk_requests[1]["messages"][-1]["content"]
+
+
+def test_invalid_chunk_confidence_is_corrected_before_chunk_is_accepted(tmp_path):
+    client = FullFlowClient(invalid_chunk_confidence=True)
+    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(CVERecord("VULN-1", "fixture"), taxonomy(), InvestigationState())
+    assert result.status == ClassificationStatus.CLASSIFIED
+    chunk_requests = [item for item in client.requests if item["messages"][0]["content"].startswith("Evaluate every")]
+    assert len(chunk_requests) == 2
+    assert "invalid confidence" in chunk_requests[1]["messages"][-1]["content"]
+
+
+def test_qualitative_chunk_confidence_is_normalized_for_adjudication(tmp_path):
+    client = FullFlowClient(qualitative_chunk_confidence=True)
+    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(CVERecord("VULN-1", "fixture"), taxonomy(), InvestigationState())
+    assert result.status == ClassificationStatus.CLASSIFIED
+    adjudication = next(item for item in client.requests if item["messages"][0]["content"].startswith("Adjudicate"))
+    assert json.loads(adjudication["messages"][1]["content"])["candidates"][0]["confidence"] == 0.85
+
+
+def test_top_level_chunk_array_is_accepted_as_provider_compatibility_fallback(tmp_path):
+    client = FullFlowClient(array_chunk=True)
+    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(CVERecord("VULN-1", "fixture"), taxonomy(), InvestigationState())
+    assert result.status == ClassificationStatus.CLASSIFIED
+    chunk_requests = [item for item in client.requests if item["messages"][0]["content"].startswith("Evaluate every")]
+    assert len(chunk_requests) == 1
 
 
 def test_agent_reports_empty_provider_response(tmp_path):

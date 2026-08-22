@@ -25,6 +25,22 @@ def test_validator_rejects_confidence_outside_range():
         validate_classification("classified", [label], TAXONOMY, EVIDENCE)
 
 
+@pytest.mark.parametrize(("reported", "expected"), [("low", 0.35), ("medium", 0.60), ("high", 0.85), ("85%", 0.85)])
+def test_validator_normalizes_common_confidence_variants(reported, expected, caplog):
+    label = valid_label()
+    label["confidence"] = reported
+    _, materialized = validate_classification("classified", [label], TAXONOMY, EVIDENCE)
+    assert materialized[0].confidence == expected
+    assert "normalized model confidence" in caplog.text
+
+
+def test_validator_rejects_unknown_qualitative_confidence():
+    label = valid_label()
+    label["confidence"] = "very certain"
+    with pytest.raises(ValueError, match="invalid confidence"):
+        validate_classification("classified", [label], TAXONOMY, EVIDENCE)
+
+
 def test_validator_rejects_unrecorded_evidence():
     label = valid_label()
     label["evidence"][0]["evidence_id"] = "fabricated"

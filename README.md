@@ -79,6 +79,13 @@ Final model decisions reference evidence IDs rather than writing quotes or URLs.
 application materializes the canonical resolved URL and exact stored passage into the public
 JSON result. Search snippets are leads, never evidence.
 
+Classification prompts require numeric confidence in the `[0, 1]` range. As a compatibility
+fallback for providers that ignore that instruction, `low`, `medium`, and `high` are normalized
+to `0.35`, `0.60`, and `0.85`; percentage strings are converted to their decimal value. Each
+normalization is logged. Unknown confidence words remain invalid and trigger the bounded
+correction request. Taxonomy-chunk responses wrapped as a top-level JSON array are also
+accepted, because the active chunk is unambiguous.
+
 Complete `classified` and `no_matching_label` results require 100% taxonomy coverage.
 Operational metadata includes chunk/label coverage, token usage, stop reason, and run ID.
 
