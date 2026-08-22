@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from cve_agent.models import ClassificationResult, ClassificationStatus, Evidence, InvestigationState
+from cve_agent.models import ClassificationResult, ClassificationStatus, EvidenceRecord, InvestigationState
 from cve_agent.persistence import Database
 from cve_agent.ports import CVESource, Classifier, WebSource
 from cve_agent.taxonomy import Taxonomy
@@ -25,10 +25,12 @@ class Pipeline:
                     cve = self.cve_source.get_cve(cve_id)
                     state.facts.append(cve.description)
                     if cve.description.strip():
-                        state.evidence.append(Evidence(
+                        state.evidence.append(EvidenceRecord(
+                            evidence_id="nvd-description",
                             url=f"https://nvd.nist.gov/vuln/detail/{cve.cve_id}",
                             quote=cve.description,
-                            explanation="NVD CVE description retrieved at the start of the investigation.",
+                            source_type="nvd_description",
+                            verification="exact",
                         ))
                     state.tool_history.append({"tool": "get_cve", "status": "success", "source": "NVD", "reference_count": len(cve.references)})
                     logger.info("[%s] NVD record loaded: %d references", cve_id, len(cve.references))

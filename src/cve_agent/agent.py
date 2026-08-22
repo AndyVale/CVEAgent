@@ -9,14 +9,17 @@ from typing import Any
 from openai import OpenAI
 
 from cve_agent.config import Settings
+from cve_agent.evidence import EvidenceResolutionError, build_passages, resolve_passage
 from cve_agent.llm import RequestPacer, call_chat_completion
-from cve_agent.models import CVERecord, ClassificationResult, ClassificationStatus, Document, Evidence, InvestigationState, InvestigationStopReason, LabelClassification, SearchResult
+from cve_agent.models import CVERecord, ClassificationResult, ClassificationStatus, Document, EvidenceRecord, InvestigationState, InvestigationStopReason, SearchResult
 from cve_agent.ports import WebSource
 from cve_agent.schemas import AGENT_TOOLS
 from cve_agent.taxonomy import Taxonomy
+from cve_agent.validation import validate_classification
 
 
 logger = logging.getLogger(__name__)
+
 
 class InvestigationAgent:
     def __init__(self, settings: Settings, web_source: WebSource, client: OpenAI | None = None):
@@ -78,7 +81,16 @@ class InvestigationAgent:
             current_exchange = [{"role": "assistant", **assistant_message}]
             for call in message.tool_calls:
                 name = call.function.name
-                arguments = json.loads(call.function.arguments)
+                try:
+                    arguments = json.loads(call.function.arguments)
+                    if not isinstance(arguments, dict):
+                        raise ValueError("tool arguments must be an object")
+                except (json.JSONDecodeError, ValueError) as exc:
+                    result = {"error": f"invalid tool arguments: {exc}", "instruction": "Correct the arguments and call a provided tool again."}
+                    state.tool_history.append(self._tool_event(name, {}, result))
+                    current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)})
+                    logger.warning("[%s] tool rejected: %s", cve.cve_id, result["error"])
+                    continue
                 logger.info("[%s] tool requested: %s params=%s", cve.cve_id, name, self._log_arguments(arguments))
                 key = (name, json.dumps(arguments, sort_keys=True))
                 if key in seen_calls and name != "finish_investigation":
@@ -148,15 +160,29 @@ class InvestigationAgent:
             return self._document_result(document)
         if name == "record_evidence":
             document = documents.get(arguments["document_id"])
-            quote = arguments.get("quote", "").strip()
             if document is None:
                 return {"error": "document not found"}
-            if not quote:
-                return {"error": "quote must not be empty"}
-            verified = quote in document.content
-            state.evidence.append(Evidence(document.url, quote, arguments["explanation"]))
+            passages = build_passages(document.document_id or document.url, document.content, max_chars=self.settings.max_preview_chars)
+            try:
+                passage = resolve_passage(
+                    passages,
+                    passage_id=str(arguments.get("passage_id", "")).strip(),
+                    quote_anchor=str(arguments.get("quote_anchor", "")).strip(),
+                )
+            except EvidenceResolutionError as exc:
+                return {"error": str(exc), "available_passage_ids": [item.passage_id for item in passages]}
+            record = EvidenceRecord(
+                evidence_id=passage.passage_id,
+                url=document.url,
+                quote=passage.text,
+                source_type="web",
+                requested_url=document.requested_url or document.url,
+                verification="passage_id" if arguments.get("passage_id") else "fuzzy_anchor",
+            )
+            if all(existing.evidence_id != record.evidence_id for existing in state.evidence):
+                state.evidence.append(record)
             logger.info("recorded evidence document=%s evidence_count=%d", arguments["document_id"], len(state.evidence))
-            return {"recorded": True, "quote_verified": verified, "evidence_count": len(state.evidence)}
+            return {"recorded": True, "evidence_id": record.evidence_id, "quote": record.quote, "evidence_count": len(state.evidence)}
         return {"error": f"unknown tool: {name}"}
 
     @staticmethod
@@ -177,21 +203,7 @@ class InvestigationAgent:
         return "<none>"
 
     def _finish(self, cve, arguments, taxonomy, state, usage, started, turns):
-        try:
-            status = ClassificationStatus(arguments.get("status"))
-        except ValueError as exc:
-            raise ValueError(f"invalid classification status: {arguments.get('status')!r}") from exc
-        labels = [LabelClassification(item["label"], float(item["confidence"]), tuple(Evidence(**e) for e in item["evidence"])) for item in arguments.get("labels", [])]
-        invalid = [item.label for item in labels if item.label not in taxonomy.by_id]
-        if invalid:
-            raise ValueError(f"classifier returned labels outside taxonomy: {invalid}")
-        if status in {ClassificationStatus.NOT_ENOUGH_INFORMATION, ClassificationStatus.NO_MATCHING_LABEL} and labels:
-            raise ValueError(f"{status.value} results cannot contain labels")
-        if status == ClassificationStatus.CLASSIFIED and not labels:
-            raise ValueError("classified results must contain at least one label")
-        recorded_urls = {item.url for item in state.evidence}
-        if any(not item.evidence or any(e.url not in recorded_urls for e in item.evidence) for item in labels):
-            raise ValueError("classification evidence must cite a source recorded during the investigation")
+        status, labels = validate_classification(arguments.get("status"), arguments.get("labels"), taxonomy, state.evidence)
         return ClassificationResult(cve.cve_id, status, labels, operational={"turns": turns, "duration_seconds": round(time.monotonic() - started, 3), "token_usage": usage})
 
     def _context(self, cve, taxonomy, state, documents, turns, searches, fetches):
@@ -222,7 +234,7 @@ class InvestigationAgent:
             "You are an evidence-backed CVE classification investigator. Work methodically and make a complete classification. "
             "The NVD record, description, metadata, and references are already supplied; do not fetch the NVD detail page just because it is a reference. "
             "The initial NVD description is valid evidence and may be sufficient for classification. First decide whether it already supports a taxonomy label. If one reliable reference can resolve the uncertainty, fetch only that source. "
-            "Use the available evidence and investigate additional sources when needed; record useful evidence and then finish_investigation. "
+            "Use the available evidence and investigate additional sources when needed; record useful evidence by passage ID and then finish_investigation. "
             "Never fetch the same URL twice, never repeat a search, and do not search for marginal confirmation. "
             "This is a multi-label task: assess the complete supplied taxonomy and select every label supported by the evidence, not just the first or most obvious match. "
             "Before finishing, assess every taxonomy label independently and include all labels supported by the evidence. Use classified with all supported taxonomy IDs, no_matching_label when the evidence is sufficient but no taxonomy entry applies, or not_enough_information when the evidence genuinely cannot support a decision. "
@@ -244,7 +256,7 @@ class InvestigationAgent:
         elif name == "search":
             event.update({"query": arguments.get("query", ""), "result_count": len(result.get("results", []))})
         elif name == "record_evidence":
-            event.update({"document_id": arguments.get("document_id"), "quote_chars": len(arguments.get("quote", "")), "quote_verified": result.get("quote_verified")})
+            event.update({"document_id": arguments.get("document_id"), "passage_id": arguments.get("passage_id"), "evidence_id": result.get("evidence_id")})
         elif name == "finish_investigation":
             event.update({"requested_status": arguments.get("status"), "label_count": len(arguments.get("labels", []))})
         return event
@@ -256,10 +268,11 @@ class InvestigationAgent:
         return None
 
     def _document_result(self, document):
+        passages = build_passages(document.document_id or document.url, document.content, max_chars=self.settings.max_preview_chars)
         return {
             "document_id": document.document_id or document.url,
             "url": document.url,
             "title": document.title,
-            "content": document.content[:self.settings.max_preview_chars],
+            "passages": [asdict(passage) for passage in passages],
             "truncated": len(document.content) > self.settings.max_preview_chars,
         }

@@ -7,7 +7,7 @@ from cve_agent.adapters import CachedWebClient
 from cve_agent.adapters import TavilySearchProvider
 from cve_agent.agent import InvestigationAgent
 from cve_agent.config import Settings
-from cve_agent.models import CVERecord, ClassificationStatus, Evidence, InvestigationState, SearchResult
+from cve_agent.models import CVERecord, ClassificationStatus, EvidenceRecord, InvestigationState, SearchResult
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
 
 
@@ -59,8 +59,8 @@ class AgentClient:
         self.steps = [
             ("search", {"query": "CVE-1 aggregate memory corruption"}),
             ("fetch", {"url": "https://fixture.test/advisory"}),
-            ("record_evidence", {"document_id": "doc-1", "quote": "memory corruption", "explanation": "The advisory directly describes the impact."}),
-            ("finish_investigation", {"status": "classified", "labels": [{"label": "CWE-119", "confidence": 0.9, "evidence": [{"url": "https://fixture.test/advisory", "quote": "memory corruption", "explanation": "The advisory directly describes the impact."}]}]}),
+            ("record_evidence", {"document_id": "doc-1", "passage_id": "doc-1:p1", "quote_anchor": ""}),
+            ("finish_investigation", {"status": "classified", "labels": [{"label": "CWE-119", "confidence": 0.9, "evidence": [{"evidence_id": "doc-1:p1", "explanation": "The advisory directly describes the impact."}]}]}),
         ]
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
 
@@ -101,7 +101,7 @@ def test_agent_promotes_only_recorded_evidence(tmp_path):
     assert all(request["tool_choice"] == "auto" for request in client.requests)
     assert all(request["parallel_tool_calls"] is False for request in client.requests)
     final_context = json.loads(client.requests[-1]["messages"][1]["content"])
-    assert final_context["recorded_evidence"][0]["quote"] == "memory corruption"
+    assert final_context["recorded_evidence"][0]["quote"] == "The issue causes memory corruption in aggregate processing."
     assert final_context["fetched_urls"] == ["https://fixture.test/advisory"]
     assert final_context["available_documents"][0]["document_id"] == "doc-1"
 
@@ -122,18 +122,16 @@ def test_agent_can_classify_from_initial_nvd_evidence(tmp_path):
             call = ToolCall("finish-1", "finish_investigation", {
                 "status": "classified",
                 "labels": [{"label": "CWE-119", "confidence": 0.8, "evidence": [{
-                    "url": f"https://nvd.nist.gov/vuln/detail/{cve['cve_id']}",
-                    "quote": cve["description"],
+                    "evidence_id": "nvd-description",
                     "explanation": "The NVD description directly supports the label.",
                 }]}],
             })
             usage = SimpleNamespace(model_dump=lambda: {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
             return SimpleNamespace(choices=[SimpleNamespace(message=Message([call]))], usage=usage)
 
-    state = InvestigationState(evidence=[Evidence(
-        "https://nvd.nist.gov/vuln/detail/CVE-1",
-        "The vulnerability causes a memory buffer error.",
-        "NVD description",
+    state = InvestigationState(evidence=[EvidenceRecord(
+        "nvd-description", "https://nvd.nist.gov/vuln/detail/CVE-1",
+        "The vulnerability causes a memory buffer error.", "nvd_description",
     )])
     result = InvestigationAgent(settings(tmp_path), FixtureWeb(), FinishClient()).classify(
         CVERecord("CVE-1", "The vulnerability causes a memory buffer error."), [],
@@ -184,14 +182,14 @@ def test_fetch_failure_is_returned_to_agent_instead_of_escaping(tmp_path):
     assert "already failed" in repeated["error"]
 
 
-def test_record_evidence_keeps_unverified_quote_with_marker(tmp_path):
+def test_record_evidence_resolves_fuzzy_anchor_to_exact_passage(tmp_path):
     agent = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())
     documents = {}
     state = InvestigationState()
     fetched = agent._execute("fetch", {"url": "https://fixture.test/advisory"}, state, documents, 0, 0, set())
     recorded = agent._execute(
         "record_evidence",
-        {"document_id": fetched["document_id"], "quote": "The advisory says memory corruption.", "explanation": "Model summary."},
+        {"document_id": fetched["document_id"], "passage_id": "", "quote_anchor": "issue causes memory corruption aggregate processing"},
         state,
         documents,
         0,
@@ -199,25 +197,22 @@ def test_record_evidence_keeps_unverified_quote_with_marker(tmp_path):
         set(),
     )
     assert recorded["recorded"] is True
-    assert recorded["quote_verified"] is False
-    assert state.evidence[-1].quote == "The advisory says memory corruption."
+    assert recorded["evidence_id"] == "doc-1:p1"
+    assert state.evidence[-1].quote == "The issue causes memory corruption in aggregate processing."
+    assert state.evidence[-1].verification == "fuzzy_anchor"
 
 
-def test_finish_accepts_different_quote_for_recorded_source(tmp_path):
+def test_finish_materializes_application_owned_quote(tmp_path):
     agent = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())
-    state = InvestigationState(evidence=[Evidence(
-        "https://fixture.test/advisory", "memory corruption", "Recorded source evidence."
+    state = InvestigationState(evidence=[EvidenceRecord(
+        "doc-1:p1", "https://fixture.test/advisory", "memory corruption", "web"
     )])
     result = agent._finish(
         CVERecord("CVE-1", "fixture"),
         {"status": "classified", "labels": [{
             "label": "CWE-119",
             "confidence": 0.8,
-            "evidence": [{
-                "url": "https://fixture.test/advisory",
-                "quote": "The advisory explains that the issue corrupts memory.",
-                "explanation": "This is the model's bounded summary of the recorded source.",
-            }],
+            "evidence": [{"evidence_id": "doc-1:p1", "explanation": "The source supports this label."}],
         }]},
         Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),)),
         state,
@@ -226,6 +221,30 @@ def test_finish_accepts_different_quote_for_recorded_source(tmp_path):
         1,
     )
     assert result.status == "classified"
+    assert result.labels[0].evidence[0].quote == "memory corruption"
+
+
+def test_finish_rejects_unknown_evidence_id(tmp_path):
+    agent = InvestigationAgent(settings(tmp_path), FixtureWeb(), AgentClient())
+    state = InvestigationState(evidence=[EvidenceRecord("known", "https://fixture.test/a", "evidence", "web")])
+    try:
+        agent._finish(
+            CVERecord("CVE-1", "fixture"),
+            {"status": "classified", "labels": [{
+                "label": "CWE-119",
+                "confidence": 0.8,
+                "evidence": [{"evidence_id": "unknown", "explanation": "source"}],
+            }]},
+            Taxonomy((TaxonomyLabel("CWE-119", "Memory Buffer Errors", "memory buffer errors"),)),
+            state,
+            {},
+            0,
+            1,
+        )
+    except ValueError as exc:
+        assert "unknown evidence_id" in str(exc)
+    else:
+        raise AssertionError("expected unknown evidence ID to be rejected")
 
 
 def test_finish_supports_no_matching_label_status(tmp_path):

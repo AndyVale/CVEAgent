@@ -34,6 +34,24 @@ class Document:
     content: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
     document_id: str = ""
+    requested_url: str = ""
+    redirect_chain: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Passage:
+    passage_id: str
+    text: str
+
+
+@dataclass(frozen=True)
+class EvidenceRecord:
+    evidence_id: str
+    url: str
+    quote: str
+    source_type: str
+    requested_url: str | None = None
+    verification: str = "exact"
 
 
 @dataclass(frozen=True)
@@ -83,11 +101,7 @@ class ClassificationResult:
 class InvestigationState:
     facts: list[str] = field(default_factory=list)
     visited_urls: list[str] = field(default_factory=list)
-    hypotheses: list[str] = field(default_factory=list)
-    conflicts: list[str] = field(default_factory=list)
-    candidate_labels: list[str] = field(default_factory=list)
-    unresolved_questions: list[str] = field(default_factory=list)
-    evidence: list[Evidence] = field(default_factory=list)
+    evidence: list[EvidenceRecord] = field(default_factory=list)
     tool_history: list[dict[str, Any]] = field(default_factory=list)
     token_usage: dict[str, int] = field(default_factory=dict)
 
