@@ -43,6 +43,7 @@ commit sequence.
   non-secret settings, checkpoints, and fatal persistence error propagation. Removed the
   ignored legacy local database as authorized. Full deterministic suite passes: `39 passed`.
 - Budget preflight now runs before NVD, database creation, or other pipeline side effects.
+- Verbose CLI logging uses a scoped package handler and restores logging state after each run.
 
 ## Next
 

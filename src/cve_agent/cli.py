@@ -28,8 +28,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: WebSource | None = None, classifier: Classifier | None = None, database: Database | None = None) -> int:
     args = build_parser().parse_args(argv)
+    log_handler = None
+    package_logger = logging.getLogger("cve_agent")
+    previous_level = package_logger.level
+    previous_propagate = package_logger.propagate
     if args.verbose:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s", stream=sys.stderr, force=True)
+        log_handler = logging.StreamHandler(sys.stderr)
+        log_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        package_logger.addHandler(log_handler)
+        package_logger.setLevel(logging.INFO)
+        package_logger.propagate = False
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpx2").setLevel(logging.WARNING)
     logger = logging.getLogger(__name__)
@@ -62,6 +70,12 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
     except Exception as exc:
         print(f"fatal error: {exc}", file=sys.stderr)
         return 4
+    finally:
+        if log_handler is not None:
+            package_logger.removeHandler(log_handler)
+            log_handler.close()
+            package_logger.setLevel(previous_level)
+            package_logger.propagate = previous_propagate
 
 
 def main() -> None:
