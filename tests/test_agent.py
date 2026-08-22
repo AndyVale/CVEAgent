@@ -64,9 +64,10 @@ def response(message, total=15):
 
 
 class FullFlowClient:
-    def __init__(self, *, malformed_first=False):
+    def __init__(self, *, malformed_first=False, malformed_chunk=False):
         self.requests = []
         self.research_step = -1 if malformed_first else 0
+        self.malformed_chunk = malformed_chunk
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
 
     def create(self, **kwargs):
@@ -86,6 +87,9 @@ class FullFlowClient:
             return response(Message([ToolCall(f"call-{self.research_step}", name, arguments)]))
         system = kwargs["messages"][0]["content"]
         if system.startswith("Evaluate every"):
+            if self.malformed_chunk:
+                self.malformed_chunk = False
+                return response(Message(content='{"wrong":"shape"}'))
             payload = json.loads(kwargs["messages"][1]["content"])
             return response(Message(content=json.dumps({"chunk_id": payload["chunk_id"], "supported": [{
                 "label": payload["labels"][0]["id"], "confidence": 0.9,
@@ -119,6 +123,15 @@ def test_malformed_tool_arguments_are_recoverable(tmp_path):
     assert result.status == ClassificationStatus.CLASSIFIED
     assert state.tool_history[0]["status"] == "error"
     assert "invalid tool arguments" in state.tool_history[0]["error"]
+
+
+def test_malformed_taxonomy_chunk_gets_one_correction_attempt(tmp_path):
+    client = FullFlowClient(malformed_chunk=True)
+    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(CVERecord("VULN-1", "fixture"), taxonomy(), InvestigationState())
+    assert result.status == ClassificationStatus.CLASSIFIED
+    chunk_requests = [item for item in client.requests if item["messages"][0]["content"].startswith("Evaluate every")]
+    assert len(chunk_requests) == 2
+    assert "response was invalid" in chunk_requests[1]["messages"][-1]["content"]
 
 
 def test_agent_reports_empty_provider_response(tmp_path):

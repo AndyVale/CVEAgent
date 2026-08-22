@@ -9,7 +9,7 @@ from typing import Any, Callable
 from openai import OpenAI
 
 from cve_agent.budget import BudgetExceeded, TokenBudget, create_budget_plan
-from cve_agent.classification import apply_hierarchy_policy, chunk_taxonomy, estimate_tokens, label_dict
+from cve_agent.classification import apply_hierarchy_policy, chunk_taxonomy, label_dict
 from cve_agent.config import Settings
 from cve_agent.evidence import EvidenceResolutionError, build_passages, resolve_passage
 from cve_agent.llm import RequestPacer, call_chat_completion
@@ -43,15 +43,13 @@ class InvestigationAgent:
         self.client = client or OpenAI(api_key=settings.api_key or "EMPTY", base_url=settings.endpoint, timeout=settings.llm_timeout, max_retries=0)
 
     def preflight(self, taxonomy: Taxonomy) -> None:
-        chunks = chunk_taxonomy(taxonomy, available_tokens=max(256, self.settings.max_input_tokens_per_request - 1200))
+        chunks = self._taxonomy_chunks(taxonomy)
         create_budget_plan(chunks, self.settings)
 
     def classify(self, cve: CVERecord, taxonomy: Taxonomy, state: InvestigationState, checkpoint: Callable[[], None] | None = None) -> ClassificationResult:
         logger.info("[%s] agent started: taxonomy_labels=%d", cve.cve_id, len(taxonomy.labels))
         started = time.monotonic()
-        base_context = {"cve": asdict(cve), "facts": state.facts, "evidence": [asdict(item) for item in state.evidence]}
-        available_label_tokens = self.settings.max_input_tokens_per_request - estimate_tokens(base_context) - 1200
-        chunks = chunk_taxonomy(taxonomy, available_tokens=max(256, available_label_tokens))
+        chunks = self._taxonomy_chunks(taxonomy)
         budget = TokenBudget(create_budget_plan(chunks, self.settings), self.settings)
         checkpoint_fn = checkpoint or (lambda: None)
         research = self._investigate(cve, state, budget, started, checkpoint_fn)
@@ -178,7 +176,10 @@ class InvestigationAgent:
                     result = self._duplicate_result(name, arguments, documents)
                 else:
                     seen_calls.add(key)
-                    result = self._execute(name, arguments, state, documents, searches, fetches, failed_fetches)
+                    try:
+                        result = self._execute(name, arguments, state, documents, searches, fetches, failed_fetches)
+                    except (KeyError, TypeError, ValueError) as exc:
+                        result = {"error": f"invalid tool arguments: {exc}", "instruction": "Correct the arguments and try again."}
                     if name == "search" and "error" not in result:
                         searches += 1
                     if name == "fetch" and "error" not in result:
@@ -196,27 +197,32 @@ class InvestigationAgent:
             "evidence": [asdict(item) for item in state.evidence],
             "labels": [label_dict(item) for item in labels],
         }
-        response = self._chat(
-            cve.cve_id,
-            budget,
-            "classification",
-            messages=[
-                {"role": "system", "content": "Evaluate every supplied taxonomy label independently. Return JSON with chunk_id and supported, where supported is an array of {label, confidence, evidence:[{evidence_id, explanation}]}. Include only evidence-backed labels and use only supplied IDs and evidence IDs."},
-                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-            ],
-            response_format={"type": "json_object"},
-        )
-        decoded = self._decode_json_content(response)
-        if decoded.get("chunk_id") != chunk_id:
-            raise ValueError(f"classifier returned chunk_id {decoded.get('chunk_id')!r}, expected {chunk_id}")
-        supported = decoded.get("supported")
-        if not isinstance(supported, list):
-            raise ValueError("taxonomy chunk response requires a supported array")
+        messages = [
+            {"role": "system", "content": "Evaluate every supplied taxonomy label independently. Return JSON with chunk_id and supported, where supported is an array of {label, confidence, evidence:[{evidence_id, explanation}]}. Include only evidence-backed labels and use only supplied IDs and evidence IDs."},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
         allowed = {item.id for item in labels}
-        outside = [item.get("label") for item in supported if not isinstance(item, dict) or item.get("label") not in allowed]
-        if outside:
-            raise ValueError(f"taxonomy chunk returned labels outside its chunk: {outside}")
-        return supported
+        for correction_attempt in range(2):
+            response = self._chat(cve.cve_id, budget, "classification", messages=messages, response_format={"type": "json_object"})
+            try:
+                decoded = self._decode_json_content(response)
+                if decoded.get("chunk_id") != chunk_id:
+                    raise ValueError(f"classifier returned chunk_id {decoded.get('chunk_id')!r}, expected {chunk_id}")
+                supported = decoded.get("supported")
+                if not isinstance(supported, list):
+                    raise ValueError("taxonomy chunk response requires a supported array")
+                outside = [item.get("label") for item in supported if not isinstance(item, dict) or item.get("label") not in allowed]
+                if outside:
+                    raise ValueError(f"taxonomy chunk returned labels outside its chunk: {outside}")
+                return supported
+            except ValueError as exc:
+                if correction_attempt:
+                    raise
+                messages.extend([
+                    {"role": "assistant", "content": response.choices[0].message.content or ""},
+                    {"role": "user", "content": f"The response was invalid: {exc}. Return a corrected JSON object for this same chunk."},
+                ])
+        raise AssertionError("unreachable")
 
     def _adjudicate(self, cve: CVERecord, candidates: list[dict[str, Any]], taxonomy: Taxonomy, state: InvestigationState, budget: TokenBudget):
         candidate_ids = {item["label"] for item in candidates}
@@ -225,23 +231,28 @@ class InvestigationAgent:
             "candidate_definitions": [label_dict(label) for label in taxonomy.labels if label.id in candidate_ids],
             "evidence": [asdict(item) for item in state.evidence],
         }
-        response = self._chat(
-            cve.cve_id,
-            budget,
-            "classification",
-            messages=[
-                {"role": "system", "content": "Adjudicate the evidence-backed candidates. Return JSON {status, labels}; status is classified, no_matching_label, or not_enough_information. Each label contains label, confidence, and evidence associations with evidence_id and explanation. Do not add labels outside the candidates."},
-                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-            ],
-            response_format={"type": "json_object"},
-        )
-        decoded = self._decode_json_content(response)
-        raw_labels = decoded.get("labels")
-        if isinstance(raw_labels, list):
-            outside = [item.get("label") for item in raw_labels if not isinstance(item, dict) or item.get("label") not in candidate_ids]
-            if outside:
-                raise ValueError(f"adjudicator added non-candidate labels: {outside}")
-        return validate_classification(decoded.get("status"), raw_labels, taxonomy, state.evidence)
+        messages = [
+            {"role": "system", "content": "Adjudicate the evidence-backed candidates. Return JSON {status, labels}; status is classified, no_matching_label, or not_enough_information. Each label contains label, confidence, and evidence associations with evidence_id and explanation. Do not add labels outside the candidates."},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
+        for correction_attempt in range(2):
+            response = self._chat(cve.cve_id, budget, "classification", messages=messages, response_format={"type": "json_object"})
+            try:
+                decoded = self._decode_json_content(response)
+                raw_labels = decoded.get("labels")
+                if isinstance(raw_labels, list):
+                    outside = [item.get("label") for item in raw_labels if not isinstance(item, dict) or item.get("label") not in candidate_ids]
+                    if outside:
+                        raise ValueError(f"adjudicator added non-candidate labels: {outside}")
+                return validate_classification(decoded.get("status"), raw_labels, taxonomy, state.evidence)
+            except ValueError as exc:
+                if correction_attempt:
+                    raise
+                messages.extend([
+                    {"role": "assistant", "content": response.choices[0].message.content or ""},
+                    {"role": "user", "content": f"The response was invalid: {exc}. Return a corrected final JSON object."},
+                ])
+        raise AssertionError("unreachable")
 
     def _chat(self, context: str, budget: TokenBudget, stage: str, **request: Any):
         request_max_tokens = budget.admit(stage, request)
@@ -378,3 +389,6 @@ class InvestigationAgent:
     def _document_result(self, document):
         passages = build_passages(document.document_id or document.url, document.content, max_chars=self.settings.max_preview_chars)
         return {"document_id": document.document_id or document.url, "url": document.url, "title": document.title, "passages": [asdict(item) for item in passages], "truncated": len(document.content) > self.settings.max_preview_chars}
+
+    def _taxonomy_chunks(self, taxonomy: Taxonomy):
+        return chunk_taxonomy(taxonomy, available_tokens=max(256, self.settings.max_input_tokens_per_request - 2000))
