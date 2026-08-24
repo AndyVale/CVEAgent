@@ -2,7 +2,9 @@ import json
 import logging
 
 from cve_agent.cli import run
-from cve_agent.models import CVERecord, ClassificationResult
+from cve_agent.evaluation import taxonomy_fingerprint
+from cve_agent.models import CVERecord, ClassificationResult, LabelClassification
+from cve_agent.taxonomy import load_taxonomy
 
 
 class Source:
@@ -26,6 +28,11 @@ class Classifier:
 class PartialClassifier(Classifier):
     def classify(self, cve, taxonomy, state, checkpoint=None):
         return ClassificationResult(cve.cve_id, "partial", operational={"stop_reason": "token_budget"})
+
+
+class ExpectedClassifier(Classifier):
+    def classify(self, cve, taxonomy, state, checkpoint=None):
+        return ClassificationResult(cve.cve_id, "classified", [LabelClassification("EXPECTED", 0.9, ())])
 
 
 def test_verbose_keeps_json_on_stdout_and_logs_on_stderr(tmp_path, capsys):
@@ -81,3 +88,29 @@ def test_verbose_logging_restores_third_party_logger_levels(tmp_path, capsys):
     finally:
         httpx_logger.setLevel(previous)
     capsys.readouterr()
+
+
+def test_validate_supplies_cves_and_prints_metrics_in_table_without_breaking_json(tmp_path, capsys):
+    taxonomy_path = tmp_path / "taxonomy.json"
+    taxonomy_path.write_text(json.dumps({"labels": [{"id": "EXPECTED", "name": "Expected", "description": "fixture"}]}), encoding="utf-8")
+    expected_path = tmp_path / "expected.json"
+    expected_path.write_text(json.dumps({
+        "taxonomy_sha256": taxonomy_fingerprint(load_taxonomy(taxonomy_path)),
+        "cases": [{"cve_id": "CVE-2020-0001", "labels": ["EXPECTED"]}],
+    }), encoding="utf-8")
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[storage]\ndatabase = 'results.sqlite'\n", encoding="utf-8")
+
+    exit_code = run([
+        "--taxonomy", str(taxonomy_path),
+        "--validate", str(expected_path),
+        "--config", str(config_path),
+    ], cve_source=Source(), web_source=Web(), classifier=ExpectedClassifier())
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out)[0]["cve_id"] == "CVE-2020-0001"
+    assert "ID            | Labels   | Precision | Recall | F1" in captured.err
+    assert "CVE-2020-0001 | EXPECTED | 1.000" in captured.err
+    assert "exact matches : 1/1" in captured.err
+    assert "micro P/R/F1  : 1.000 / 1.000 / 1.000" in captured.err
