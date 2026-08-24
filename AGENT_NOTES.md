@@ -2,63 +2,61 @@
 
 ## Current status
 
-The approved taxonomy-agnostic classification refactor is implemented. The obsolete
-URL-correction commit was replaced with logical canonical-evidence, exhaustive-classification,
-budget, retrieval, persistence, test, and documentation commits.
+The taxonomy-agnostic refactor is committed through `7498c9a`. The working tree contains the
+approved prompt/profile simplification plus a pre-commit maintainability and diagnostics pass.
+No commit has been created yet; `AGENTS.md` requires developer approval for each proposed
+commit. The unrelated `x.json` observed earlier was not touched.
 
-## Confirmed design
+## Current design
 
-- Taxonomies are arbitrary user data; CWE is only an example. Production code must not
-  depend on CWE identifiers, NVD weakness assignments, or fixture labels.
-- Evidence is application-owned. Fetched previews contain stable passages, approximate
-  model anchors may only locate a unique passage, and final labels reference evidence IDs.
-- Investigation is taxonomy-independent. Classification evaluates the complete taxonomy
-  in bounded exhaustive chunks and applies a taxonomy-defined hierarchy policy, defaulting
-  to most-specific labels.
-- Token budgeting reserves classification/finalization work before investigation and
-  permits a configurable finalization-only overrun. Unexpected exhaustion returns partial
-  coverage instead of discarding supported results.
-- SQLite records distinct runs with taxonomy/configuration fingerprints. Current local
-  database contents do not need migration.
-- NVD weakness assignments remain excluded. Partial-positive dataset evaluation is deferred.
+- Research is taxonomy-independent and uses five optional topics: affected system, root cause,
+  exploitation mechanism, preconditions, and impact. Unsupported topics are omitted.
+- Every retained finding cites application-owned evidence. A fetched passage cited by
+  `finish_investigation` is promoted automatically. `record_evidence` is optional, but final
+  labels still require evidence.
+- The application derives research sufficiency from evidence-backed root-cause or
+  exploitation-mechanism findings. Invalid finish items are discarded individually.
+- Every arbitrary taxonomy label is evaluated once in bounded chunks. Strict structured output
+  is normalized and centrally validated, then merged without a final adjudication request.
+- Complete outcomes require complete taxonomy coverage. Persistent malformed chunk output and
+  unexpected classification-budget exhaustion checkpoint and return validated partial results;
+  provider/infrastructure failures remain fatal.
+- Classification tokens are reserved before research. Chunk sizing now reserves the repeated
+  profile/schema input instead of using a fixed 2,000-token guess.
+- SQLite stores run-scoped metadata, checkpoints, coverage, state, and results. Schema version 2
+  remains compatible with the new JSON fields.
 
-## Completed
+## Maintainability and diagnostics changes
 
-- Mixed-reset obsolete commit `2e44957`; its changes remained available in the working tree
-  while the evidence-ID design replaced them.
-- Added canonical evidence records, stable passages, unique fuzzy-anchor resolution, and a
-  centralized classification validator.
-- Changed agent classification output to reference evidence IDs; backend materializes exact
-  quotes and canonical URLs. Removed URL spelling correction logic.
-- Separated taxonomy-independent investigation from exhaustive, bounded taxonomy chunk
-  evaluation and final candidate adjudication. Added generic hierarchy policies and coverage.
-- Removed the unused one-shot classifier and obsolete pipeline/classifier arguments.
-- Added provider-neutral token estimation, exhaustive-classification preflight, a protected
-  research allowance, configurable finalization overrun, and reported/estimated usage.
-- Unexpected budget exhaustion preserves validated chunk labels and exact coverage as a
-  partial result. Full deterministic suite passes: `29 passed`.
-- Split NVD/web retry configuration, added startup validation and config-relative paths,
-  streamed bounded text retrieval, and requested/resolved redirect provenance.
-- Added schema-versioned run persistence with incremental run IDs, taxonomy fingerprints,
-  non-secret settings, checkpoints, and fatal persistence error propagation. Removed the
-  ignored legacy local database as authorized. Full deterministic suite passes: `39 passed`.
-- Budget preflight now runs before NVD, database creation, or other pipeline side effects.
-- Verbose CLI logging uses a scoped package handler and restores logging state after each run.
-- Aligned placeholder fixtures, added an active fixture-driven integration test and strict
-  validator tests, verified production contains no fixture/CWE identifiers, and moved pytest
-  to the uv development dependency group. Full deterministic suite passes: `44 passed`.
-- Added bounded correction attempts for malformed taxonomy-chunk/final JSON and consistent
-  preflight/classification chunk planning. Updated README and project specification.
-- Final validation: `45 passed`, bytecode compilation passes, diff check passes, and the
-  example taxonomy passes preflight with `config.example.toml`.
-- Fixed live-provider recovery after chunk responses returned qualitative confidence or a
-  top-level JSON array. Full chunk validation now happens inside the bounded correction loop;
-  known confidence words/percentages are normalized centrally and unknown forms are corrected.
-- Current validation after the live-provider fixes: `53 passed`; bytecode compilation and
-  diff checks pass.
+- `InvestigationAgent` is now a small top-level orchestrator.
+- `research.py` owns the bounded tool loop and tool execution; `investigation.py` normalizes the
+  tolerant finish profile; `taxonomy_scan.py` owns exhaustive chunk classification.
+- `research_context.py` constructs the model context and bounds NVD references to 24 unique,
+  priority-ranked candidates while exposing total/omitted counts.
+- Verbose stderr logs model request usage, pacing, bounded search text, sanitized fetch URLs,
+  evidence IDs, finding aspects, chunk coverage/supported IDs, persistence, and stop reasons.
+  Prompts and evidence passages are not logged. Query strings/fragments are stripped from URL
+  diagnostics, configured credentials are redacted, and noisy provider/extraction logs are
+  suppressed and restored after the CLI run.
+- Empty provider responses now use the redacted diagnostic in both logs and propagated errors.
+- NVD retries and web/cache activity have explicit bounded progress logs.
 
-## Remaining work
+## Validation
 
+- Focused refactor/diagnostics suites pass.
+- Full deterministic suite: `75 passed`.
+- Bytecode compilation and `git diff --check` pass.
+- One authorized live run used a 15-second minimum request-start interval. For CVE-2014-0160
+  against the current two-label easy taxonomy it completed all labels and correctly returned
+  `no_matching_label`: four research turns, two searches, one fetch, four findings, and no
+  credential prefixes in stdout/stderr.
+- That run exposed 257 NVD references being resent on every turn and 88,758 total tokens. The
+  bounded-reference fix was added afterward and covered deterministically; the paid live run
+  was not repeated to conserve the supplied APIs.
+
+## Deferred and handoff
+
+- NVD weakness assignments remain intentionally excluded.
 - The partial-positive labelled-dataset evaluation command remains intentionally deferred.
-- NVD weakness assignments remain intentionally excluded and can be added later as an
-  optional evidence source without changing the taxonomy contract.
+- Review the final diff/status, then propose logical Conventional Commit boundaries. Do not
+  commit until the developer explicitly approves them.

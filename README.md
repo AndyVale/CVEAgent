@@ -16,7 +16,9 @@ export API_KEY="your-provider-key"
 ```
 
 `config.toml` and local credentials are ignored by Git. `API_KEY` is sent to the configured
-OpenAI-compatible endpoint. Tavily search is optional and uses `TAVILY_API_KEY`.
+OpenAI-compatible endpoint. Tavily search uses `TAVILY_API_KEY`. The investigator is directed
+to perform web research, while the application derives information sufficiency from the
+evidence-backed mechanism findings it actually produces.
 
 ## Taxonomies
 
@@ -62,6 +64,12 @@ safe progress diagnostics on stderr while stdout remains valid JSON:
 uv run cve-agent --verbose --taxonomy fixtures/example_taxonomy.json CVE-2025-6965
 ```
 
+The verbose trace reports research turns, bounded search queries, sanitized fetched URLs,
+evidence IDs, finding aspects, taxonomy chunks and supported label IDs, token usage, coverage,
+checkpoints, and stop reasons. It does not log model prompts or evidence passages. URL query
+strings and fragments are removed, configured credentials are redacted from provider
+diagnostics, and noisy dependency logs are suppressed.
+
 `--llm-min-request-interval SECONDS` overrides model pacing for one invocation.
 
 ## Classification flow
@@ -69,15 +77,27 @@ uv run cve-agent --verbose --taxonomy fixtures/example_taxonomy.json CVE-2025-69
 For each CVE, the system:
 
 1. retrieves NVD first and records its English description as exact initial evidence;
-2. investigates the vulnerability mechanism without seeing or assigning taxonomy labels;
+2. conducts taxonomy-independent web research focused on the affected system, root cause,
+   exploitation mechanism, preconditions, and impact;
 3. exposes fetched sources as stable, bounded passages;
-4. records exact evidence by passage ID, with unique fuzzy-anchor resolution as a fallback;
-5. evaluates every taxonomy label in bounded chunks;
-6. adjudicates the supported candidates and applies the taxonomy hierarchy policy.
+4. builds a concise profile from any supported high-level findings; its topics are guidance,
+   not mandatory fields;
+5. evaluates every taxonomy label independently in bounded chunks using strict structured
+   output;
+6. validates and merges all chunk labels deterministically, then applies the hierarchy policy.
 
 Final model decisions reference evidence IDs rather than writing quotes or URLs. The
 application materializes the canonical resolved URL and exact stored passage into the public
-JSON result. Search snippets are leads, never evidence.
+JSON result. A fetched passage cited at investigation finish is promoted automatically;
+`record_evidence` remains an optional way to preserve a passage across research turns. Full
+passage IDs and document-local forms such as `1` or `p1` are accepted when unambiguous. Search
+snippets are leads, never evidence.
+
+NVD records can contain hundreds of references. To avoid resending an oversized record on every
+turn, the model receives at most 24 unique candidates, prioritizing vendor advisories, patches,
+release notes, mitigations, product pages, exploits, technical descriptions, and then
+third-party advisories. The complete and omitted reference counts remain explicit in the
+research context.
 
 Classification prompts require numeric confidence in the `[0, 1]` range. As a compatibility
 fallback for providers that ignore that instruction, `low`, `medium`, and `high` are normalized
@@ -86,23 +106,33 @@ normalization is logged. Unknown confidence words remain invalid and trigger the
 correction request. Taxonomy-chunk responses wrapped as a top-level JSON array are also
 accepted, because the active chunk is unambiguous.
 
+The classifier is explicitly instructed to distinguish root causes and exploitation mechanisms
+from consequences: remote code execution, disclosure, denial of service, or privilege gain do
+not by themselves prove a particular weakness class. There is no final model adjudication
+request; a completed exhaustive scan is the classification result.
+
 Complete `classified` and `no_matching_label` results require 100% taxonomy coverage.
 Operational metadata includes chunk/label coverage, token usage, stop reason, and run ID.
 
 ## Budgets
 
 `token_budget` is the base per-CVE prompt-plus-completion budget. Before NVD or database
-work begins, CVEAgent estimates the exhaustive taxonomy scan and final adjudication cost. If
+work begins, CVEAgent estimates the exhaustive taxonomy-scan cost, including the repeated
+profile, evidence, prompt, schema, and output allowance. If
 that minimum cannot fit inside the base budget plus `finalization_overrun_percent`, the run
 fails preflight without external side effects.
 
 Classification tokens are reserved before investigation. Research cannot consume the
-reserve or overrun allowance; only taxonomy scanning and final adjudication may enter the
-configured overrun. Provider usage is used when available and conservatively estimated
+reserve or overrun allowance; only taxonomy scanning may enter the configured overrun.
+Provider usage is used when available and conservatively estimated
 otherwise. Unexpected exhaustion returns `partial` with validated labels and exact coverage.
+When research stops before it can produce a profile, classification receives a bounded set of
+the evidence already collected instead of silently discarding it.
 
 `max_input_tokens_per_request` controls taxonomy chunk size. Large or unusually verbose
-taxonomies may require raising `token_budget`; preflight reports its estimated minimum.
+taxonomies may require raising `token_budget`; preflight reports its estimated minimum. Chunk
+planning reserves room for the repeated vulnerability profile and structured-output schema,
+so an input limit too small for that fixed context fails before research begins.
 
 ## Web retrieval and cache
 
@@ -125,7 +155,7 @@ rm -r .cache/cve-agent/web
 SQLite stores separate runs rather than overwriting by CVE ID. Each run records an incremental
 run ID, taxonomy fingerprint, model, non-secret effective settings, timestamps, status, and
 per-CVE checkpoints/results. Checkpoints are written after NVD retrieval, evidence changes,
-and completed taxonomy chunks.
+the structured investigation profile, and completed taxonomy chunks.
 
 The current schema is version 2. A legacy development database is not migrated automatically;
 remove the configured database explicitly when the CLI reports an incompatible schema.

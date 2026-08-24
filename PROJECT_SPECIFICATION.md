@@ -26,7 +26,7 @@ The system:
 - receives a CVE ID and a user-supplied taxonomy;
 - queries the NVD API first;
 - treats the NVD CVE description as the strongest initial evidence;
-- may dynamically investigate additional sources on the web;
+- conducts additional web research even when the NVD description initially appears sufficient;
 - maintains an evolving investigation scratchpad for the current CVE;
 - investigates the vulnerability mechanism without exposing the complete taxonomy to every
   research turn;
@@ -76,11 +76,11 @@ The conceptual flow is:
 ```text
 CVE ID
   -> NVD description and metadata
-  -> investigate and collect evidence
-  -> maintain investigation scratchpad
+  -> search, fetch, and select exact web passages
+  -> build an evidence-linked vulnerability profile
   -> consult taxonomy definitions and relationships
-  -> identify labels supported by the evidence
-  -> investigate further when useful
+  -> evaluate every label independently in exhaustive chunks
+  -> merge validated chunk results deterministically
   -> produce final structured classification
 ```
 
@@ -106,7 +106,17 @@ All external retrieval must respect the target website's rules and applicable ac
 
 The system provides search/fetch tooling for web investigation.
 
-The classifier may decide dynamically which searches or pages are useful. Do not force a rigid sequence of searches beyond the requirement that NVD is queried first.
+The investigator is directed to perform web research before finishing, including at least one
+search. Beyond that direction, it may decide dynamically which queries and pages are useful.
+Search and fetch limits are enforced by the application rather than being delegated to the
+model. Search results are leads only; material claims require exact passages from fetched
+sources. A passage cited by the finish call is promoted to application-owned evidence
+automatically, so a separate recording call is optional.
+
+NVD reference lists supplied to each research turn must be bounded and should prioritize
+actionable primary material. The context must report complete and omitted reference counts so
+prompt-size reduction is explicit rather than silently suggesting that all references were
+provided.
 
 Retrieved contents should be cached when appropriate so that repeated investigations and tests do not unnecessarily repeat network requests. Downloads must be bounded while streaming, restricted to supported textual content, and retain requested and resolved URL provenance.
 
@@ -118,17 +128,25 @@ Non-retryable errors may terminate the current investigation.
 
 Each CVE has its own temporary investigation scratchpad.
 
-The scratchpad should evolve during the investigation and may contain information such as:
+The scratchpad should evolve during the investigation and contains:
 
 - relevant facts extracted from sources;
+- structured findings grouped into a small set of high-level topics and linked to evidence IDs;
+- an information-sufficiency status and concise synthesis;
 - URLs already visited;
 - useful quotations;
 - hypotheses and conclusions;
 - conflicting claims;
-- candidate labels;
 - unresolved questions;
 - reasons for further investigation;
-- confidence changes or other decision-relevant observations.
+- other decision-relevant observations.
+
+The high-level topics are affected system, root cause, exploitation mechanism, preconditions,
+and impact. They guide investigation but are not mandatory slots: multiple findings may use
+one topic and unsupported topics are omitted. Each retained finding must cite application-owned
+evidence. The application derives `sufficient` only when at least one evidence-backed root-cause
+or exploitation-mechanism finding exists; otherwise it derives `insufficient` without asking
+the model to enumerate unknowns or correct a status field.
 
 The scratchpad is scoped to the current CVE only. It MUST be cleared before another CVE is investigated.
 
@@ -139,9 +157,11 @@ Do not use the scratchpad as persistent learning across CVEs.
 Every assigned label must be supported by evidence.
 
 Evidence must be application-owned and source-grounded. Fetched previews are divided into
-stable passages. The model selects an exact passage ID or supplies an approximate anchor that
-the application accepts only when it resolves uniquely. Final label decisions reference an
-evidence ID; the application materializes the exact quote and canonical resolved URL.
+stable passages. The model may select an exact passage ID, an unambiguous document-local number,
+or an approximate anchor that resolves uniquely. Passage references in the finish call are
+promoted automatically. Invalid references discard only the unsupported finding rather than
+invalidating the complete investigation. Final label decisions reference an evidence ID; the
+application materializes the exact quote and canonical resolved URL.
 
 When available, include:
 
@@ -165,6 +185,15 @@ For each selected label, return:
 
 The classifier should not emit weakly supported labels merely because they are semantically plausible.
 
+Every label must be evaluated independently. The classifier must distinguish a vulnerability's
+root cause and exploitation mechanism from its consequences. Generic impacts such as remote
+code execution or information disclosure do not establish a specific weakness class without
+evidence for that class's defining mechanism.
+
+Every taxonomy chunk uses a strict structured-output schema and is validated centrally. The
+application merges validated chunk results directly; there is no second model adjudication
+phase. Complete outcomes require every chunk to have been evaluated.
+
 When the available information is insufficient to justify a reliable classification, return `not_enough_information` rather than guessing.
 
 The classifier determines which labels to emit. No external post-processing rule should be assumed to add labels that the model did not select.
@@ -184,10 +213,12 @@ The agent should decide when to stop by considering, together:
 The goal is to stop when further investigation has diminishing expected value, without unnecessarily overengineering the investigation process.
 
 Token usage is a staged resource constraint. Before investigation, the system reserves the
-estimated cost of exhaustive taxonomy evaluation and final adjudication. Investigation cannot
+estimated cost of exhaustive taxonomy evaluation. Investigation cannot
 consume that reserve. A configurable bounded finalization overrun may be used only by the
 classification phases. If unexpected usage prevents completion, the agent must return a
 `partial` result containing validated labels, exact taxonomy coverage, and the stop reason.
+Taxonomy chunk sizing must reserve room for the repeated profile and output schema rather than
+treating the entire per-request input limit as taxonomy space.
 Complete outcomes require every taxonomy chunk to have been evaluated.
 
 ## Output format
