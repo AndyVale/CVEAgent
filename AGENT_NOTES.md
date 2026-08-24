@@ -2,10 +2,10 @@
 
 ## Current status
 
-The taxonomy-agnostic refactor is committed through `7498c9a`. The working tree contains the
-approved prompt/profile simplification plus a pre-commit maintainability and diagnostics pass.
-No commit has been created yet; `AGENTS.md` requires developer approval for each proposed
-commit. The unrelated `x.json` observed earlier was not touched.
+The taxonomy-agnostic refactor, diagnostics, benchmark evaluator, and curated fixtures are
+complete. The evaluator implementation is committed as `97060a6`; the benchmark and its tests
+are committed as `5a8ea16`. `fixtures/expected-classification.json` contains 14 source-audited
+cases covering all 15 labels in the unchanged `fixtures/example_taxonomy.json`.
 
 ## Current design
 
@@ -53,10 +53,15 @@ commit. The unrelated `x.json` observed earlier was not touched.
 - That run exposed 257 NVD references being resent on every turn and 88,758 total tokens. The
   bounded-reference fix was added afterward and covered deterministically; the paid live run
   was not repeated to conserve the supplied APIs.
+- Final validation passes: `82 passed`, bytecode compilation, CLI help smoke test,
+  `git diff --check`, fixture fingerprint/coverage checks, and a production-source scan proving
+  that example label/CVE IDs are not hard-coded. `fixtures/example_taxonomy.json` is unchanged.
 
 ## Deferred and handoff
 
 - NVD weakness assignments remain intentionally excluded.
-- The partial-positive labelled-dataset evaluation command remains intentionally deferred.
-- Review the final diff/status, then propose logical Conventional Commit boundaries. Do not
-  commit until the developer explicitly approves them.
+- The evaluator accepts `--validate PATH`; without positional CVEs it runs every validation
+  case, and with positional CVEs it validates and runs only that subset. The stderr summary is
+  a table with ID, labels, precision, recall, and F1; metric cells are `-` without validation.
+  The complete result JSON on stdout remains parseable.
+- No implementation work remains for the benchmark-evaluation change.

@@ -72,6 +72,55 @@ diagnostics, and noisy dependency logs are suppressed.
 
 `--llm-min-request-interval SECONDS` overrides model pacing for one invocation.
 
+Every invocation ends with a compact mapping on stderr while stdout remains the complete valid
+JSON result:
+
+```text
+Classification summary
+ID             | Labels                  | Precision | Recall | F1
+---------------+-------------------------+-----------+--------+---
+CVE-2014-0160  | OutOfBoundsRead         | -         | -      | -
+CVE-2021-41773 | PathTraversal, InfoLeak | -         | -      | -
+```
+
+Precision, recall, and F1 are `-` during an ordinary classification. Pass `--validate` to
+calculate them for each CVE by comparing predicted and expected label sets.
+
+## Evaluating classification performance
+
+`fixtures/expected-classification.json` contains 14 conservatively selected CVEs covering every
+label in the unchanged `fixtures/example_taxonomy.json`. Each case records expected label IDs,
+a short mapping rationale, and the primary or NVD sources used to curate it. The benchmark also
+contains a taxonomy fingerprint, so it cannot accidentally be evaluated against another
+taxonomy.
+
+Run the complete benchmark without listing CVE IDs:
+
+```bash
+uv run cve-agent \
+  --taxonomy fixtures/example_taxonomy.json \
+  --validate fixtures/expected-classification.json
+```
+
+Or run a cheaper subset while developing:
+
+```bash
+uv run cve-agent \
+  --taxonomy fixtures/example_taxonomy.json \
+  --validate fixtures/expected-classification.json \
+  CVE-2014-0160 CVE-2021-41773
+```
+
+With `--validate`, the classification table contains per-CVE precision, recall, and F1. The
+aggregate report that follows includes exact matches, micro precision/recall/F1, macro-F1 over
+labels present in the selected evaluation, per-label precision/recall/F1 and confusion counts,
+the number of partial or failed cases, and every mismatch. Partial results can contribute their
+validated labels to precision/recall, but never count as exact matches. The normal JSON remains
+on stdout, so it can still be redirected independently from the human-readable report.
+
+The full benchmark can require many model and search calls. Keep the configured request pacing
+and use subsets for prompt iteration before spending quota on all cases.
+
 ## Classification flow
 
 For each CVE, the system:

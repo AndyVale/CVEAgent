@@ -14,6 +14,19 @@ For each CVE, determine which labels from the supplied taxonomy are supported by
 
 The task is multi-label classification. The classification system is intended to be evaluated primarily with micro-F1 and macro-F1, together with per-label precision and recall.
 
+Expected-classification benchmarks are taxonomy-scoped. They must identify their taxonomy by a
+deterministic fingerprint and map unique CVE IDs to sets of expected taxonomy IDs. Optional
+rationales and source URLs make manual curation auditable but are never supplied to the runtime
+classifier. Evaluation compares validated output labels with the expected sets, reports exact
+match, micro precision/recall/F1, macro-F1, incomplete outcomes, and case-level mismatches.
+Partial labels may contribute to aggregate precision and recall, but a partial or failed result
+is never an exact match.
+
+The CLI exposes validation through `--validate PATH`. Its compact classification summary is a
+table with ID, predicted labels, precision, recall, and F1 columns. Metric cells are placeholders
+when validation is disabled and per-CVE label-set scores when an expected-classification file is
+supplied. The detailed aggregate report remains separate from the machine-readable JSON output.
+
 The classifier should favor evidence-backed decisions and should prefer `not_enough_information` over unsupported speculation.
 
 ## Architecture
