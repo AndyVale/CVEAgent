@@ -14,6 +14,7 @@ import httpx
 import trafilatura
 
 from cve_agent.config import Settings
+from cve_agent.logging_config import safe_url
 from cve_agent.models import CVERecord, Document, Reference, SearchResult
 
 
@@ -26,7 +27,14 @@ def _request_json(url: str, timeout: float, retries: int, headers: dict[str, str
             request = urllib.request.Request(url, headers=headers or {})
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return json.loads(response.read())
-        except (TimeoutError, urllib.error.URLError):
+        except (TimeoutError, urllib.error.URLError) as exc:
+            logger.warning(
+                "NVD request failed attempt=%d/%d retrying=%s error_type=%s",
+                attempt + 1,
+                retries + 1,
+                attempt < retries,
+                type(exc).__name__,
+            )
             if attempt >= retries:
                 raise
             time.sleep(0.2 * (2**attempt))
@@ -37,6 +45,7 @@ class NVDClient:
         self.settings = settings
 
     def get_cve(self, cve_id: str) -> CVERecord:
+        logger.info("[%s] NVD request started", cve_id)
         url = f"{self.settings.nvd_base_url}?{urllib.parse.urlencode({'cveId': cve_id})}"
         payload = _request_json(url, self.settings.nvd_timeout, self.settings.nvd_retry_count)
         vulnerabilities = payload.get("vulnerabilities", [])
@@ -46,7 +55,9 @@ class NVDClient:
         descriptions = cve.get("descriptions", [])
         description = next((x.get("value", "") for x in descriptions if x.get("lang") == "en"), descriptions[0].get("value", "") if descriptions else "")
         references = tuple(Reference(x.get("url", ""), x.get("source"), tuple(x.get("tags", []))) for x in cve.get("references", []) if x.get("url"))
-        return CVERecord(cve.get("id", cve_id), description, references, {"published": cve.get("published"), "last_modified": cve.get("lastModified"), "source_identifier": cve.get("sourceIdentifier")})
+        record = CVERecord(cve.get("id", cve_id), description, references, {"published": cve.get("published"), "last_modified": cve.get("lastModified"), "source_identifier": cve.get("sourceIdentifier")})
+        logger.info("[%s] NVD request finished description_chars=%d references=%d", cve_id, len(description), len(references))
+        return record
 
 
 class TavilySearchProvider:
@@ -69,6 +80,14 @@ class TavilySearchProvider:
         headers = {"Authorization": f"Bearer {self.settings.tavily_api_key}", "Content-Type": "application/json"}
         for attempt in range(self.settings.web_retry_count + 1):
             try:
+                logger.info(
+                    "Tavily search attempt=%d/%d query_chars=%d depth=%s max_results=%d",
+                    attempt + 1,
+                    self.settings.web_retry_count + 1,
+                    len(query),
+                    self.settings.tavily_search_depth,
+                    self.settings.tavily_max_results,
+                )
                 if self.http_client is None:
                     with httpx.Client(timeout=self.settings.web_timeout, headers={"User-Agent": "cve-agent/0.1"}) as client:
                         response = client.post(f"{self.settings.tavily_base_url.rstrip('/')}/search", json=payload, headers=headers)
@@ -80,10 +99,19 @@ class TavilySearchProvider:
                     response.raise_for_status()
                 response.raise_for_status()
                 data = response.json()
-                return [SearchResult(item.get("title", ""), item["url"], item.get("content", "")) for item in data.get("results", []) if item.get("url")]
+                results = [SearchResult(item.get("title", ""), item["url"], item.get("content", "")) for item in data.get("results", []) if item.get("url")]
+                logger.info("Tavily search finished results=%d", len(results))
+                return results
             except RuntimeError:
                 raise
-            except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError, httpx.HTTPStatusError):
+            except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError, httpx.HTTPStatusError) as exc:
+                logger.warning(
+                    "Tavily search failed attempt=%d/%d retrying=%s error_type=%s",
+                    attempt + 1,
+                    self.settings.web_retry_count + 1,
+                    attempt < self.settings.web_retry_count,
+                    type(exc).__name__,
+                )
                 if attempt >= self.settings.web_retry_count:
                     raise
                 time.sleep(0.2 * (2**attempt))
@@ -111,6 +139,7 @@ class CachedWebClient:
         logger.info("search cache miss query_chars=%d", len(query))
         results = self.searcher(query)
         path.write_text(json.dumps([x.__dict__ for x in results]), encoding="utf-8")
+        logger.info("search cached query_chars=%d results=%d", len(query), len(results))
         return results
 
     def fetch(self, url: str) -> Document:
@@ -119,33 +148,34 @@ class CachedWebClient:
             cached = json.loads(path.read_text(encoding="utf-8"))
             cached["redirect_chain"] = tuple(cached.get("redirect_chain", ()))
             document = Document(**cached)
-            logger.info("fetch cache hit url=%s document_id=%s chars=%d", url, document.document_id, len(document.content))
+            logger.info("fetch cache hit url=%s document_id=%s chars=%d", safe_url(url), document.document_id, len(document.content))
             return document
-        logger.info("fetch cache miss url=%s", url)
+        logger.info("fetch cache miss url=%s", safe_url(url))
         for attempt in range(self.settings.web_retry_count + 1):
             try:
-                logger.info("fetch attempt=%d/%d url=%s", attempt + 1, self.settings.web_retry_count + 1, url)
+                logger.info("fetch attempt=%d/%d url=%s", attempt + 1, self.settings.web_retry_count + 1, safe_url(url))
                 raw_bytes, response_url, redirect_chain, content_type, encoding = self._download(url)
-                logger.info("fetch response final_url=%s content_type=%s bytes=%d", response_url, content_type or "unknown", len(raw_bytes))
+                logger.info("fetch response final_url=%s content_type=%s bytes=%d", safe_url(response_url), content_type or "unknown", len(raw_bytes))
                 raw_response = raw_bytes.decode(encoding or "utf-8", errors="replace")
                 break
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 retryable = status == 408 or status == 425 or status == 429 or status >= 500
-                logger.warning("fetch HTTP failure status=%d retryable=%s url=%s", status, retryable, url)
+                logger.warning("fetch HTTP failure status=%d retryable=%s url=%s", status, retryable, safe_url(url))
                 if not retryable or attempt >= self.settings.web_retry_count:
                     raise
                 time.sleep(0.2 * (2**attempt))
             except httpx.RequestError as exc:
-                logger.warning("fetch network failure type=%s message=%s url=%s", type(exc).__name__, str(exc), url)
+                logger.warning("fetch network failure type=%s url=%s", type(exc).__name__, safe_url(url))
                 if attempt >= self.settings.web_retry_count:
                     raise
                 time.sleep(0.2 * (2**attempt))
         raw_content = raw_response[: self.settings.max_document_chars]
-        content = trafilatura.extract(raw_content, url=response_url, include_comments=False, include_tables=True) or raw_content
+        extraction_url = safe_url(response_url)
+        content = trafilatura.extract(raw_content, url=extraction_url, include_comments=False, include_tables=True) or raw_content
         content = content[: self.settings.max_document_chars]
-        logger.info("fetch extracted url=%s raw_chars=%d extracted_chars=%d extraction_used_fallback=%s", url, len(raw_response), len(content), content == raw_content)
-        metadata = trafilatura.extract_metadata(raw_content, default_url=response_url) if raw_content else None
+        logger.info("fetch extracted url=%s raw_chars=%d extracted_chars=%d extraction_used_fallback=%s", safe_url(url), len(raw_response), len(content), content == raw_content)
+        metadata = trafilatura.extract_metadata(raw_content, default_url=extraction_url) if raw_content else None
         title = (metadata.title or "") if metadata else ""
         document = Document(
             url=response_url,

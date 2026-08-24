@@ -9,14 +9,15 @@ from openai import APIConnectionError, APITimeoutError, InternalServerError, Ope
 from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from cve_agent.config import Settings
+from cve_agent.logging_config import redact_secrets
 
 
 class EmptyCompletionError(RuntimeError):
     """The provider returned a response object without a usable choice."""
 
-    def __init__(self, response: Any):
+    def __init__(self, response: Any, diagnostic: str | None = None):
         self.response = response
-        super().__init__(f"LLM returned no usable choices ({response_summary(response)})")
+        super().__init__(f"LLM returned no usable choices ({diagnostic or response_summary(response)})")
 
 
 class RequestPacer:
@@ -61,13 +62,14 @@ def call_chat_completion(client: OpenAI, settings: Settings, logger: logging.Log
     retryable = (APIConnectionError, APITimeoutError, InternalServerError, RateLimitError, EmptyCompletionError)
 
     def log_retry(retry_state) -> None:
+        exception = retry_state.outcome.exception() if retry_state.outcome else "unknown"
         logger.warning(
             "[%s] LLM interaction failed; retrying attempt=%d/%d wait=%.1fs error=%s",
             context,
             retry_state.attempt_number,
             settings.llm_retry_count + 1,
             retry_state.next_action.sleep if retry_state.next_action else 0.0,
-            retry_state.outcome.exception() if retry_state.outcome else "unknown",
+            redact_secrets(exception, settings.api_key, settings.tavily_api_key),
         )
 
     for attempt in Retrying(
@@ -82,6 +84,15 @@ def call_chat_completion(client: OpenAI, settings: Settings, logger: logging.Log
                 request_pacer.wait(logger, context)
             response = client.chat.completions.create(**request)
             if response is None or not getattr(response, "choices", None):
-                logger.error("[%s] LLM provider returned unusable response: %s", context, response_summary(response))
-                raise EmptyCompletionError(response)
+                diagnostic = redact_secrets(
+                    response_summary(response),
+                    settings.api_key,
+                    settings.tavily_api_key,
+                )
+                logger.error(
+                    "[%s] LLM provider returned unusable response: %s",
+                    context,
+                    diagnostic,
+                )
+                raise EmptyCompletionError(response, diagnostic)
             return response

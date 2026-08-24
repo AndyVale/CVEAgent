@@ -1,8 +1,10 @@
 import logging
 from types import SimpleNamespace
 
+import pytest
+
 from cve_agent.config import load_settings
-from cve_agent.llm import call_chat_completion
+from cve_agent.llm import EmptyCompletionError, call_chat_completion
 
 
 def test_settings_use_openrouter_defaults_and_api_key(tmp_path, monkeypatch):
@@ -32,3 +34,21 @@ def test_chat_completion_retries_empty_provider_response(tmp_path):
     result = call_chat_completion(client, load_settings(config), logging.getLogger(__name__), context="fixture", messages=[])
     assert result.choices
     assert completions.calls == 2
+
+
+def test_empty_provider_diagnostics_redact_configured_key(tmp_path, monkeypatch, caplog):
+    secret = "fixture-provider-secret"
+    monkeypatch.setenv("API_KEY", secret)
+    config = tmp_path / "config.toml"
+    config.write_text("[runtime]\nretry_count = 0\n", encoding="utf-8")
+    response = SimpleNamespace(id="empty", choices=None, error={"message": f"provider echoed {secret}"})
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kwargs: response)))
+    caplog.set_level(logging.ERROR)
+
+    with pytest.raises(EmptyCompletionError) as caught:
+        call_chat_completion(client, load_settings(config), logging.getLogger(__name__), context="fixture", messages=[])
+
+    assert secret not in caplog.text
+    assert secret not in str(caught.value)
+    assert "[REDACTED]" in caplog.text
+    assert "[REDACTED]" in str(caught.value)

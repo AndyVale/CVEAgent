@@ -1,4 +1,5 @@
 import json
+import logging
 
 from cve_agent.cli import run
 from cve_agent.models import CVERecord, ClassificationResult
@@ -64,3 +65,19 @@ def test_partial_result_has_nonzero_exit_code(tmp_path, capsys):
     exit_code = run(["--taxonomy", str(taxonomy_path), "--config", str(config_path), "CVE-1"], cve_source=Source(), web_source=Web(), classifier=PartialClassifier())
     capsys.readouterr()
     assert exit_code == 2
+
+
+def test_verbose_logging_restores_third_party_logger_levels(tmp_path, capsys):
+    taxonomy_path = tmp_path / "taxonomy.json"
+    taxonomy_path.write_text(json.dumps({"labels": [{"id": "GENERIC", "name": "Example", "description": "fixture"}]}), encoding="utf-8")
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[storage]\ndatabase = 'results.sqlite'\n", encoding="utf-8")
+    httpx_logger = logging.getLogger("httpx")
+    previous = httpx_logger.level
+    httpx_logger.setLevel(logging.DEBUG)
+    try:
+        assert run(["--verbose", "--taxonomy", str(taxonomy_path), "--config", str(config_path), "VULN-1"], cve_source=Source(), web_source=Web(), classifier=Classifier()) == 0
+        assert httpx_logger.level == logging.DEBUG
+    finally:
+        httpx_logger.setLevel(previous)
+    capsys.readouterr()

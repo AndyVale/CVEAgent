@@ -39,6 +39,7 @@ class Pipeline:
                     logger.info("[%s] starting investigation run_id=%d", cve_id, run_id)
                     try:
                         cve = self.cve_source.get_cve(cve_id)
+                        logger.info("[%s] NVD evidence initialized description_chars=%d references=%d", cve_id, len(cve.description), len(cve.references))
                         state.facts.append(cve.description)
                         if cve.description.strip():
                             state.evidence.append(EvidenceRecord(
@@ -64,7 +65,17 @@ class Pipeline:
                     result.operational.setdefault("run_id", run_id)
                     db.save_investigation(run_id, input_position, cve_id, result.status, state, result, result.error)
                     results.append(result)
-                db.finish_run(run_id, "complete" if all(item.status != ClassificationStatus.FAILED for item in results) else "completed_with_failures")
+                    logger.info(
+                        "[%s] investigation persisted run_id=%d status=%s labels=%d coverage_complete=%s",
+                        cve_id,
+                        run_id,
+                        result.status,
+                        len(result.labels),
+                        result.operational.get("coverage", {}).get("complete"),
+                    )
+                run_status = "complete" if all(item.status != ClassificationStatus.FAILED for item in results) else "completed_with_failures"
+                db.finish_run(run_id, run_status)
+                logger.info("run_id=%d persisted status=%s results=%d", run_id, run_status, len(results))
             except Exception:
                 db.finish_run(run_id, "failed")
                 raise
