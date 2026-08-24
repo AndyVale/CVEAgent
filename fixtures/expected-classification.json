@@ -1,16 +1,120 @@
 {
-  "cve_id": "CVE-2026-0001",
-  "status": "classified",
-  "labels": [
+  "schema_version": 1,
+  "taxonomy": "example_taxonomy.json",
+  "taxonomy_sha256": "1af26fe1b8194aaba69ab7b859f90743370f3910e0c540b2fa6ebef79f892d9a",
+  "cases": [
     {
-      "label": "CWE-120",
-      "confidence": 0.95,
-      "evidence": [
-        {
-          "url": "https://example.test/advisory",
-          "quote": "A buffer copy in Example Product does not validate input length.",
-          "explanation": "The advisory directly describes an unchecked buffer copy."
-        }
+      "cve_id": "CVE-2020-11022",
+      "labels": ["XSS"],
+      "rationale": "Untrusted HTML passed to jQuery DOM manipulation methods can execute attacker-controlled script in the page context.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2020-11022",
+        "https://blog.jquery.com/2020/04/10/jquery-3-5-0-released/"
+      ]
+    },
+    {
+      "cve_id": "CVE-2023-34362",
+      "labels": ["SQLi"],
+      "rationale": "MOVEit Transfer contains a SQL injection vulnerability that permits unauthorized access to its database.",
+      "sources": [
+        "https://docs.progress.com/bundle/moveit-transfer-release-notes-2022_1/page/Fixed-Issues-in-2022.1.5.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2024-22424",
+      "labels": ["CSRF"],
+      "rationale": "A malicious same-parent-domain page can make authenticated Argo CD API requests on the victim's behalf.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-22424"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-26855",
+      "labels": ["SSRF"],
+      "rationale": "Attacker-controlled Exchange backend-routing cookie values coerce the server into unintended backend requests.",
+      "sources": [
+        "https://www.microsoft.com/en-us/msrc/blog/2021/03/microsoft-exchange-server-vulnerabilities-mitigations-march-2021"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-41773",
+      "labels": ["PathTraversal", "InfoLeak"],
+      "rationale": "Broken path normalization lets crafted URLs map outside configured directories and disclose files through HTTP responses.",
+      "sources": [
+        "https://httpd.apache.org/security/vulnerabilities_24.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2014-6271",
+      "labels": ["CommandInjection"],
+      "rationale": "Bash executes attacker-supplied trailing shell commands embedded in environment-variable function definitions.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2014-6271"
+      ]
+    },
+    {
+      "cve_id": "CVE-2017-9841",
+      "labels": ["CodeInjection"],
+      "rationale": "An exposed PHPUnit endpoint evaluates attacker-supplied PHP source from the HTTP request body.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2017-9841"
+      ]
+    },
+    {
+      "cve_id": "CVE-2017-9805",
+      "labels": ["UntrustedDeserialization"],
+      "rationale": "The Struts REST plugin deserializes attacker-controlled XML with XStream without type filtering.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2017-9805"
+      ]
+    },
+    {
+      "cve_id": "CVE-2015-7547",
+      "labels": ["BufferOverflow"],
+      "rationale": "Crafted DNS responses trigger stack-based buffer overflows in glibc resolver functions.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2015-7547",
+        "https://googleonlinesecurity.blogspot.com/2016/02/cve-2015-7547-glibc-getaddrinfo-stack.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2014-0160",
+      "labels": ["OutOfBoundsRead"],
+      "rationale": "Malformed TLS heartbeat packets cause OpenSSL to read beyond the intended buffer and return process memory.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2014-0160"
+      ]
+    },
+    {
+      "cve_id": "CVE-2019-5786",
+      "labels": ["UseAfterFree"],
+      "rationale": "Chrome identified the underlying FileReader memory-safety defect specifically as a use-after-free.",
+      "sources": [
+        "https://chromereleases.googleblog.com/2019/03/stable-channel-update-for-desktop.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2023-22518",
+      "labels": ["AccessControl"],
+      "rationale": "Improper authorization lets an unauthenticated attacker reset Confluence and create an administrator account.",
+      "sources": [
+        "https://confluence.atlassian.com/security/cve-2023-22518-improper-authorization-vulnerability-in-confluence-data-center-and-confluence-server-1311473907.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2023-44487",
+      "labels": ["ResourceExhaustion"],
+      "rationale": "Rapidly resetting an unbounded sequence of HTTP/2 streams consumes server work and causes denial of service.",
+      "sources": [
+        "https://blog.cloudflare.com/technical-breakdown-http2-rapid-reset-ddos-attack/"
+      ]
+    },
+    {
+      "cve_id": "CVE-2018-9206",
+      "labels": ["InputValidation"],
+      "rationale": "The file-upload component accepts arbitrary unauthenticated uploads, matching the taxonomy's dangerous-file-upload catch-all.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2018-9206"
       ]
     }
   ]

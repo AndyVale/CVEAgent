@@ -106,7 +106,7 @@ def settings(tmp_path):
 
 def test_fixture_driven_pipeline_matches_expected_result(tmp_path):
     record = json.loads((FIXTURES / "cve-example.json").read_text(encoding="utf-8"))
-    expected = json.loads((FIXTURES / "expected-classification.json").read_text(encoding="utf-8"))
+    expected = json.loads((FIXTURES / "expected-easy-classification.json").read_text(encoding="utf-8"))
     taxonomy = load_taxonomy(FIXTURES / "example_taxonomy_easy.json")
     configured = settings(tmp_path)
     web = FixtureWeb(record["description"])
