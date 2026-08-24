@@ -9,6 +9,12 @@ def test_passage_ids_are_stable_and_exact():
     assert passages[1].text == "Second exact paragraph."
 
 
+@pytest.mark.parametrize("reference", ["1", "p1", "doc:1", "doc:p1"])
+def test_passage_ids_accept_document_local_shorthand(reference):
+    passages = build_passages("doc", "First exact paragraph.\n\nSecond exact paragraph.", max_chars=1000)
+    assert resolve_passage(passages, passage_id=reference).passage_id == "doc:p1"
+
+
 def test_fuzzy_anchor_requires_one_clear_match():
     passages = build_passages("doc", "Alpha memory corruption details.\n\nBeta authorization details.", max_chars=1000)
     assert resolve_passage(passages, quote_anchor="alpha memory corruption detail").passage_id == "doc:p1"

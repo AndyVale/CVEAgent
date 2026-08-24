@@ -80,6 +80,25 @@ class InvestigationStopReason(StrEnum):
     INVESTIGATION_LIMIT = "investigation_limit"
     TOKEN_BUDGET = "token_budget"
     NO_FINISH_TOOL = "no_finish_tool"
+    CLASSIFICATION_ERROR = "classification_error"
+
+
+class InvestigationAspect(StrEnum):
+    AFFECTED_SYSTEM = "affected_system"
+    ROOT_CAUSE = "root_cause"
+    EXPLOITATION_MECHANISM = "exploitation_mechanism"
+    PRECONDITIONS = "preconditions"
+    IMPACT = "impact"
+
+
+MAX_INVESTIGATION_FINDINGS = 10
+
+
+@dataclass(frozen=True)
+class InvestigationFinding:
+    aspect: InvestigationAspect
+    statement: str
+    evidence_ids: tuple[str, ...]
 
 
 @dataclass
@@ -100,6 +119,9 @@ class ClassificationResult:
 @dataclass
 class InvestigationState:
     facts: list[str] = field(default_factory=list)
+    findings: list[InvestigationFinding] = field(default_factory=list)
+    research_summary: str = ""
+    research_information_status: str = ""
     visited_urls: list[str] = field(default_factory=list)
     evidence: list[EvidenceRecord] = field(default_factory=list)
     tool_history: list[dict[str, Any]] = field(default_factory=list)

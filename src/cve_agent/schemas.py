@@ -2,16 +2,97 @@ from __future__ import annotations
 
 from typing import Any
 
-from cve_agent.models import ClassificationStatus
+from cve_agent.models import MAX_INVESTIGATION_FINDINGS, InvestigationAspect
 
 
 def tool(name: str, description: str, parameters: dict[str, Any]) -> dict[str, Any]:
     return {"type": "function", "function": {"name": name, "description": description, "parameters": parameters, "strict": True}}
 
 
+_ASPECT_SCHEMA = {"type": "string", "enum": [aspect.value for aspect in InvestigationAspect]}
+
+_FINDING_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "aspect": _ASPECT_SCHEMA,
+        "statement": {"type": "string", "minLength": 1},
+        "evidence_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+    },
+    "required": ["aspect", "statement", "evidence_ids"],
+}
+
 AGENT_TOOLS = [
-    tool("search", "Search only when the NVD record and its references do not provide enough information. Results are leads, not evidence; choose at most one or two strong results to fetch.", {"type": "object", "additionalProperties": False, "properties": {"query": {"type": "string"}}, "required": ["query"]}),
-    tool("fetch", "Fetch one strong source and inspect its bounded numbered passages. After fetching, record useful evidence by passage ID or quote anchor, or finish.", {"type": "object", "additionalProperties": False, "properties": {"url": {"type": "string"}}, "required": ["url"]}),
-    tool("record_evidence", "Promote an exact application-owned passage. Prefer passage_id. If necessary, leave passage_id empty and provide a distinctive approximate quote_anchor; it must resolve uniquely.", {"type": "object", "additionalProperties": False, "properties": {"document_id": {"type": "string"}, "passage_id": {"type": "string"}, "quote_anchor": {"type": "string"}}, "required": ["document_id", "passage_id", "quote_anchor"]}),
-    tool("finish_investigation", "Finish evidence collection. Report whether the collected information is sufficient to describe the vulnerability mechanism and provide a concise taxonomy-independent summary.", {"type": "object", "additionalProperties": False, "properties": {"information_status": {"type": "string", "enum": ["sufficient", "insufficient"]}, "summary": {"type": "string"}}, "required": ["information_status", "summary"]}),
+    tool(
+        "search",
+        "Find relevant web sources using a targeted query. Results are leads only and must be fetched before they can support a finding.",
+        {"type": "object", "additionalProperties": False, "properties": {"query": {"type": "string"}}, "required": ["query"]},
+    ),
+    tool(
+        "fetch",
+        "Retrieve a source and inspect its bounded numbered passages. Discard sources that contain only boilerplate or otherwise lack useful vulnerability information.",
+        {"type": "object", "additionalProperties": False, "properties": {"url": {"type": "string"}}, "required": ["url"]},
+    ),
+    tool(
+        "record_evidence",
+        "Optionally preserve an important passage before using another tool. passage_id accepts the full ID or the document-local number (for example 1 or p1). Fetched passage IDs may also be cited directly in finish_investigation.",
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"document_id": {"type": "string"}, "passage_id": {"type": "string"}, "quote_anchor": {"type": "string"}},
+            "required": ["document_id", "passage_id", "quote_anchor"],
+        },
+    ),
+    tool(
+        "finish_investigation",
+        "Submit the useful source-grounded findings. The aspects are high-level categories, not a checklist: omit categories that reliable sources did not establish. Fetched passages are promoted automatically when cited.",
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "findings": {"type": "array", "items": _FINDING_SCHEMA, "maxItems": MAX_INVESTIGATION_FINDINGS},
+                "summary": {"type": "string", "minLength": 1},
+            },
+            "required": ["findings", "summary"],
+        },
+    ),
 ]
+
+
+def classification_response_format() -> dict[str, Any]:
+    """Return the strict structured-output contract for one taxonomy chunk."""
+    evidence_association = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "evidence_id": {"type": "string", "minLength": 1},
+            "explanation": {"type": "string", "minLength": 1},
+        },
+        "required": ["evidence_id", "explanation"],
+    }
+    supported_label = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "label": {"type": "string", "minLength": 1},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "evidence": {"type": "array", "items": evidence_association, "minItems": 1},
+        },
+        "required": ["label", "confidence", "evidence"],
+    }
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "taxonomy_chunk_classification",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "chunk_id": {"type": "integer"},
+                    "supported": {"type": "array", "items": supported_label},
+                },
+                "required": ["chunk_id", "supported"],
+            },
+        },
+    }

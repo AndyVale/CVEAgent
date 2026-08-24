@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cve_agent.budget import BudgetExceeded, BudgetPreflightError, TokenBudget, create_budget_plan
+from cve_agent.budget import BudgetExceeded, BudgetPreflightError, TokenBudget, classification_context_tokens, create_budget_plan, taxonomy_input_tokens
 from cve_agent.classification import TaxonomyChunk
 from cve_agent.taxonomy import TaxonomyLabel
 from test_agent import settings
@@ -34,3 +34,20 @@ def test_missing_provider_usage_is_estimated(tmp_path):
     budget.record(response, {"messages": [{"role": "user", "content": "small prompt"}]})
     assert budget.total_tokens > 0
     assert budget.to_dict()["estimated_interactions"] == 1
+
+
+def test_taxonomy_chunk_allowance_reserves_classification_context(tmp_path):
+    configured = settings(tmp_path).__class__(**{
+        **settings(tmp_path).__dict__,
+        "max_input_tokens_per_request": classification_context_tokens() + 321,
+    })
+    assert taxonomy_input_tokens(configured) == 321
+
+
+def test_preflight_rejects_input_limit_that_cannot_fit_classification_context(tmp_path):
+    configured = settings(tmp_path).__class__(**{
+        **settings(tmp_path).__dict__,
+        "max_input_tokens_per_request": classification_context_tokens(),
+    })
+    with pytest.raises(BudgetPreflightError, match="classification profile"):
+        taxonomy_input_tokens(configured)

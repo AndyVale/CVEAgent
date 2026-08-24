@@ -4,13 +4,23 @@ from types import SimpleNamespace
 
 from cve_agent.agent import InvestigationAgent
 from cve_agent.config import Settings
-from cve_agent.models import CVERecord, Document, Reference
+from cve_agent.models import CVERecord, Document, InvestigationAspect, Reference
 from cve_agent.persistence import Database
 from cve_agent.pipeline import Pipeline
 from cve_agent.taxonomy import load_taxonomy
 
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
+
+
+def finish_arguments():
+    return {
+        "findings": [
+            {"aspect": aspect.value, "statement": f"Source-grounded {aspect.value} finding.", "evidence_ids": ["fixture-doc:p1"]}
+            for aspect in (InvestigationAspect.ROOT_CAUSE, InvestigationAspect.EXPLOITATION_MECHANISM)
+        ],
+        "summary": "The product performs an unchecked buffer copy.",
+    }
 
 
 class FixtureSource:
@@ -59,26 +69,23 @@ class FixtureClient:
     def create(self, **request):
         if "tools" in request:
             steps = [
+                ("search", {"query": "fixture unchecked buffer copy advisory"}),
                 ("fetch", {"url": "https://example.test/advisory"}),
-                ("record_evidence", {"document_id": "fixture-doc", "passage_id": "fixture-doc:p1", "quote_anchor": ""}),
-                ("finish_investigation", {"information_status": "sufficient", "summary": "The product performs an unchecked buffer copy."}),
+                ("finish_investigation", finish_arguments()),
             ]
             name, arguments = steps[self.research_step]
             self.research_step += 1
             message = Message(calls=[ToolCall(str(self.research_step), name, arguments)])
         else:
             system = request["messages"][0]["content"]
-            if system.startswith("Evaluate every"):
+            if system.startswith("You are a cybersecurity taxonomy classifier"):
                 payload = json.loads(request["messages"][1]["content"])
-                message = Message(content=json.dumps({"chunk_id": payload["chunk_id"], "supported": [{
+                message = Message(content=json.dumps({"chunk_id": payload["taxonomy_chunk"]["chunk_id"], "supported": [{
                     "label": "CWE-120", "confidence": 0.95,
                     "evidence": [{"evidence_id": "fixture-doc:p1", "explanation": "The advisory directly describes an unchecked buffer copy."}],
                 }]}))
             else:
-                message = Message(content=json.dumps({"status": "classified", "labels": [{
-                    "label": "CWE-120", "confidence": 0.95,
-                    "evidence": [{"evidence_id": "fixture-doc:p1", "explanation": "The advisory directly describes an unchecked buffer copy."}],
-                }]}))
+                raise AssertionError("unexpected model request after taxonomy chunk classification")
         usage = SimpleNamespace(model_dump=lambda: {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
         return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)
 
@@ -92,7 +99,7 @@ def settings(tmp_path):
         web_provider="none", tavily_base_url="https://tavily.test", tavily_max_results=5,
         tavily_search_depth="basic", tavily_api_key=None, cache_dir=tmp_path / "cache",
         max_document_chars=10000, max_preview_chars=1000, max_download_bytes=100000,
-        database=tmp_path / "results.sqlite3", token_budget=5000, max_agent_turns=6,
+        database=tmp_path / "results.sqlite3", token_budget=12000, max_agent_turns=6,
         max_search_calls=1, max_fetch_calls=1, max_investigation_seconds=30,
     )
 
@@ -108,3 +115,12 @@ def test_fixture_driven_pipeline_matches_expected_result(tmp_path):
     ).run([record["cve_id"]], taxonomy)[0].to_dict()
     result = json.loads(json.dumps(result))
     assert {key: result[key] for key in ("cve_id", "status", "labels")} == expected
+    with Database(configured.database) as database:
+        persisted = database.get(result["operational"]["run_id"], record["cve_id"])
+        scratchpad = json.loads(persisted["scratchpad_json"])
+    assert scratchpad["research_information_status"] == "sufficient"
+    assert scratchpad["research_summary"]
+    assert {item["aspect"] for item in scratchpad["findings"]} == {
+        InvestigationAspect.ROOT_CAUSE.value,
+        InvestigationAspect.EXPLOITATION_MECHANISM.value,
+    }

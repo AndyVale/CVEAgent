@@ -30,9 +30,11 @@ def build_passages(document_id: str, content: str, *, max_chars: int, passage_ch
 def resolve_passage(passages: tuple[Passage, ...], *, passage_id: str = "", quote_anchor: str = "") -> Passage:
     """Resolve an exact passage ID or a unique normalized/fuzzy quote anchor."""
     if passage_id:
-        matches = [passage for passage in passages if passage.passage_id == passage_id]
+        matches = passage_id_candidates(passages, passage_id)
         if len(matches) == 1:
             return matches[0]
+        if len(matches) > 1:
+            raise EvidenceResolutionError(f"ambiguous passage_id shorthand: {passage_id}")
         raise EvidenceResolutionError(f"unknown passage_id: {passage_id}")
 
     normalized_anchor = _normalize(quote_anchor)
@@ -55,6 +57,25 @@ def resolve_passage(passages: tuple[Passage, ...], *, passage_id: str = "", quot
     if len(scored) > 1 and scored[0][0] - scored[1][0] < 0.08:
         raise EvidenceResolutionError("quote_anchor is ambiguous; use passage_id")
     return scored[0][1]
+
+
+def passage_id_candidates(passages: tuple[Passage, ...], passage_id: str) -> tuple[Passage, ...]:
+    """Return exact or shorthand passage-ID candidates without raising on model input."""
+    reference = passage_id.strip()
+    exact = tuple(passage for passage in passages if passage.passage_id == reference)
+    if exact:
+        return exact
+
+    local = re.fullmatch(r"p?(\d+)", reference, flags=re.IGNORECASE)
+    if local:
+        suffix = f":p{int(local.group(1))}"
+        return tuple(passage for passage in passages if passage.passage_id.endswith(suffix))
+
+    qualified = re.fullmatch(r"(.+):p?(\d+)", reference, flags=re.IGNORECASE)
+    if qualified:
+        canonical = f"{qualified.group(1)}:p{int(qualified.group(2))}"
+        return tuple(passage for passage in passages if passage.passage_id == canonical)
+    return ()
 
 
 def _normalize(value: str) -> str:

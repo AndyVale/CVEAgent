@@ -5,6 +5,9 @@ from typing import Any
 
 from cve_agent.classification import TaxonomyChunk, estimate_tokens
 from cve_agent.config import Settings
+from cve_agent.models import MAX_INVESTIGATION_FINDINGS
+from cve_agent.prompts import CLASSIFICATION_SYSTEM_PROMPT
+from cve_agent.schemas import classification_response_format
 
 
 class BudgetPreflightError(ValueError):
@@ -24,18 +27,40 @@ class BudgetPlan:
 
 
 def create_budget_plan(chunks: tuple[TaxonomyChunk, ...], settings: Settings) -> BudgetPlan:
-    """Reserve an estimated exhaustive scan and final adjudication before research."""
+    """Reserve an estimated exhaustive taxonomy scan before research."""
     per_call_output = min(settings.max_tokens, 600)
-    scan = sum(estimate_tokens([[label.id, label.name, label.description, label.parent] for label in chunk.labels]) + 450 + per_call_output for chunk in chunks)
-    possible_evidence = settings.max_fetch_calls * 350
-    adjudication = sum(estimate_tokens([label.id, label.name, label.description]) for chunk in chunks for label in chunk.labels) + possible_evidence + 600 + per_call_output
-    reserve = scan + adjudication
+    repeated_context = classification_context_tokens()
+    reserve = sum(
+        estimate_tokens([[label.id, label.name, label.description, label.parent] for label in chunk.labels])
+        + repeated_context
+        + per_call_output
+        for chunk in chunks
+    )
     expanded = int(settings.token_budget * (1 + settings.finalization_overrun_percent / 100))
     if reserve > expanded:
         raise BudgetPreflightError(
             f"token budget cannot cover exhaustive taxonomy classification: estimated minimum {reserve}, expanded limit {expanded}"
         )
     return BudgetPlan(settings.token_budget, expanded, reserve, max(0, settings.token_budget - reserve))
+
+
+def classification_context_tokens() -> int:
+    """Estimate non-taxonomy input repeated for every classification request."""
+    return (
+        estimate_tokens(CLASSIFICATION_SYSTEM_PROMPT)
+        + estimate_tokens(classification_response_format())
+        + MAX_INVESTIGATION_FINDINGS * 350
+    )
+
+
+def taxonomy_input_tokens(settings: Settings) -> int:
+    """Return the input allowance available to taxonomy labels in one request."""
+    available = settings.max_input_tokens_per_request - classification_context_tokens()
+    if available <= 0:
+        raise BudgetPreflightError(
+            "max_input_tokens_per_request cannot fit the classification profile and response schema"
+        )
+    return available
 
 
 class TokenBudget:
@@ -93,4 +118,5 @@ class TokenBudget:
             "base_budget": self.plan.base_budget,
             "expanded_budget": self.plan.expanded_budget,
             "classification_reserve": self.plan.classification_reserve,
+            "investigation_limit": self.plan.investigation_limit,
         }
