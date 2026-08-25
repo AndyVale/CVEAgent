@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from types import SimpleNamespace
 
 from cve_agent.agent import InvestigationAgent
@@ -7,10 +6,7 @@ from cve_agent.config import Settings
 from cve_agent.models import CVERecord, Document, InvestigationAspect, Reference
 from cve_agent.persistence import Database
 from cve_agent.pipeline import Pipeline
-from cve_agent.taxonomy import load_taxonomy
-
-
-FIXTURES = Path(__file__).parents[1] / "fixtures"
+from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
 
 
 def finish_arguments():
@@ -105,9 +101,28 @@ def settings(tmp_path):
 
 
 def test_fixture_driven_pipeline_matches_expected_result(tmp_path):
-    record = json.loads((FIXTURES / "cve-example.json").read_text(encoding="utf-8"))
-    expected = json.loads((FIXTURES / "expected-easy-classification.json").read_text(encoding="utf-8"))
-    taxonomy = load_taxonomy(FIXTURES / "example_taxonomy_easy.json")
+    record = {
+        "cve_id": "CVE-2026-0001",
+        "description": "A buffer copy in Example Product does not validate input length.",
+        "references": [{"url": "https://example.test/advisory", "source": "Example"}],
+    }
+    expected = {
+        "cve_id": "CVE-2026-0001",
+        "status": "classified",
+        "labels": [{
+            "label": "CWE-120",
+            "confidence": 0.95,
+            "evidence": [{
+                "url": "https://example.test/advisory",
+                "quote": record["description"],
+                "explanation": "The advisory directly describes an unchecked buffer copy.",
+            }],
+        }],
+    }
+    taxonomy = Taxonomy((
+        TaxonomyLabel("CWE-120", "Unchecked Buffer Copy", "Copies input without checking destination size."),
+        TaxonomyLabel("CWE-79", "Web Output Neutralization", "Fails to neutralize input placed in web output."),
+    ))
     configured = settings(tmp_path)
     web = FixtureWeb(record["description"])
     result = Pipeline(

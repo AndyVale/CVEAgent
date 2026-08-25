@@ -97,9 +97,9 @@ def test_validated_classification_summary_includes_per_case_metrics():
     assert "CVE-2020-0002 | B      | 1.000     | 1.000  | 1.000" in formatted
 
 
-def test_curated_fixture_matches_and_covers_the_unchanged_example_taxonomy():
-    selected_taxonomy = load_taxonomy(FIXTURES / "example_taxonomy.json")
-    benchmark = load_benchmark(FIXTURES / "expected-classification.json", selected_taxonomy)
+def test_curated_flat_fixture_matches_and_covers_the_flat_taxonomy():
+    selected_taxonomy = load_taxonomy(FIXTURES / "flat_taxonomy.json")
+    benchmark = load_benchmark(FIXTURES / "flat_expected-classification.json", selected_taxonomy)
     expected_labels = {label for case in benchmark.cases for label in case.labels}
 
     assert len(benchmark.cases) == 14
@@ -107,11 +107,35 @@ def test_curated_fixture_matches_and_covers_the_unchanged_example_taxonomy():
     assert all(case.rationale and case.sources for case in benchmark.cases)
 
 
-def test_example_taxonomy_and_benchmark_ids_are_not_hard_coded_in_production():
-    taxonomy_payload = json.loads((FIXTURES / "example_taxonomy.json").read_text(encoding="utf-8"))
-    benchmark_payload = json.loads((FIXTURES / "expected-classification.json").read_text(encoding="utf-8"))
-    fixture_values = {item["id"] for item in taxonomy_payload["labels"]}
-    fixture_values.update(item["cve_id"] for item in benchmark_payload["cases"])
+def test_hierarchical_fixture_matches_the_tree_and_reclassifies_flat_cases():
+    flat_taxonomy = load_taxonomy(FIXTURES / "flat_taxonomy.json")
+    flat_benchmark = load_benchmark(FIXTURES / "flat_expected-classification.json", flat_taxonomy)
+    selected_taxonomy = load_taxonomy(FIXTURES / "hierarchical_taxonomy.json")
+    benchmark = load_benchmark(FIXTURES / "hierarchical_expected-classification.json", selected_taxonomy)
+    by_cve = {case.cve_id: case.labels for case in benchmark.cases}
+
+    assert len(selected_taxonomy.labels) == 27
+    assert {label.id for label in selected_taxonomy.labels if label.parent is None} == {
+        "InputValidation", "AccessControl", "Memory", "ResourceManagement", "Misconfiguration",
+    }
+    assert selected_taxonomy.by_id["SQLi"].parent == "InjectionFlaws"
+    assert selected_taxonomy.by_id["InjectionFlaws"].parent == "InputValidation"
+    assert benchmark.cve_ids == flat_benchmark.cve_ids
+    assert by_cve["CVE-2021-41773"] == ("PathTraversal",)
+    assert by_cve["CVE-2023-22518"] == ("ImproperAuthorization",)
+    assert by_cve["CVE-2018-9206"] == ("InputValidation",)
+
+
+def test_fixture_taxonomy_and_benchmark_ids_are_not_hard_coded_in_production():
+    fixture_values = set()
+    for taxonomy_name, benchmark_name in (
+        ("flat_taxonomy.json", "flat_expected-classification.json"),
+        ("hierarchical_taxonomy.json", "hierarchical_expected-classification.json"),
+    ):
+        taxonomy_payload = json.loads((FIXTURES / taxonomy_name).read_text(encoding="utf-8"))
+        benchmark_payload = json.loads((FIXTURES / benchmark_name).read_text(encoding="utf-8"))
+        fixture_values.update(item["id"] for item in taxonomy_payload["labels"])
+        fixture_values.update(item["cve_id"] for item in benchmark_payload["cases"])
     production = "\n".join(path.read_text(encoding="utf-8") for path in (FIXTURES.parent / "src" / "cve_agent").glob("*.py"))
 
     assert all(value not in production for value in fixture_values)

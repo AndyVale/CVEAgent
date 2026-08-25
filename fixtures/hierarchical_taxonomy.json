@@ -1,0 +1,162 @@
+{
+  "hierarchy_policy": "most_specific",
+  "labels": [
+    {
+      "id": "InputValidation",
+      "name": "Input Validation",
+      "description": "Failures to properly verify, filter, or sanitize data received from external sources before processing."
+    },
+    {
+      "id": "InjectionFlaws",
+      "name": "Injection Flaws",
+      "description": "Broad category where untrusted data is sent to an interpreter as part of a command or query.",
+      "parent": "InputValidation"
+    },
+    {
+      "id": "SQLi",
+      "name": "SQL Injection",
+      "description": "Malicious SQL queries are injected to manipulate the database.",
+      "parent": "InjectionFlaws"
+    },
+    {
+      "id": "CommandInjection",
+      "name": "Command Injection",
+      "description": "Unvalidated input is used to construct system shell commands. Covers OS Command Injection.",
+      "parent": "InjectionFlaws"
+    },
+    {
+      "id": "CodeInjection",
+      "name": "Code Injection",
+      "description": "Unvalidated input is executed as code by the application's interpreter (e.g., PHP, Python, Java).",
+      "parent": "InjectionFlaws"
+    },
+    {
+      "id": "XSS",
+      "name": "Cross-site Scripting",
+      "description": "Malicious scripts are injected into web pages and executed in the victim's browser.",
+      "parent": "InjectionFlaws"
+    },
+    {
+      "id": "PathTraversal",
+      "name": "Path Traversal",
+      "description": "Manipulation of file paths (e.g., '../') to access files or directories outside the intended scope.",
+      "parent": "InjectionFlaws"
+    },
+    {
+      "id": "UntrustedDeserialization",
+      "name": "Deserialization of Untrusted Data",
+      "description": "Unsafe restoration of objects from data streams, leading to RCE or logic manipulation.",
+      "parent": "InjectionFlaws"
+    },
+    {
+      "id": "RequestHandling",
+      "name": "Request Handling",
+      "description": "Flaws in how an application constructs and sends requests to other network components.",
+      "parent": "InputValidation"
+    },
+    {
+      "id": "SSRF",
+      "name": "Server-Side Request Forgery",
+      "description": "The server is coerced into making requests to unintended internal or external resources.",
+      "parent": "RequestHandling"
+    },
+    {
+      "id": "AccessControl",
+      "name": "Access Control",
+      "description": "Weaknesses in the mechanisms used to verify identity and enforce permissions across the network."
+    },
+    {
+      "id": "BrokenAuthentication",
+      "name": "Broken Authentication",
+      "description": "Vulnerabilities in login or session management allowing attackers to compromise passwords or identity tokens.",
+      "parent": "AccessControl"
+    },
+    {
+      "id": "ImproperAuthorization",
+      "name": "Improper Authorization",
+      "description": "Failure to restrict access to sensitive resources or functions based on defined user privilege levels.",
+      "parent": "AccessControl"
+    },
+    {
+      "id": "CSRF",
+      "name": "Cross-Site Request Forgery",
+      "description": "Unverified requests are executed on behalf of an authenticated user without their consent.",
+      "parent": "ImproperAuthorization"
+    },
+    {
+      "id": "Memory",
+      "name": "Memory",
+      "description": "Low-level errors related to the insecure management of system memory, typically in compiled languages."
+    },
+    {
+      "id": "MemoryCorruption",
+      "name": "Memory Corruption",
+      "description": "Flaws that allow attackers to modify memory contents to alter the execution flow of a program.",
+      "parent": "Memory"
+    },
+    {
+      "id": "BufferOverflow",
+      "name": "Buffer Overflow",
+      "description": "Writing data past buffer boundaries on the stack or heap.",
+      "parent": "MemoryCorruption"
+    },
+    {
+      "id": "UseAfterFree",
+      "name": "Use After Free",
+      "description": "Accessing memory after it has been explicitly freed. A specific memory corruption distinct from overflows.",
+      "parent": "MemoryCorruption"
+    },
+    {
+      "id": "MemoryDisclosure",
+      "name": "Memory Disclosure",
+      "description": "Vulnerabilities that allow an attacker to read data from memory locations they should not access.",
+      "parent": "Memory"
+    },
+    {
+      "id": "OutOfBoundsRead",
+      "name": "Out-of-bounds Read",
+      "description": "Reading data past allocated memory boundaries. Use this for memory-based information leaks.",
+      "parent": "MemoryDisclosure"
+    },
+    {
+      "id": "ResourceManagement",
+      "name": "Resource Management",
+      "description": "Improper handling of limited system resources such as CPU, memory, disk space, or network bandwidth."
+    },
+    {
+      "id": "ResourceExhaustion",
+      "name": "Resource Exhaustion",
+      "description": "Uncontrolled consumption of system resources like CPU or bandwidth, leading to a denial of service.",
+      "parent": "ResourceManagement"
+    },
+    {
+      "id": "MemoryLeaks",
+      "name": "Memory Leak",
+      "description": "Failure to release memory after it is no longer needed, eventually leading to system instability or crashes.",
+      "parent": "ResourceManagement"
+    },
+    {
+      "id": "Misconfiguration",
+      "name": "Misconfiguration",
+      "description": "Security weaknesses arising from incorrect settings or incomplete deployment of security controls."
+    },
+    {
+      "id": "InsecureDefaults",
+      "name": "Insecure Defaults",
+      "description": "Deployment of software with overly permissive permissions or factory-preset credentials that are well-known.",
+      "parent": "Misconfiguration"
+    },
+    {
+      "id": "WeakCryptography",
+      "name": "Weak Cryptography",
+      "description": "Use of obsolete or flawed encryption algorithms that fail to ensure the confidentiality and integrity of data.",
+      "parent": "Misconfiguration"
+    },
+    {
+      "id": "InformationExposure",
+      "name": "Information Exposure",
+      "description": "Accidental disclosure of technical details or sensitive system data through error messages or metadata.",
+      "parent": "Misconfiguration"
+    }
+  ]
+}

@@ -4,8 +4,13 @@
 
 The taxonomy-agnostic refactor, diagnostics, benchmark evaluator, and curated fixtures are
 complete. The evaluator implementation is committed as `97060a6`; the benchmark and its tests
-are committed as `5a8ea16`. `fixtures/expected-classification.json` contains 14 source-audited
-cases covering all 15 labels in the unchanged `fixtures/example_taxonomy.json`.
+are committed as `5a8ea16`. The fixtures were subsequently renamed to `flat_taxonomy.json` and
+`flat_expected-classification.json`; deleted easy fixtures are no longer used by tests.
+
+The working tree adds `hierarchical_taxonomy.json`, preserving the developer-supplied 27-node,
+five-root tree with `most_specific` policy, and `hierarchical_expected-classification.json`,
+which maps the same 14 CVEs to that hierarchy. Tests and README references have been aligned
+with the renamed fixtures.
 
 ## Current design
 
@@ -53,9 +58,8 @@ cases covering all 15 labels in the unchanged `fixtures/example_taxonomy.json`.
 - That run exposed 257 NVD references being resent on every turn and 88,758 total tokens. The
   bounded-reference fix was added afterward and covered deterministically; the paid live run
   was not repeated to conserve the supplied APIs.
-- Final validation passes: `82 passed`, bytecode compilation, CLI help smoke test,
-  `git diff --check`, fixture fingerprint/coverage checks, and a production-source scan proving
-  that example label/CVE IDs are not hard-coded. `fixtures/example_taxonomy.json` is unchanged.
+- Current validation passes 83 tests, including 17 hierarchy/fixture-focused tests. Bytecode
+  compilation, taxonomy fingerprint validation, and benchmark loading also pass.
 
 ## Deferred and handoff
 

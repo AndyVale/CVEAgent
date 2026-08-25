@@ -54,14 +54,14 @@ unknown hierarchy policies. Extra label fields are preserved but do not affect c
 ## Running classifications
 
 ```bash
-uv run cve-agent --taxonomy fixtures/example_taxonomy.json CVE-2025-6965
+uv run cve-agent --taxonomy fixtures/flat_taxonomy.json CVE-2025-6965
 ```
 
 Multiple CVEs are processed independently and emitted in input order. Use `--verbose` for
 safe progress diagnostics on stderr while stdout remains valid JSON:
 
 ```bash
-uv run cve-agent --verbose --taxonomy fixtures/example_taxonomy.json CVE-2025-6965
+uv run cve-agent --verbose --taxonomy fixtures/flat_taxonomy.json CVE-2025-6965
 ```
 
 The verbose trace reports research turns, bounded search queries, sanitized fetched URLs,
@@ -88,26 +88,31 @@ calculate them for each CVE by comparing predicted and expected label sets.
 
 ## Evaluating classification performance
 
-`fixtures/expected-classification.json` contains 14 conservatively selected CVEs covering every
-label in the unchanged `fixtures/example_taxonomy.json`. Each case records expected label IDs,
-a short mapping rationale, and the primary or NVD sources used to curate it. The benchmark also
-contains a taxonomy fingerprint, so it cannot accidentally be evaluated against another
-taxonomy.
+`fixtures/flat_expected-classification.json` contains 14 conservatively selected CVEs covering
+every label in `fixtures/flat_taxonomy.json`. Each case records expected label IDs, a short
+mapping rationale, and the primary or NVD sources used to curate it. The benchmark also contains
+a taxonomy fingerprint, so it cannot accidentally be evaluated against another taxonomy.
+
+`fixtures/hierarchical_taxonomy.json` provides a 27-label, five-root tree using the
+`most_specific` policy. Its corresponding
+`fixtures/hierarchical_expected-classification.json` reclassifies the same CVEs against that
+tree. Ancestors are omitted when a supported descendant exists; an internal node remains valid
+when none of its children describes the vulnerability more precisely.
 
 Run the complete benchmark without listing CVE IDs:
 
 ```bash
 uv run cve-agent \
-  --taxonomy fixtures/example_taxonomy.json \
-  --validate fixtures/expected-classification.json
+  --taxonomy fixtures/flat_taxonomy.json \
+  --validate fixtures/flat_expected-classification.json
 ```
 
 Or run a cheaper subset while developing:
 
 ```bash
 uv run cve-agent \
-  --taxonomy fixtures/example_taxonomy.json \
-  --validate fixtures/expected-classification.json \
+  --taxonomy fixtures/hierarchical_taxonomy.json \
+  --validate fixtures/hierarchical_expected-classification.json \
   CVE-2014-0160 CVE-2021-41773
 ```
 
