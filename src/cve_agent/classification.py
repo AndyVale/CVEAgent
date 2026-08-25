@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 from cve_agent.models import Evidence, LabelClassification
 from cve_agent.taxonomy import HierarchyPolicy, Taxonomy, TaxonomyLabel
@@ -116,6 +116,37 @@ def routing_label_dict(tree: TaxonomyTree, label: TaxonomyLabel) -> dict[str, ob
             for child in tree.children[label.id]
         ],
     }
+
+
+def normalize_label_references(
+    entries: list[Any],
+    labels: tuple[TaxonomyLabel, ...] | list[TaxonomyLabel],
+) -> tuple[list[Any], tuple[tuple[str, str], ...]]:
+    """Replace unambiguous model-authored label names with their stable IDs."""
+    by_id = {label.id: label for label in labels}
+    ids_by_name: dict[str, list[str]] = {}
+    for label in labels:
+        ids_by_name.setdefault(label.name.strip().casefold(), []).append(label.id)
+
+    normalized: list[Any] = []
+    replacements: list[tuple[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("label"), str):
+            normalized.append(entry)
+            continue
+        reference = entry["label"]
+        stripped = reference.strip()
+        resolved = stripped if stripped in by_id else None
+        if resolved is None:
+            name_matches = ids_by_name.get(stripped.casefold(), [])
+            if len(name_matches) == 1:
+                resolved = name_matches[0]
+        if resolved is None or resolved == reference:
+            normalized.append(entry)
+            continue
+        normalized.append({**entry, "label": resolved})
+        replacements.append((reference, resolved))
+    return normalized, tuple(replacements)
 
 
 def build_taxonomy_tree(taxonomy: Taxonomy) -> TaxonomyTree:

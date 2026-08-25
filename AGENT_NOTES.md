@@ -6,16 +6,28 @@ Adaptive hierarchical classification is committed as `9a1f811`. The current unco
 adds `hybrid_taxonomy.json` and `hybrid_expected-classification.json` as a large adaptive-routing
 benchmark, plus fixture validation and user documentation.
 
+An additional uncommitted provider-compatibility fix normalizes an exact, unique label display
+name to its stable ID within the active exhaustive or routing chunk. It preserves strict
+rejection of ambiguous names, invented labels, and labels outside the active chunk. Prompts now
+state explicitly that `label` means the supplied ID. Three deterministic tests cover the shared
+resolver and both scanners.
+
 The hybrid taxonomy has 126 labels, six roots, and a maximum depth of four. At the example
 12,000-token request limit it needs two exhaustive chunks, so `auto` selects hybrid. Its current
 hybrid preflight reserve is about 29,000 tokens; the README recommends a 50,000-token base budget
 to leave useful investigation capacity. The expected benchmark reuses the existing 14 curated
 CVEs and maps them to the new tree's most-specific leaves.
 
-The complete deterministic suite now passes 111 tests. The hybrid benchmark fingerprint,
+The complete deterministic suite now passes 114 tests. The hybrid benchmark fingerprint,
 taxonomy membership, automatic strategy selection, production fixture-ID exclusion, and
 curated CVE paths are validated without live services. Bytecode compilation and the Git
 whitespace check pass.
+
+One authorized live run classified CVE-2023-34362 against the 126-label taxonomy with exact
+precision/recall/F1 of 1.0 in four model requests and 23,226 tokens. The local 50,000-token input
+limit made `auto` choose exhaustive; deterministic tests cover the same normalization in forced
+hybrid routing. The live model returned IDs and selected SQLi plus its three ancestors, which
+`most_specific` correctly reduced to SQLi.
 
 ## Adaptive classification design
 
@@ -56,5 +68,5 @@ whitespace check pass.
 
 ## Handoff
 
-The hybrid benchmark is ready for review. Do not commit it until the developer approves the
-proposed Conventional Commit.
+The hybrid benchmark and label-reference compatibility fix are ready for review as two logical
+commits. Do not commit either until the developer approves the proposed Conventional Commits.

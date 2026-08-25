@@ -20,6 +20,7 @@ from cve_agent.classification import (
     chunk_labels,
     hierarchy_order,
     label_dict,
+    normalize_label_references,
     routing_label_dict,
 )
 from cve_agent.config import Settings
@@ -421,6 +422,15 @@ class HybridTaxonomyScanner:
         raw_decisions = decoded.get("decisions")
         if not isinstance(raw_decisions, list):
             raise ValueError("hierarchy routing response requires a decisions array")
+        raw_decisions, replacements = normalize_label_references(raw_decisions, labels)
+        for reference, label_id in replacements:
+            logger.warning(
+                "[%s] normalized hierarchy label reference from name=%r to id=%r level=%d",
+                cve_id,
+                reference,
+                label_id,
+                level_id,
+            )
         expected = {label.id: label for label in labels}
         raw_by_id: dict[str, dict[str, Any]] = {}
         for raw in raw_decisions:

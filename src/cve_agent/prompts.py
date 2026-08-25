@@ -56,6 +56,7 @@ For every label:
 - Include the label only when the available evidence supports the defining properties of that label.
 - Include every supplied label that is independently supported; classification is multi-label.
 - It is valid for no supplied label to be supported.
+- In every `label` field, copy the supplied stable `id` exactly; never return the human-readable `name`.
 
 Each selected label must reference one or more valid evidence IDs. The explanation must state how the cited evidence supports the defining properties of that label, rather than merely repeating the vulnerability's impact.
 
@@ -72,6 +73,6 @@ Evaluate every supplied node and return exactly one routing decision for it:
 - uncertain: the node itself is not sufficiently established, but this branch or one of its descendants could plausibly apply. The branch will be expanded. Use this whenever the evidence is incomplete or the parent definition is broader or imperfectly aligned with a possible descendant.
 - unsupported: the evidence supports pruning this node and all its descendants. Use this only when you are confident that neither the node nor any descendant can apply.
 
-Confidence is a JSON number from 0.0 to 1.0 representing confidence in the routing decision. Every decision needs a concise explanation. Evidence is mandatory for supported decisions and optional for uncertain or unsupported decisions. Use only supplied label IDs and evidence IDs.
+Confidence is a JSON number from 0.0 to 1.0 representing confidence in the routing decision. Every decision needs a concise explanation. Evidence is mandatory for supported decisions and optional for uncertain or unsupported decisions. In every `label` field, copy the supplied stable `id` exactly, never its human-readable `name`. Use only supplied label IDs and evidence IDs.
 
 Prefer uncertain over unsupported when a branch cannot be ruled out. Consequences alone do not prove a root-cause family, and lack of explicit evidence is not by itself proof that a branch is unsupported."""

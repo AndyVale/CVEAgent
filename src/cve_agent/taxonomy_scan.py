@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Callable, Protocol
 
 from cve_agent.budget import BudgetExceeded, TokenBudget
-from cve_agent.classification import TaxonomyChunk, label_dict
+from cve_agent.classification import TaxonomyChunk, label_dict, normalize_label_references
 from cve_agent.models import MAX_INVESTIGATION_FINDINGS, CVERecord, EvidenceRecord, InvestigationState, InvestigationStopReason, LabelClassification
 from cve_agent.prompts import CLASSIFICATION_SYSTEM_PROMPT
 from cve_agent.schemas import classification_response_format
@@ -209,6 +209,15 @@ class ExhaustiveTaxonomyScanner:
             )
             try:
                 supported = supported_labels(decode_json_content(response), chunk.chunk_id)
+                supported, replacements = normalize_label_references(supported, chunk.labels)
+                for reference, label_id in replacements:
+                    logger.warning(
+                        "[%s] normalized taxonomy label reference from name=%r to id=%r chunk_id=%d",
+                        cve.cve_id,
+                        reference,
+                        label_id,
+                        chunk.chunk_id,
+                    )
                 outside = [
                     item.get("label") if isinstance(item, dict) else item
                     for item in supported

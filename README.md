@@ -218,6 +218,12 @@ because confidence controls destructive branch pruning. Invalid responses receiv
 correction request. Taxonomy-chunk responses wrapped as a top-level JSON array remain accepted
 when the active chunk is unambiguous.
 
+Models are instructed to copy stable taxonomy IDs into every `label` field. If a provider emits
+the exact human-readable name of one uniquely identifiable label from the active chunk, the
+application converts it to that label's ID and logs the recovery. Ambiguous names, invented
+labels, and labels outside the active chunk remain invalid and receive the bounded correction
+request.
+
 The classifier is explicitly instructed to distinguish root causes and exploitation mechanisms
 from consequences: remote code execution, disclosure, denial of service, or privilege gain do
 not by themselves prove a particular weakness class. Exhaustive scanning needs no final model
