@@ -39,3 +39,7 @@ max_fetch_calls = 8
 max_investigation_seconds = 300
 max_input_tokens_per_request = 12000
 finalization_overrun_percent = 15.0
+
+[classification]
+strategy = "auto"
+pruning_confidence_threshold = 0.8

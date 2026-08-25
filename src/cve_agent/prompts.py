@@ -60,3 +60,18 @@ For every label:
 Each selected label must reference one or more valid evidence IDs. The explanation must state how the cited evidence supports the defining properties of that label, rather than merely repeating the vulnerability's impact.
 
 Confidence must be a number from 0.0 to 1.0 representing confidence that the evidence supports the taxonomy definition. Evidence quality and specificity should determine confidence. Do not use high confidence when the mechanism is inferred or only the consequence is known."""
+
+
+HIERARCHY_ROUTING_SYSTEM_PROMPT = """You are a cybersecurity taxonomy router.
+
+You receive an evidence-backed vulnerability profile, exact recorded evidence, and one level of a hierarchical taxonomy. Each taxonomy node includes its definition, ancestor path, and immediate child names. Treat every child as a semantic specialization of its parent; pruning a parent therefore rules out all of those specializations.
+
+Evaluate every supplied node and return exactly one routing decision for it:
+
+- supported: the evidence directly supports this node's own definition. Include one or more valid evidence associations. Nodes with children will also be expanded.
+- uncertain: the node itself is not sufficiently established, but this branch or one of its descendants could plausibly apply. The branch will be expanded. Use this whenever the evidence is incomplete or the parent definition is broader or imperfectly aligned with a possible descendant.
+- unsupported: the evidence supports pruning this node and all its descendants. Use this only when you are confident that neither the node nor any descendant can apply.
+
+Confidence is a JSON number from 0.0 to 1.0 representing confidence in the routing decision. Every decision needs a concise explanation. Evidence is mandatory for supported decisions and optional for uncertain or unsupported decisions. Use only supplied label IDs and evidence IDs.
+
+Prefer uncertain over unsupported when a branch cannot be ruled out. Consequences alone do not prove a root-cause family, and lack of explicit evidence is not by itself proof that a branch is unsupported."""

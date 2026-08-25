@@ -5,6 +5,8 @@ import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from cve_agent.strategy import ClassificationStrategy
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -41,13 +43,21 @@ class Settings:
     max_investigation_seconds: float
     max_input_tokens_per_request: int = 12000
     finalization_overrun_percent: float = 15.0
+    classification_strategy: ClassificationStrategy = ClassificationStrategy.AUTO
+    pruning_confidence_threshold: float = 0.8
 
 
 def load_settings(path: str | Path = "config.toml") -> Settings:
     config_path = Path(path).resolve()
     with config_path.open("rb") as handle:
         raw = tomllib.load(handle)
-    runtime, nvd, web, storage, limits = (raw.get(x, {}) for x in ("runtime", "nvd", "web", "storage", "limits"))
+    runtime, nvd, web, storage, limits, classification = (
+        raw.get(x, {}) for x in ("runtime", "nvd", "web", "storage", "limits", "classification")
+    )
+    try:
+        classification_strategy = ClassificationStrategy(classification.get("strategy", ClassificationStrategy.AUTO.value))
+    except ValueError as exc:
+        raise ValueError(f"unsupported classification strategy: {classification.get('strategy')!r}") from exc
     settings = Settings(
         model=runtime.get("model", "nvidia/nemotron-3-ultra-550b-a55b:free"), endpoint=runtime.get("endpoint", "https://openrouter.ai/api/v1"),
         api_key=os.getenv("API_KEY"), max_tokens=int(runtime.get("max_tokens", 2048)),
@@ -71,6 +81,8 @@ def load_settings(path: str | Path = "config.toml") -> Settings:
         max_fetch_calls=int(limits.get("max_fetch_calls", 8)), max_investigation_seconds=float(limits.get("max_investigation_seconds", 300)),
         max_input_tokens_per_request=int(limits.get("max_input_tokens_per_request", 12000)),
         finalization_overrun_percent=float(limits.get("finalization_overrun_percent", 15.0)),
+        classification_strategy=classification_strategy,
+        pruning_confidence_threshold=float(classification.get("pruning_confidence_threshold", 0.8)),
     )
     _validate_settings(settings)
     return settings
@@ -108,6 +120,8 @@ def _validate_settings(settings: Settings) -> None:
         raise ValueError("investigation limits must be non-negative and duration must be positive")
     if not 0 <= settings.finalization_overrun_percent <= 100:
         raise ValueError("finalization_overrun_percent must be in [0, 100]")
+    if not 0 <= settings.pruning_confidence_threshold <= 1:
+        raise ValueError("pruning_confidence_threshold must be in [0, 1]")
 
 
 def format_settings_table(settings: Settings) -> str:
@@ -131,6 +145,10 @@ def format_settings_table(settings: Settings) -> str:
             ("Max turns", settings.max_agent_turns),
             ("Max searches / fetches", f"{settings.max_search_calls} / {settings.max_fetch_calls}"),
             ("Max duration", f"{settings.max_investigation_seconds}s"),
+        ]),
+        ("Classification", [
+            ("Requested strategy", settings.classification_strategy.value),
+            ("Pruning threshold", settings.pruning_confidence_threshold),
         ]),
         ("Data sources", [
             ("NVD", settings.nvd_base_url),

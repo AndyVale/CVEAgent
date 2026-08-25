@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import asdict, dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 from cve_agent.budget import BudgetExceeded, TokenBudget
 from cve_agent.classification import TaxonomyChunk, label_dict
@@ -24,29 +24,64 @@ class ClassificationResponseError(ValueError):
 @dataclass(frozen=True)
 class TaxonomyScanOutcome:
     candidates: tuple[LabelClassification, ...]
-    completed_chunks: int
-    evaluated_labels: int
+    evaluated_ids: tuple[str, ...]
+    pruned_ids: tuple[str, ...] = ()
+    unresolved_ids: tuple[str, ...] = ()
+    classification_requests: int = 0
+    routing_levels: int = 0
+    pruned_branches: tuple[dict[str, Any], ...] = ()
+    cost_switches: int = 0
     stop_reason: InvestigationStopReason | None = None
     error: str | None = None
 
+    @property
+    def complete(self) -> bool:
+        return not self.unresolved_ids
 
-class TaxonomyScanner:
-    """Evaluate every taxonomy chunk and checkpoint each validated result."""
 
-    def __init__(self, chat: Callable[..., Any]):
-        self.chat = chat
+class ClassificationScanner(Protocol):
+    """Shared interface for exhaustive and adaptive taxonomy scanners."""
 
     def scan(
         self,
         cve: CVERecord,
         taxonomy: Taxonomy,
+        state: InvestigationState,
+        budget: TokenBudget,
+        checkpoint: Callable[[], None],
+    ) -> TaxonomyScanOutcome: ...
+
+
+class ExhaustiveTaxonomyScanner:
+    """Evaluate every taxonomy chunk and checkpoint each validated result."""
+
+    def __init__(
+        self,
+        chat: Callable[..., Any],
         chunks: tuple[TaxonomyChunk, ...],
+        *,
+        tool_name: str = "classify_taxonomy_chunk",
+    ):
+        self.chat = chat
+        self.chunks = chunks
+        self.tool_name = tool_name
+        self.request_count = 0
+
+    def scan(
+        self,
+        cve: CVERecord,
+        taxonomy: Taxonomy,
         state: InvestigationState,
         budget: TokenBudget,
         checkpoint: Callable[[], None],
     ) -> TaxonomyScanOutcome:
+        chunks = self.chunks
+        tool_name = self.tool_name
         candidates: list[LabelClassification] = []
-        completed_chunks = evaluated_labels = 0
+        completed_chunks = 0
+        evaluated_ids: list[str] = []
+        all_ids = [label.id for label in taxonomy.labels]
+        requests_before = self.request_count
         logger.info(
             "[%s] classification scan started chunks=%d labels=%d findings=%d evidence=%d",
             cve.cve_id,
@@ -67,7 +102,7 @@ class TaxonomyScanner:
             try:
                 supported = self._classify_chunk(cve, chunk, state, budget)
             except BudgetExceeded as exc:
-                self._checkpoint_error(chunk, state, budget, checkpoint, str(exc))
+                self._checkpoint_error(chunk, state, budget, checkpoint, str(exc), tool_name)
                 logger.warning(
                     "[%s] classification scan stopped reason=%s chunk_id=%d completed_chunks=%d",
                     cve.cve_id,
@@ -76,14 +111,15 @@ class TaxonomyScanner:
                     completed_chunks,
                 )
                 return TaxonomyScanOutcome(
-                    tuple(candidates),
-                    completed_chunks,
-                    evaluated_labels,
-                    InvestigationStopReason.TOKEN_BUDGET,
-                    str(exc),
+                    candidates=tuple(candidates),
+                    evaluated_ids=tuple(evaluated_ids),
+                    unresolved_ids=tuple(label_id for label_id in all_ids if label_id not in evaluated_ids),
+                    classification_requests=self.request_count - requests_before,
+                    stop_reason=InvestigationStopReason.TOKEN_BUDGET,
+                    error=str(exc),
                 )
             except ClassificationResponseError as exc:
-                self._checkpoint_error(chunk, state, budget, checkpoint, str(exc))
+                self._checkpoint_error(chunk, state, budget, checkpoint, str(exc), tool_name)
                 logger.error(
                     "[%s] classification scan stopped reason=%s chunk_id=%d completed_chunks=%d detail=%s",
                     cve.cve_id,
@@ -93,18 +129,19 @@ class TaxonomyScanner:
                     str(exc),
                 )
                 return TaxonomyScanOutcome(
-                    tuple(candidates),
-                    completed_chunks,
-                    evaluated_labels,
-                    InvestigationStopReason.CLASSIFICATION_ERROR,
-                    str(exc),
+                    candidates=tuple(candidates),
+                    evaluated_ids=tuple(evaluated_ids),
+                    unresolved_ids=tuple(label_id for label_id in all_ids if label_id not in evaluated_ids),
+                    classification_requests=self.request_count - requests_before,
+                    stop_reason=InvestigationStopReason.CLASSIFICATION_ERROR,
+                    error=str(exc),
                 )
 
             candidates.extend(supported)
             completed_chunks += 1
-            evaluated_labels += len(chunk.labels)
+            evaluated_ids.extend(label.id for label in chunk.labels)
             state.tool_history.append({
-                "tool": "classify_taxonomy_chunk",
+                "tool": tool_name,
                 "status": "success",
                 "chunk_id": chunk.chunk_id,
                 "label_count": len(chunk.labels),
@@ -126,10 +163,14 @@ class TaxonomyScanner:
             "[%s] classification scan finished completed_chunks=%d labels_evaluated=%d candidates=%d",
             cve.cve_id,
             completed_chunks,
-            evaluated_labels,
+            len(evaluated_ids),
             len(candidates),
         )
-        return TaxonomyScanOutcome(tuple(candidates), completed_chunks, evaluated_labels)
+        return TaxonomyScanOutcome(
+            candidates=tuple(candidates),
+            evaluated_ids=tuple(evaluated_ids),
+            classification_requests=self.request_count - requests_before,
+        )
 
     def _classify_chunk(
         self,
@@ -138,14 +179,14 @@ class TaxonomyScanner:
         state: InvestigationState,
         budget: TokenBudget,
     ) -> list[LabelClassification]:
-        profile_evidence = _profile_evidence(state)
+        selected_evidence = profile_evidence(state)
         payload = {
             "vulnerability_profile": {
                 "cve_id": cve.cve_id,
                 "information_status": state.research_information_status,
                 "findings": [asdict(item) for item in state.findings],
             },
-            "evidence": [asdict(item) for item in profile_evidence],
+            "evidence": [asdict(item) for item in selected_evidence],
             "taxonomy_chunk": {
                 "chunk_id": chunk.chunk_id,
                 "labels": [label_dict(item) for item in chunk.labels],
@@ -158,6 +199,7 @@ class TaxonomyScanner:
         allowed = {item.id for item in chunk.labels}
         chunk_taxonomy = Taxonomy(tuple(chunk.labels))
         for correction_attempt in range(2):
+            self.request_count += 1
             response = self.chat(
                 cve.cve_id,
                 budget,
@@ -166,7 +208,7 @@ class TaxonomyScanner:
                 response_format=classification_response_format(),
             )
             try:
-                supported = _supported_labels(_decode_json_content(response), chunk.chunk_id)
+                supported = supported_labels(decode_json_content(response), chunk.chunk_id)
                 outside = [
                     item.get("label") if isinstance(item, dict) else item
                     for item in supported
@@ -181,7 +223,7 @@ class TaxonomyScanner:
                     "classified",
                     normalized,
                     chunk_taxonomy,
-                    profile_evidence,
+                    selected_evidence,
                 )
                 return materialized
             except ValueError as exc:
@@ -206,9 +248,10 @@ class TaxonomyScanner:
         budget: TokenBudget,
         checkpoint: Callable[[], None],
         error: str,
+        tool_name: str,
     ) -> None:
         state.tool_history.append({
-            "tool": "classify_taxonomy_chunk",
+            "tool": tool_name,
             "status": "error",
             "chunk_id": chunk.chunk_id,
             "label_count": len(chunk.labels),
@@ -218,7 +261,7 @@ class TaxonomyScanner:
         checkpoint()
 
 
-def _decode_json_content(response: Any) -> dict[str, Any] | list[Any]:
+def decode_json_content(response: Any) -> dict[str, Any] | list[Any]:
     content = (response.choices[0].message.content or "").strip()
     if "</think>" in content:
         content = content.rsplit("</think>", 1)[1].strip()
@@ -232,7 +275,7 @@ def _decode_json_content(response: Any) -> dict[str, Any] | list[Any]:
     return decoded
 
 
-def _supported_labels(decoded: dict[str, Any] | list[Any], chunk_id: int) -> list[Any]:
+def supported_labels(decoded: dict[str, Any] | list[Any], chunk_id: int) -> list[Any]:
     if isinstance(decoded, list):
         return decoded
     returned_chunk_id = decoded.get("chunk_id", chunk_id)
@@ -246,7 +289,7 @@ def _supported_labels(decoded: dict[str, Any] | list[Any], chunk_id: int) -> lis
     return supported
 
 
-def _profile_evidence(state: InvestigationState) -> list[EvidenceRecord]:
+def profile_evidence(state: InvestigationState) -> list[EvidenceRecord]:
     evidence_ids = {evidence_id for finding in state.findings for evidence_id in finding.evidence_ids}
     selected = [item for item in state.evidence if item.evidence_id in evidence_ids]
     if selected:

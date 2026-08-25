@@ -1,4 +1,4 @@
-from cve_agent.classification import apply_hierarchy_policy, chunk_taxonomy
+from cve_agent.classification import apply_hierarchy_policy, build_taxonomy_tree, chunk_taxonomy, routing_label_dict
 from cve_agent.models import Evidence, LabelClassification
 from cve_agent.taxonomy import HierarchyPolicy, Taxonomy, TaxonomyLabel
 
@@ -22,3 +22,21 @@ def test_include_ancestors_policy_adds_parent():
     taxonomy = Taxonomy((TaxonomyLabel("ROOT", "Root", "root"), TaxonomyLabel("CHILD", "Child", "child", "ROOT")), HierarchyPolicy.INCLUDE_ANCESTORS)
     result = apply_hierarchy_policy([LabelClassification("CHILD", .9, (Evidence("https://source.test", "quote", "reason"),))], taxonomy)
     assert [item.label for item in result] == ["CHILD", "ROOT"]
+
+
+def test_routing_label_exposes_ancestor_path_and_immediate_children():
+    taxonomy = Taxonomy((
+        TaxonomyLabel("ROOT", "Root", "root"),
+        TaxonomyLabel("CHILD", "Child", "child", "ROOT"),
+        TaxonomyLabel("LEAF", "Leaf", "leaf", "CHILD"),
+    ))
+    tree = build_taxonomy_tree(taxonomy)
+
+    assert routing_label_dict(tree, taxonomy.by_id["CHILD"]) == {
+        "id": "CHILD",
+        "name": "Child",
+        "description": "child",
+        "parent": "ROOT",
+        "ancestor_path": [{"id": "ROOT", "name": "Root"}],
+        "children": [{"id": "LEAF", "name": "Leaf"}],
+    }

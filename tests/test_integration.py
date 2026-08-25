@@ -1,11 +1,14 @@
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 from cve_agent.agent import InvestigationAgent
-from cve_agent.config import Settings
+from cve_agent.config import Settings, non_secret_settings
 from cve_agent.models import CVERecord, Document, InvestigationAspect, Reference
 from cve_agent.persistence import Database
 from cve_agent.pipeline import Pipeline
+from cve_agent.prompts import HIERARCHY_ROUTING_SYSTEM_PROMPT
+from cve_agent.strategy import ClassificationStrategy
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
 
 
@@ -86,6 +89,43 @@ class FixtureClient:
         return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)
 
 
+class HierarchicalFixtureClient(FixtureClient):
+    def create(self, **request):
+        if "tools" in request:
+            return super().create(**request)
+        payload = json.loads(request["messages"][1]["content"])
+        if request["messages"][0]["content"] == HIERARCHY_ROUTING_SYSTEM_PROMPT:
+            level = payload["taxonomy_level"]
+            message = Message(content=json.dumps({
+                "level_id": level["level_id"],
+                "decisions": [{
+                    "label": label["id"],
+                    "decision": "supported",
+                    "confidence": 0.95,
+                    "explanation": "The advisory supports the broad family.",
+                    "evidence": [{
+                        "evidence_id": "fixture-doc:p1",
+                        "explanation": "The advisory directly establishes this family.",
+                    }],
+                } for label in level["labels"]],
+            }))
+        else:
+            chunk = payload["taxonomy_chunk"]
+            message = Message(content=json.dumps({
+                "chunk_id": chunk["chunk_id"],
+                "supported": [{
+                    "label": chunk["labels"][0]["id"],
+                    "confidence": 0.95,
+                    "evidence": [{
+                        "evidence_id": "fixture-doc:p1",
+                        "explanation": "The advisory directly describes the specific mechanism.",
+                    }],
+                }],
+            }))
+        usage = SimpleNamespace(model_dump=lambda: {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)
+
+
 def settings(tmp_path):
     return Settings(
         model="fixture", endpoint="https://fixture.test/v1", api_key=None, max_tokens=500,
@@ -139,3 +179,58 @@ def test_fixture_driven_pipeline_matches_expected_result(tmp_path):
         InvestigationAspect.ROOT_CAUSE.value,
         InvestigationAspect.EXPLOITATION_MECHANISM.value,
     }
+
+
+def test_hierarchical_fixture_pipeline_persists_strategy_routing_and_exact_coverage(tmp_path):
+    record = {
+        "cve_id": "CVE-2026-0002",
+        "description": "Example Product performs an unchecked buffer copy.",
+        "references": [{"url": "https://example.test/advisory", "source": "Example"}],
+    }
+    taxonomy = Taxonomy((
+        TaxonomyLabel("MEMORY", "Memory", "Memory-management vulnerability."),
+        TaxonomyLabel("BUFFER", "Buffer overflow", "An unchecked copy exceeds a buffer boundary.", "MEMORY"),
+    ))
+    configured = replace(
+        settings(tmp_path),
+        classification_strategy=ClassificationStrategy.HYBRID,
+        token_budget=100_000,
+    )
+    result = Pipeline(
+        FixtureSource(record),
+        InvestigationAgent(configured, FixtureWeb(record["description"]), HierarchicalFixtureClient()),
+        Database(configured.database),
+        run_metadata={"model": configured.model, "settings": non_secret_settings(configured)},
+    ).run([record["cve_id"]], taxonomy)[0]
+
+    assert [item.label for item in result.labels] == ["BUFFER"]
+    assert result.operational["classification"]["effective_strategy"] == "hybrid"
+    assert result.operational["coverage"] == {
+        "effective_strategy": "hybrid",
+        "total_labels": 2,
+        "evaluated_labels": 2,
+        "pruned_labels": 0,
+        "unresolved_labels": 0,
+        "classification_requests": 2,
+        "routing_levels": 1,
+        "complete": True,
+    }
+    with Database(configured.database) as database:
+        persisted = database.get(result.operational["run_id"], record["cve_id"])
+        persisted_run = database.get_run(result.operational["run_id"])
+        persisted_result = json.loads(persisted["result_json"])
+        coverage = json.loads(persisted["coverage_json"])
+        scratchpad = json.loads(persisted["scratchpad_json"])
+        persisted_settings = json.loads(persisted_run["settings_json"])
+    assert coverage == result.operational["coverage"]
+    assert persisted_result["operational"]["classification"]["effective_strategy"] == "hybrid"
+    assert persisted_settings["classification_strategy"] == "hybrid"
+    assert persisted_settings["pruning_confidence_threshold"] == 0.8
+    assert {entry["tool"] for entry in scratchpad["tool_history"]} >= {
+        "route_taxonomy_level",
+        "switch_taxonomy_strategy",
+        "hybrid_exhaustive_fallback",
+    }
+    route = next(entry for entry in scratchpad["tool_history"] if entry["tool"] == "route_taxonomy_level")
+    assert route["decisions"][0]["decision"] == "supported"
+    assert route["decisions"][0]["confidence"] == 0.95

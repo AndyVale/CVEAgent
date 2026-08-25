@@ -10,10 +10,11 @@ from cve_agent.agent import InvestigationAgent
 from cve_agent.config import Settings
 from cve_agent.investigation import build_investigation_profile
 from cve_agent.models import CVERecord, ClassificationStatus, Document, EvidenceRecord, InvestigationAspect, InvestigationState, Reference, SearchResult
-from cve_agent.prompts import CLASSIFICATION_SYSTEM_PROMPT, RESEARCH_SYSTEM_PROMPT
+from cve_agent.prompts import CLASSIFICATION_SYSTEM_PROMPT, HIERARCHY_ROUTING_SYSTEM_PROMPT, RESEARCH_SYSTEM_PROMPT
 from cve_agent.research import ResearchSession, ResearchToolExecutor
 from cve_agent.research_context import MAX_NVD_REFERENCE_CANDIDATES, build_research_context, select_reference_candidates
 from cve_agent.schemas import AGENT_TOOLS
+from cve_agent.strategy import ClassificationStrategy, EffectiveClassificationStrategy
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
 
 
@@ -131,6 +132,28 @@ class FullFlowClient:
         raise AssertionError("unexpected model request after taxonomy chunk classification")
 
 
+class HybridFlowClient(FullFlowClient):
+    def create(self, **kwargs):
+        if "tools" not in kwargs and kwargs["messages"][0]["content"] == HIERARCHY_ROUTING_SYSTEM_PROMPT:
+            self.requests.append(kwargs)
+            payload = json.loads(kwargs["messages"][1]["content"])
+            level = payload["taxonomy_level"]
+            return response(Message(content=json.dumps({
+                "level_id": level["level_id"],
+                "decisions": [{
+                    "label": label["id"],
+                    "decision": "supported",
+                    "confidence": 0.9,
+                    "explanation": "The evidence supports this hierarchy branch.",
+                    "evidence": [{
+                        "evidence_id": "doc-1:p1",
+                        "explanation": "The exact passage supports this hierarchy branch.",
+                    }],
+                } for label in level["labels"]],
+            })))
+        return super().create(**kwargs)
+
+
 def taxonomy():
     return Taxonomy((TaxonomyLabel("MEMORY", "Memory Safety Error", "Invalid memory access or corruption."),))
 
@@ -143,6 +166,8 @@ def test_prompts_require_mechanism_focused_evidence_without_exposing_taxonomy_to
     assert "not a checklist" in RESEARCH_SYSTEM_PROMPT
     assert "consequence" in CLASSIFICATION_SYSTEM_PROMPT
     assert "does not by itself prove" in CLASSIFICATION_SYSTEM_PROMPT
+    assert "semantic specialization" in HIERARCHY_ROUTING_SYSTEM_PROMPT
+    assert "exactly one routing decision" in HIERARCHY_ROUTING_SYSTEM_PROMPT
 
 
 def test_finish_tool_uses_five_optional_topics_without_unknown_or_status_matrix():
@@ -213,7 +238,16 @@ def test_agent_collects_evidence_then_classifies_complete_taxonomy(tmp_path):
     assert result.status == ClassificationStatus.CLASSIFIED
     assert result.labels[0].label == "MEMORY"
     assert result.labels[0].evidence[0].quote == "The issue causes memory corruption in aggregate processing."
-    assert result.operational["coverage"]["complete"] is True
+    assert result.operational["coverage"] == {
+        "effective_strategy": "exhaustive",
+        "total_labels": 1,
+        "evaluated_labels": 1,
+        "pruned_labels": 0,
+        "unresolved_labels": 0,
+        "classification_requests": 1,
+        "routing_levels": 0,
+        "complete": True,
+    }
     research_contexts = [json.loads(item["messages"][1]["content"]) for item in client.requests if "tools" in item]
     assert len(research_contexts) == 3
     assert all("taxonomy" not in context for context in research_contexts)
@@ -343,7 +377,8 @@ def test_multiple_taxonomy_chunks_are_merged_without_final_model_call(tmp_path):
     result = InvestigationAgent(configured, FixtureWeb(), client).classify(CVERecord("VULN-1", "fixture"), custom_taxonomy, InvestigationState())
     assert result.status == ClassificationStatus.CLASSIFIED
     assert [item.label for item in result.labels] == ["LABEL-A", "LABEL-B"]
-    assert result.operational["coverage"]["total_chunks"] == 2
+    assert result.operational["coverage"]["classification_requests"] == 2
+    assert result.operational["coverage"]["evaluated_labels"] == 2
     assert len([item for item in client.requests if "tools" not in item]) == 2
 
 
@@ -368,8 +403,121 @@ def test_persistently_malformed_later_chunk_returns_partial_with_prior_labels(tm
     assert result.status == ClassificationStatus.PARTIAL
     assert [item.label for item in result.labels] == ["LABEL-A"]
     assert result.operational["stop_reason"] == "classification_error"
-    assert result.operational["coverage"]["completed_chunks"] == 1
+    assert result.operational["coverage"]["evaluated_labels"] == 1
+    assert result.operational["coverage"]["unresolved_labels"] == 1
     assert state.tool_history[-1]["status"] == "error"
+
+
+def test_strategy_selection_is_taxonomy_aware_and_config_only(tmp_path):
+    flat = taxonomy()
+    hierarchy = Taxonomy((
+        TaxonomyLabel("ROOT", "Root", "Broad family."),
+        TaxonomyLabel("CHILD", "Child", "Specific mechanism.", "ROOT"),
+    ))
+    base = settings(tmp_path)
+
+    forced_hybrid_flat = base.__class__(**{
+        **base.__dict__,
+        "classification_strategy": ClassificationStrategy.HYBRID,
+        "token_budget": 100_000,
+    })
+    assert InvestigationAgent(forced_hybrid_flat, FixtureWeb(), FullFlowClient())._classification_plan(flat).effective_strategy == EffectiveClassificationStrategy.EXHAUSTIVE
+
+    assert InvestigationAgent(base, FixtureWeb(), FullFlowClient())._classification_plan(hierarchy).effective_strategy == EffectiveClassificationStrategy.EXHAUSTIVE
+
+    forced_hybrid = base.__class__(**{
+        **base.__dict__,
+        "classification_strategy": ClassificationStrategy.HYBRID,
+        "token_budget": 100_000,
+    })
+    assert InvestigationAgent(forced_hybrid, FixtureWeb(), FullFlowClient())._classification_plan(hierarchy).effective_strategy == EffectiveClassificationStrategy.HYBRID
+
+    long_definition = "Long hierarchy definition. " * 220
+    large_hierarchy = Taxonomy((
+        TaxonomyLabel("ROOT", "Root", long_definition),
+        TaxonomyLabel("CHILD", "Child", long_definition, "ROOT"),
+    ))
+    auto_large = base.__class__(**{
+        **base.__dict__,
+        "max_input_tokens_per_request": 8000,
+        "token_budget": 100_000,
+    })
+    assert InvestigationAgent(auto_large, FixtureWeb(), FullFlowClient())._classification_plan(large_hierarchy).effective_strategy == EffectiveClassificationStrategy.HYBRID
+
+    forced_exhaustive = auto_large.__class__(**{
+        **auto_large.__dict__,
+        "classification_strategy": ClassificationStrategy.EXHAUSTIVE,
+    })
+    assert InvestigationAgent(forced_exhaustive, FixtureWeb(), FullFlowClient())._classification_plan(large_hierarchy).effective_strategy == EffectiveClassificationStrategy.EXHAUSTIVE
+
+
+def test_flat_taxonomy_logs_that_configured_hybrid_strategy_is_ignored(tmp_path, caplog):
+    configured = settings(tmp_path).__class__(**{
+        **settings(tmp_path).__dict__,
+        "classification_strategy": ClassificationStrategy.HYBRID,
+    })
+    caplog.set_level(logging.INFO, logger="cve_agent.agent")
+
+    plan = InvestigationAgent(configured, FixtureWeb(), FullFlowClient())._classification_plan(taxonomy())
+
+    assert plan.effective_strategy == EffectiveClassificationStrategy.EXHAUSTIVE
+    assert "ignoring configured_strategy=hybrid" in caplog.text
+
+
+def test_agent_runs_forced_hybrid_without_exposing_taxonomy_to_research(tmp_path):
+    base = settings(tmp_path)
+    configured = base.__class__(**{
+        **base.__dict__,
+        "classification_strategy": ClassificationStrategy.HYBRID,
+        "token_budget": 100_000,
+    })
+    selected_taxonomy = Taxonomy((
+        TaxonomyLabel("ROOT", "Root", "Broad memory family."),
+        TaxonomyLabel("CHILD", "Child", "Specific memory mechanism.", "ROOT"),
+    ))
+    client = HybridFlowClient()
+    state = InvestigationState()
+
+    result = InvestigationAgent(configured, FixtureWeb(), client).classify(
+        CVERecord("VULN-1", "fixture"),
+        selected_taxonomy,
+        state,
+    )
+
+    assert result.status == ClassificationStatus.CLASSIFIED
+    assert [item.label for item in result.labels] == ["CHILD"]
+    assert result.operational["classification"]["configured_strategy"] == "hybrid"
+    assert result.operational["classification"]["effective_strategy"] == "hybrid"
+    assert result.operational["classification"]["cost_switches"] == 1
+    assert result.operational["coverage"] == {
+        "effective_strategy": "hybrid",
+        "total_labels": 2,
+        "evaluated_labels": 2,
+        "pruned_labels": 0,
+        "unresolved_labels": 0,
+        "classification_requests": 2,
+        "routing_levels": 1,
+        "complete": True,
+    }
+    research_contexts = [
+        json.loads(item["messages"][1]["content"])
+        for item in client.requests
+        if "tools" in item
+    ]
+    assert all("taxonomy" not in context for context in research_contexts)
+    classification_requests = [item for item in client.requests if "tools" not in item]
+    assert len(classification_requests) == 2
+    routing_payload = json.loads(classification_requests[0]["messages"][1]["content"])
+    assert routing_payload["taxonomy_level"]["labels"] == [{
+        "id": "ROOT",
+        "name": "Root",
+        "description": "Broad memory family.",
+        "ancestor_path": [],
+        "children": [{"id": "CHILD", "name": "Child"}],
+    }]
+    assert {item["tool"] for item in state.tool_history} >= {
+        "route_taxonomy_level", "switch_taxonomy_strategy", "hybrid_exhaustive_fallback",
+    }
 
 
 def test_agent_reports_empty_provider_response(tmp_path):

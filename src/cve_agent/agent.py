@@ -2,26 +2,36 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from openai import OpenAI
 
-from cve_agent.budget import BudgetExceeded, TokenBudget, create_budget_plan, taxonomy_input_tokens
-from cve_agent.classification import apply_hierarchy_policy, chunk_taxonomy, estimate_tokens
+from cve_agent.budget import BudgetExceeded, BudgetPlan, TokenBudget, create_budget_plan, create_hybrid_budget_plan, taxonomy_input_tokens
+from cve_agent.classification import TaxonomyChunk, apply_hierarchy_policy, chunk_taxonomy, estimate_tokens, is_hierarchical
 from cve_agent.config import Settings
+from cve_agent.hierarchy_scan import HybridTaxonomyScanner
 from cve_agent.llm import RequestPacer, call_chat_completion
 from cve_agent.models import CVERecord, ClassificationResult, ClassificationStatus, InvestigationState
 from cve_agent.ports import WebSource
 from cve_agent.research import ResearchRunner
 from cve_agent.taxonomy import Taxonomy
-from cve_agent.taxonomy_scan import TaxonomyScanner
+from cve_agent.taxonomy_scan import ClassificationScanner, ExhaustiveTaxonomyScanner, TaxonomyScanOutcome
+from cve_agent.strategy import EffectiveClassificationStrategy
 
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class AgentClassificationPlan:
+    effective_strategy: EffectiveClassificationStrategy
+    chunks: tuple[TaxonomyChunk, ...]
+    budget: BudgetPlan
+
+
 class InvestigationAgent:
-    """Orchestrate generic CVE research and exhaustive taxonomy classification."""
+    """Orchestrate generic CVE research and adaptive taxonomy classification."""
 
     def __init__(self, settings: Settings, web_source: WebSource, client: OpenAI | None = None):
         self.settings = settings
@@ -35,12 +45,14 @@ class InvestigationAgent:
         )
 
     def preflight(self, taxonomy: Taxonomy) -> None:
-        chunks = self._taxonomy_chunks(taxonomy)
-        plan = create_budget_plan(chunks, self.settings)
+        classification_plan = self._classification_plan(taxonomy)
+        plan = classification_plan.budget
         logger.info(
-            "classification preflight labels=%d chunks=%d base_budget=%d expanded_budget=%d reserve=%d investigation_limit=%d",
+            "classification preflight configured_strategy=%s effective_strategy=%s labels=%d chunks=%d base_budget=%d expanded_budget=%d reserve=%d investigation_limit=%d",
+            self.settings.classification_strategy.value,
+            classification_plan.effective_strategy.value,
             len(taxonomy.labels),
-            len(chunks),
+            len(classification_plan.chunks),
             plan.base_budget,
             plan.expanded_budget,
             plan.classification_reserve,
@@ -55,15 +67,17 @@ class InvestigationAgent:
         checkpoint: Callable[[], None] | None = None,
     ) -> ClassificationResult:
         started = time.monotonic()
-        chunks = self._taxonomy_chunks(taxonomy)
-        plan = create_budget_plan(chunks, self.settings)
+        classification_plan = self._classification_plan(taxonomy)
+        plan = classification_plan.budget
         budget = TokenBudget(plan, self.settings)
         checkpoint_fn = checkpoint or (lambda: None)
         logger.info(
-            "[%s] agent started taxonomy_labels=%d chunks=%d classification_reserve=%d investigation_limit=%d",
+            "[%s] agent started taxonomy_labels=%d configured_strategy=%s effective_strategy=%s chunks=%d classification_reserve=%d investigation_limit=%d",
             cve.cve_id,
             len(taxonomy.labels),
-            len(chunks),
+            self.settings.classification_strategy.value,
+            classification_plan.effective_strategy.value,
+            len(classification_plan.chunks),
             plan.classification_reserve,
             plan.investigation_limit,
         )
@@ -88,15 +102,15 @@ class InvestigationAgent:
             research.complete,
         )
 
-        scan = TaxonomyScanner(self._chat).scan(
+        scan = self._scan_taxonomy(
+            classification_plan,
             cve,
             taxonomy,
-            chunks,
             state,
             budget,
             checkpoint_fn,
         )
-        coverage_complete = scan.completed_chunks == len(chunks)
+        coverage_complete = scan.complete and len(scan.evaluated_ids) + len(scan.pruned_ids) == len(taxonomy.labels)
         candidates = list(scan.candidates)
         if candidates and coverage_complete:
             status = ClassificationStatus.CLASSIFIED
@@ -115,10 +129,13 @@ class InvestigationAgent:
             status, labels = ClassificationStatus.PARTIAL, []
 
         coverage = {
-            "total_chunks": len(chunks),
-            "completed_chunks": scan.completed_chunks,
+            "effective_strategy": classification_plan.effective_strategy.value,
             "total_labels": len(taxonomy.labels),
-            "evaluated_labels": scan.evaluated_labels,
+            "evaluated_labels": len(scan.evaluated_ids),
+            "pruned_labels": len(scan.pruned_ids),
+            "unresolved_labels": len(scan.unresolved_ids),
+            "classification_requests": scan.classification_requests,
+            "routing_levels": scan.routing_levels,
             "complete": coverage_complete,
         }
         if not research.complete or not coverage_complete or scan.stop_reason or budget.exhausted:
@@ -129,6 +146,13 @@ class InvestigationAgent:
             "duration_seconds": round(time.monotonic() - started, 3),
             "token_usage": budget.to_dict(),
             "coverage": coverage,
+            "classification": {
+                "configured_strategy": self.settings.classification_strategy.value,
+                "effective_strategy": classification_plan.effective_strategy.value,
+                "pruning_confidence_threshold": self.settings.pruning_confidence_threshold,
+                "cost_switches": scan.cost_switches,
+                "pruned_branches": list(scan.pruned_branches),
+            },
             "research_information_status": research.information_status,
             "research_profile": {
                 "findings": len(research.findings),
@@ -143,12 +167,13 @@ class InvestigationAgent:
             operational["stop_detail"] = scan.error
 
         logger.info(
-            "[%s] agent finished status=%s labels=%d coverage=%d/%d tokens=%d stop_reason=%s duration_seconds=%.3f",
+            "[%s] agent finished status=%s labels=%d evaluated=%d pruned=%d unresolved=%d tokens=%d stop_reason=%s duration_seconds=%.3f",
             cve.cve_id,
             status.value,
             len(labels),
-            scan.completed_chunks,
-            len(chunks),
+            len(scan.evaluated_ids),
+            len(scan.pruned_ids),
+            len(scan.unresolved_ids),
             budget.total_tokens,
             stop_reason.value if stop_reason else "none",
             time.monotonic() - started,
@@ -214,4 +239,52 @@ class InvestigationAgent:
         return chunk_taxonomy(
             taxonomy,
             available_tokens=taxonomy_input_tokens(self.settings),
+        )
+
+    def _classification_plan(self, taxonomy: Taxonomy) -> AgentClassificationPlan:
+        chunks = self._taxonomy_chunks(taxonomy)
+        hierarchical = is_hierarchical(taxonomy)
+        configured = self.settings.classification_strategy
+        if not hierarchical:
+            effective = EffectiveClassificationStrategy.EXHAUSTIVE
+            logger.info(
+                "flat taxonomy uses linear exhaustive classification; ignoring configured_strategy=%s",
+                configured.value,
+            )
+        elif configured.value == EffectiveClassificationStrategy.EXHAUSTIVE.value:
+            effective = EffectiveClassificationStrategy.EXHAUSTIVE
+        elif configured.value == EffectiveClassificationStrategy.HYBRID.value:
+            effective = EffectiveClassificationStrategy.HYBRID
+        else:
+            effective = (
+                EffectiveClassificationStrategy.EXHAUSTIVE
+                if len(chunks) <= 1
+                else EffectiveClassificationStrategy.HYBRID
+            )
+        budget = (
+            create_budget_plan(chunks, self.settings)
+            if effective == EffectiveClassificationStrategy.EXHAUSTIVE
+            else create_hybrid_budget_plan(taxonomy, self.settings)
+        )
+        return AgentClassificationPlan(effective, chunks, budget)
+
+    def _scan_taxonomy(
+        self,
+        plan: AgentClassificationPlan,
+        cve: CVERecord,
+        taxonomy: Taxonomy,
+        state: InvestigationState,
+        budget: TokenBudget,
+        checkpoint: Callable[[], None],
+    ) -> TaxonomyScanOutcome:
+        if plan.effective_strategy == EffectiveClassificationStrategy.HYBRID:
+            scanner: ClassificationScanner = HybridTaxonomyScanner(self.settings, self._chat)
+        else:
+            scanner = ExhaustiveTaxonomyScanner(self._chat, plan.chunks)
+        return scanner.scan(
+            cve,
+            taxonomy,
+            state,
+            budget,
+            checkpoint,
         )

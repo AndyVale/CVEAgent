@@ -51,6 +51,38 @@ supported label. Array-only taxonomies remain supported and use the default poli
 Validation rejects missing fields, duplicate IDs, unknown parents, hierarchy cycles, and
 unknown hierarchy policies. Extra label fields are preserved but do not affect classification.
 
+### Choosing a classification strategy
+
+Classification strategy is operational configuration, not part of the taxonomy:
+
+```toml
+[classification]
+strategy = "auto" # auto, hybrid, or exhaustive
+pruning_confidence_threshold = 0.8
+```
+
+Flat taxonomies always use linear exhaustive chunking. Their configured strategy is ignored
+and the override is logged. For hierarchical taxonomies:
+
+- `auto`, the default, uses exhaustive classification when the entire taxonomy fits in one
+  request and hybrid traversal otherwise;
+- `hybrid` always performs at least one root-routing request, even for a small tree;
+- `exhaustive` evaluates every label linearly without pruning.
+
+Hybrid traversal routes all active nodes breadth-first. A node may be `supported`, `uncertain`,
+or `unsupported`. Supported and uncertain nodes expand; an unsupported node prunes its
+descendants only when its confidence meets `pruning_confidence_threshold`. Lower-confidence
+unsupported decisions are treated as uncertain. The scanner may switch the remaining active
+subtrees to exhaustive evaluation when its conservative cost estimate is no greater than
+continued traversal. Remaining uncertain leaves and internal nodes without a supported
+descendant receive a final evidence-backed binary evaluation.
+
+> **Hybrid classification trades recall guarantees for efficiency.** An early routing error can
+> prune the correct branch, the reserved budget guarantees only one complete root-to-leaf path,
+> multi-branch vulnerabilities can return `partial`, and hybrid routing can cost more than
+> exhaustive evaluation for small trees. Use `exhaustive` for benchmarks and whenever parent
+> nodes are not true semantic supersets of all their descendants.
+
 ## Running classifications
 
 ```bash
@@ -65,10 +97,12 @@ uv run cve-agent --verbose --taxonomy fixtures/flat_taxonomy.json CVE-2025-6965
 ```
 
 The verbose trace reports research turns, bounded search queries, sanitized fetched URLs,
-evidence IDs, finding aspects, taxonomy chunks and supported label IDs, token usage, coverage,
-checkpoints, and stop reasons. It does not log model prompts or evidence passages. URL query
-strings and fragments are removed, configured credentials are redacted from provider
-diagnostics, and noisy dependency logs are suppressed.
+evidence IDs, finding aspects, configured and effective classification strategy, taxonomy
+chunks or routing levels, routing decisions, pruning normalization, branch sizes, cost-based
+switches, supported label IDs, token usage, coverage, checkpoints, and stop reasons. It does
+not log model prompts or evidence passages. URL query strings and fragments are removed,
+configured credentials are redacted from provider diagnostics, and noisy dependency logs are
+suppressed.
 
 `--llm-min-request-interval SECONDS` overrides model pacing for one invocation.
 
@@ -136,9 +170,15 @@ For each CVE, the system:
 3. exposes fetched sources as stable, bounded passages;
 4. builds a concise profile from any supported high-level findings; its topics are guidance,
    not mandatory fields;
-5. evaluates every taxonomy label independently in bounded chunks using strict structured
-   output;
-6. validates and merges all chunk labels deterministically, then applies the hierarchy policy.
+5. selects exhaustive or hybrid taxonomy scanning from the taxonomy shape and operational
+   configuration;
+6. validates every direct classification or routing response, resolves any required uncertain
+   nodes, merges supported candidates, and only then applies the hierarchy policy.
+
+Investigation is identical for flat, exhaustive hierarchical, and hybrid hierarchical runs.
+The taxonomy and classification strategy are never exposed to research, and `search`, `fetch`,
+`record_evidence`, and `finish_investigation` are research-only tools. Classification uses
+structured model requests without web tools.
 
 Final model decisions reference evidence IDs rather than writing quotes or URLs. The
 application materializes the canonical resolved URL and exact stored passage into the public
@@ -153,28 +193,33 @@ release notes, mitigations, product pages, exploits, technical descriptions, and
 third-party advisories. The complete and omitted reference counts remain explicit in the
 research context.
 
-Classification prompts require numeric confidence in the `[0, 1]` range. As a compatibility
-fallback for providers that ignore that instruction, `low`, `medium`, and `high` are normalized
-to `0.35`, `0.60`, and `0.85`; percentage strings are converted to their decimal value. Each
-normalization is logged. Unknown confidence words remain invalid and trigger the bounded
-correction request. Taxonomy-chunk responses wrapped as a top-level JSON array are also
-accepted, because the active chunk is unambiguous.
+Classification prompts require confidence in the `[0, 1]` range. For exhaustive label output,
+`low`, `medium`, and `high` are compatibility-normalized to `0.35`, `0.60`, and `0.85`, and
+percentage strings are converted to decimals. Routing decisions require an actual JSON number
+because confidence controls destructive branch pruning. Invalid responses receive one bounded
+correction request. Taxonomy-chunk responses wrapped as a top-level JSON array remain accepted
+when the active chunk is unambiguous.
 
 The classifier is explicitly instructed to distinguish root causes and exploitation mechanisms
 from consequences: remote code execution, disclosure, denial of service, or privilege gain do
-not by themselves prove a particular weakness class. There is no final model adjudication
-request; a completed exhaustive scan is the classification result.
+not by themselves prove a particular weakness class. Exhaustive scanning needs no final model
+adjudication request. Hybrid scanning uses binary classification only for routing decisions
+that remain uncertain after traversal.
 
 Complete `classified` and `no_matching_label` results require 100% taxonomy coverage.
-Operational metadata includes chunk/label coverage, token usage, stop reason, and run ID.
+Strategy-neutral coverage reports effective strategy, total labels, directly evaluated labels,
+pruned labels, unresolved labels, classification requests, routing levels, and completeness.
+Operational metadata also records pruning diagnostics, strategy switches, token usage, stop
+reason, and run ID.
 
 ## Budgets
 
-`token_budget` is the base per-CVE prompt-plus-completion budget. Before NVD or database
-work begins, CVEAgent estimates the exhaustive taxonomy-scan cost, including the repeated
-profile, evidence, prompt, schema, and output allowance. If
-that minimum cannot fit inside the base budget plus `finalization_overrun_percent`, the run
-fails preflight without external side effects.
+`token_budget` is the base per-CVE prompt-plus-completion budget. Before NVD or database work
+begins, CVEAgent reserves classification capacity according to the effective strategy.
+Exhaustive mode reserves every taxonomy chunk. Hybrid mode reserves root routing, the most
+expensive sibling-aware root-to-leaf route, and one adjudication batch. If the relevant minimum
+cannot fit inside the base budget plus `finalization_overrun_percent`, the run fails preflight
+without external side effects.
 
 Classification tokens are reserved before investigation. Research cannot consume the
 reserve or overrun allowance; only taxonomy scanning may enter the configured overrun.
@@ -183,10 +228,10 @@ otherwise. Unexpected exhaustion returns `partial` with validated labels and exa
 When research stops before it can produce a profile, classification receives a bounded set of
 the evidence already collected instead of silently discarding it.
 
-`max_input_tokens_per_request` controls taxonomy chunk size. Large or unusually verbose
-taxonomies may require raising `token_budget`; preflight reports its estimated minimum. Chunk
-planning reserves room for the repeated vulnerability profile and structured-output schema,
-so an input limit too small for that fixed context fails before research begins.
+`max_input_tokens_per_request` controls exhaustive and routing request chunk sizes. Large or
+unusually verbose taxonomies may require raising `token_budget`; preflight reports its estimated
+minimum. Planning reserves room for the repeated vulnerability profile and structured-output
+schema, so an input limit too small for that fixed context fails before research begins.
 
 ## Web retrieval and cache
 
@@ -209,7 +254,9 @@ rm -r .cache/cve-agent/web
 SQLite stores separate runs rather than overwriting by CVE ID. Each run records an incremental
 run ID, taxonomy fingerprint, model, non-secret effective settings, timestamps, status, and
 per-CVE checkpoints/results. Checkpoints are written after NVD retrieval, evidence changes,
-the structured investigation profile, and completed taxonomy chunks.
+the structured investigation profile, completed taxonomy chunks, hierarchy-routing chunks,
+cost-based strategy switches, and finalization. Routing decisions and generic coverage live in
+the existing JSON metadata, so this feature does not change the database schema.
 
 The current schema is version 2. A legacy development database is not migrated automatically;
 remove the configured database explicitly when the CLI reports an incompatible schema.

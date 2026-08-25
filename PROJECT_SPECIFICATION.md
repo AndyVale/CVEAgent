@@ -43,7 +43,8 @@ The system:
 - maintains an evolving investigation scratchpad for the current CVE;
 - investigates the vulnerability mechanism without exposing the complete taxonomy to every
   research turn;
-- evaluates every supplied taxonomy label in bounded exhaustive chunks;
+- classifies flat taxonomies exhaustively and hierarchical taxonomies with a configured
+  exhaustive or conservative adaptive strategy;
 - produces a structured JSON classification result.
 
 The agent has no file-system access and must operate only through the tools exposed to it.
@@ -80,6 +81,12 @@ The taxonomy is a required input to the CLI and should be explicit in every invo
 uv run cve-agent --taxonomy path/to/taxonomy.json CVE-2026-1234 CVE-2026-5678
 ```
 
+Classification strategy is runtime configuration and MUST NOT be embedded in or inferred from
+taxonomy data. Supported strategies are `auto`, `hybrid`, and `exhaustive`. Flat taxonomies
+always use exhaustive chunking. Hierarchical `auto` uses exhaustive evaluation when the whole
+taxonomy fits one request and hybrid traversal otherwise. Forced hybrid begins with root
+routing; forced exhaustive evaluates every label linearly.
+
 ## Investigation strategy
 
 Use an investigation-first approach.
@@ -92,14 +99,18 @@ CVE ID
   -> search, fetch, and select exact web passages
   -> build an evidence-linked vulnerability profile
   -> consult taxonomy definitions and relationships
-  -> evaluate every label independently in exhaustive chunks
-  -> merge validated chunk results deterministically
+  -> exhaustively evaluate labels or conservatively route a hierarchy
+  -> resolve uncertain nodes and merge validated candidates deterministically
   -> produce final structured classification
 ```
 
 Do not reduce the task to simply matching words in the taxonomy. The agent should first build an evidence-based understanding of the vulnerability and then determine which taxonomy labels are supported.
 
 The taxonomy constrains the classification space; it does not authorize the agent to invent concepts outside that space.
+
+Investigation behavior and tools MUST remain independent of the selected classification
+strategy. `search`, `fetch`, `record_evidence`, and `finish_investigation` are available only
+during investigation. Taxonomy routing and classification do not receive web tools.
 
 ## NVD and external sources
 
@@ -198,14 +209,35 @@ For each selected label, return:
 
 The classifier should not emit weakly supported labels merely because they are semantically plausible.
 
-Every label must be evaluated independently. The classifier must distinguish a vulnerability's
-root cause and exploitation mechanism from its consequences. Generic impacts such as remote
-code execution or information disclosure do not establish a specific weakness class without
-evidence for that class's defining mechanism.
+Every flat or exhaustive-mode label must be evaluated independently. The classifier must
+distinguish a vulnerability's root cause and exploitation mechanism from its consequences.
+Generic impacts such as remote code execution or information disclosure do not establish a
+specific weakness class without evidence for that class's defining mechanism.
 
-Every taxonomy chunk uses a strict structured-output schema and is validated centrally. The
-application merges validated chunk results directly; there is no second model adjudication
-phase. Complete outcomes require every chunk to have been evaluated.
+Every taxonomy request uses strict structured output and centralized validation. Exhaustive
+classification merges validated chunk results directly without another model adjudication.
+Hybrid classification evaluates all active nodes breadth-first using exactly one `supported`,
+`uncertain`, or `unsupported` decision per supplied node. Every decision needs a concise
+explanation and numeric confidence. A supported node needs canonical evidence, becomes a
+candidate, and expands its children. An uncertain node expands its children. Unsupported may
+prune descendants only when its confidence meets the configured threshold; lower-confidence
+unsupported decisions are normalized to uncertain.
+
+Each routed node receives its ID, name, description, ancestor path, and immediate child names.
+Hybrid mode is valid only when descendants are semantic specializations of their parents. After
+each routing level, the application compares exhaustive cost for unresolved active subtrees
+with the next frontier, the costliest remaining route, and one adjudication batch. It switches
+the active remainder to exhaustive classification when that estimate is no greater.
+
+After traversal, uncertain leaves and uncertain internal nodes without supported descendants
+receive evidence-backed binary classification in bounded batches. A failed adjudication remains
+unresolved and therefore makes the result partial. `most_specific` or `include_ancestors` is
+applied only after all supported candidates have been merged.
+
+Hybrid mode can significantly reduce recall through an early routing error, guarantees budget
+for only one complete branch, can return partial for multi-branch vulnerabilities, and may cost
+more than exhaustive evaluation for small trees. Exhaustive mode should be used for benchmarks
+and taxonomies whose parents are not true semantic supersets of every descendant.
 
 When the available information is insufficient to justify a reliable classification, return `not_enough_information` rather than guessing.
 
@@ -226,13 +258,19 @@ The agent should decide when to stop by considering, together:
 The goal is to stop when further investigation has diminishing expected value, without unnecessarily overengineering the investigation process.
 
 Token usage is a staged resource constraint. Before investigation, the system reserves the
-estimated cost of exhaustive taxonomy evaluation. Investigation cannot
-consume that reserve. A configurable bounded finalization overrun may be used only by the
-classification phases. If unexpected usage prevents completion, the agent must return a
-`partial` result containing validated labels, exact taxonomy coverage, and the stop reason.
-Taxonomy chunk sizing must reserve room for the repeated profile and output schema rather than
-treating the entire per-request input limit as taxonomy space.
-Complete outcomes require every taxonomy chunk to have been evaluated.
+estimated cost of the effective classification strategy. Exhaustive mode reserves all chunks.
+Hybrid mode reserves root routing, the most expensive sibling-aware root-to-leaf path, and one
+adjudication batch. Investigation cannot consume that reserve. A configurable bounded
+finalization overrun may be used only by classification. Additional active hybrid branches use
+remaining classification budget and overrun. If unexpected usage prevents completion, the
+agent must return a `partial` result containing validated labels, exact taxonomy coverage, and
+the stop reason. Taxonomy request sizing must reserve room for the repeated profile and output
+schema rather than treating the whole per-request input limit as taxonomy space.
+
+Strategy-neutral coverage records effective strategy, total labels, directly evaluated labels,
+pruned labels, unresolved labels, classification requests, routing levels, and whether coverage
+is complete. A hybrid outcome is complete only when every label is directly evaluated or
+pruned and no uncertain node remains unresolved.
 
 ## Output format
 
@@ -275,16 +313,19 @@ The implementation may extend the schema with operational metadata needed for re
 The label field MUST contain taxonomy IDs, not newly generated label names.
 
 Confidence is the classifier's reported confidence for the selected label and is materialized
-as a number in the `[0, 1]` range. The provider is instructed to return a JSON number. For
-provider compatibility, the application may deterministically normalize common qualitative
-or percentage forms, must log that normalization, and must reject unknown forms. Confidence
-should not be treated as a replacement for supporting evidence.
+as a number in the `[0, 1]` range. Exhaustive label output may deterministically normalize
+common qualitative or percentage provider deviations, must log that normalization, and must
+reject unknown forms. Hierarchy-routing confidence MUST be numeric because it controls pruning.
+Confidence is not a replacement for supporting evidence.
 
 ## Failure and operational behavior
 
 The system should checkpoint partial investigation state after NVD retrieval, evidence changes,
-and completed taxonomy chunks. Persisted records are scoped by run ID and input position so
-repeated classification of the same CVE does not overwrite prior experiments.
+completed taxonomy chunks, completed hierarchy-routing chunks, and cost-based strategy switches.
+Persisted JSON metadata records configured/effective strategy, threshold, routing decisions,
+low-confidence normalization, pruned branch sizes, switches, and exact coverage. Persisted
+records are scoped by run ID and input position so repeated classification of the same CVE does
+not overwrite prior experiments.
 
 An interrupted CVE does not need to be automatically resumed in the initial implementation.
 
