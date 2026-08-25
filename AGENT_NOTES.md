@@ -2,16 +2,20 @@
 
 ## Current work
 
-Adaptive hierarchical classification is implemented but not committed. The working tree adds
-config-only `auto`, `hybrid`, and `exhaustive` strategies, conservative breadth-first hierarchy
-routing, cost-based exhaustive fallback, uncertain-node adjudication, hybrid budget planning,
-strategy-neutral coverage, persisted diagnostics, deterministic tests, and documentation.
-Investigation prompts, tools, and execution are unchanged.
+Adaptive hierarchical classification is committed as `9a1f811`. The current uncommitted work
+adds `hybrid_taxonomy.json` and `hybrid_expected-classification.json` as a large adaptive-routing
+benchmark, plus fixture validation and user documentation.
 
-The complete deterministic suite passes 109 tests covering strategy selection, routing,
-budgeting, configuration, orchestration, hierarchy policies, checkpoint persistence, and
-fixture-driven integration. Bytecode compilation, secret/fixture-ID scans, and the Git
-whitespace check also pass.
+The hybrid taxonomy has 126 labels, six roots, and a maximum depth of four. At the example
+12,000-token request limit it needs two exhaustive chunks, so `auto` selects hybrid. Its current
+hybrid preflight reserve is about 29,000 tokens; the README recommends a 50,000-token base budget
+to leave useful investigation capacity. The expected benchmark reuses the existing 14 curated
+CVEs and maps them to the new tree's most-specific leaves.
+
+The complete deterministic suite now passes 111 tests. The hybrid benchmark fingerprint,
+taxonomy membership, automatic strategy selection, production fixture-ID exclusion, and
+curated CVE paths are validated without live services. Bytecode compilation and the Git
+whitespace check pass.
 
 ## Adaptive classification design
 
@@ -46,10 +50,11 @@ whitespace check also pass.
 - SQLite stores run-scoped metadata, checkpoints, coverage, state, and results. Persistence
   failures remain fatal. NVD weakness assignments remain intentionally excluded.
 - Fixtures are named `flat_taxonomy.json`, `flat_expected-classification.json`,
-  `hierarchical_taxonomy.json`, and `hierarchical_expected-classification.json`. Production code
-  contains no fixture-specific IDs or taxonomy assumptions.
+  `hierarchical_taxonomy.json`, `hierarchical_expected-classification.json`,
+  `hybrid_taxonomy.json`, and `hybrid_expected-classification.json`. Production code contains
+  no fixture-specific IDs or taxonomy assumptions.
 
 ## Handoff
 
-The implementation is ready for review. Do not commit until the developer approves a proposed
-Conventional Commit.
+The hybrid benchmark is ready for review. Do not commit it until the developer approves the
+proposed Conventional Commit.

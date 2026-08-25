@@ -133,6 +133,14 @@ a taxonomy fingerprint, so it cannot accidentally be evaluated against another t
 tree. Ancestors are omitted when a supported descendant exists; an internal node remains valid
 when none of its children describes the vulnerability more precisely.
 
+`fixtures/hybrid_taxonomy.json` is the stress fixture for adaptive traversal. It contains 126
+labels, six independent roots, and paths up to four levels deep. With the example input limit it
+requires two linear exhaustive chunks, so the default `auto` strategy selects hybrid routing.
+Its parents are written as semantic supersets so pruning is meaningful, and
+`fixtures/hybrid_expected-classification.json` maps the same 14 curated CVEs to their most
+specific leaves. Set `token_budget = 50000` or higher before running this benchmark; the example
+12,000-token budget cannot reserve a complete hybrid branch plus useful investigation capacity.
+
 Run the complete benchmark without listing CVE IDs:
 
 ```bash
@@ -147,6 +155,16 @@ Or run a cheaper subset while developing:
 uv run cve-agent \
   --taxonomy fixtures/hierarchical_taxonomy.json \
   --validate fixtures/hierarchical_expected-classification.json \
+  CVE-2014-0160 CVE-2021-41773
+```
+
+To exercise adaptive routing rather than the smaller hierarchy, use the hybrid pair after
+raising the configured token budget:
+
+```bash
+uv run cve-agent \
+  --taxonomy fixtures/hybrid_taxonomy.json \
+  --validate fixtures/hybrid_expected-classification.json \
   CVE-2014-0160 CVE-2021-41773
 ```
 

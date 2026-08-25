@@ -1,0 +1,760 @@
+{
+  "hierarchy_policy": "most_specific",
+  "labels": [
+    {
+      "id": "InputProcessing",
+      "name": "Input Processing Weaknesses",
+      "description": "Root family for vulnerabilities caused by unsafe interpretation, transformation, routing, or storage of attacker-influenced input. Every descendant represents a more specific way in which externally controlled data crosses an intended processing boundary."
+    },
+    {
+      "id": "InterpreterInjection",
+      "name": "Interpreter Injection",
+      "description": "Input-processing weaknesses in which attacker-controlled data changes the syntax or semantics consumed by an interpreter. Descendants distinguish the interpreter and construction mechanism rather than the eventual impact of execution.",
+      "parent": "InputProcessing"
+    },
+    {
+      "id": "QueryInjection",
+      "name": "Query-Language Injection",
+      "description": "Interpreter injection in which untrusted data changes a structured query sent to a database, directory, or document-selection engine. The defect must alter query meaning rather than merely provide an unexpected query value.",
+      "parent": "InterpreterInjection"
+    },
+    {
+      "id": "SQLi",
+      "name": "SQL Injection",
+      "description": "Attacker-controlled data is incorporated into SQL syntax without safe parameterization or equivalent separation, allowing the database statement structure or operations to be changed.",
+      "parent": "QueryInjection"
+    },
+    {
+      "id": "NoSQLInjection",
+      "name": "NoSQL Query Injection",
+      "description": "Attacker-controlled data changes the operators, selectors, or executable structure of a non-relational database query, rather than being treated only as a literal stored or compared value.",
+      "parent": "QueryInjection"
+    },
+    {
+      "id": "LDAPInjection",
+      "name": "LDAP Injection",
+      "description": "Untrusted data changes an LDAP search filter or directory operation because filter metacharacters or query fragments are not safely separated from literal values.",
+      "parent": "QueryInjection"
+    },
+    {
+      "id": "XPathInjection",
+      "name": "XPath or XQuery Injection",
+      "description": "Untrusted data changes an XPath or XQuery expression, enabling unintended document selection, predicate bypass, or query execution within an XML-oriented data engine.",
+      "parent": "QueryInjection"
+    },
+    {
+      "id": "CommandConstruction",
+      "name": "Command Construction Injection",
+      "description": "Interpreter injection caused while constructing an operating-system command or process invocation from attacker-controlled data. Descendants distinguish shell syntax injection from unsafe argument construction.",
+      "parent": "InterpreterInjection"
+    },
+    {
+      "id": "CommandInjection",
+      "name": "Operating-System Command Injection",
+      "description": "Untrusted data becomes shell or command-interpreter syntax, allowing the attacker to introduce commands, pipelines, substitutions, redirections, or other executable shell constructs.",
+      "parent": "CommandConstruction"
+    },
+    {
+      "id": "ArgumentInjection",
+      "name": "Process Argument Injection",
+      "description": "A process is launched without shell-syntax injection, but attacker-controlled values become unintended command-line options or arguments that alter the invoked program's security-sensitive behavior.",
+      "parent": "CommandConstruction"
+    },
+    {
+      "id": "DynamicCodeEvaluation",
+      "name": "Dynamic Code Evaluation Injection",
+      "description": "Interpreter injection in which attacker-controlled content reaches a code, expression, or template evaluator. Descendants distinguish direct source-code evaluation from specialized expression and template languages.",
+      "parent": "InterpreterInjection"
+    },
+    {
+      "id": "CodeInjection",
+      "name": "Direct Code Injection",
+      "description": "Attacker-supplied source code or code fragments are directly evaluated by a general-purpose runtime such as PHP, Python, JavaScript, Ruby, or a comparable language interpreter.",
+      "parent": "DynamicCodeEvaluation"
+    },
+    {
+      "id": "ExpressionLanguageInjection",
+      "name": "Expression-Language Injection",
+      "description": "Attacker-controlled data changes an application expression evaluated by a dedicated expression language, such as OGNL, SpEL, or EL, without requiring direct general-purpose source-code input.",
+      "parent": "DynamicCodeEvaluation"
+    },
+    {
+      "id": "ServerTemplateInjection",
+      "name": "Server-Side Template Injection",
+      "description": "Attacker-controlled template syntax is evaluated by a server-side template engine, exposing template operations or underlying runtime capabilities beyond intended literal rendering.",
+      "parent": "DynamicCodeEvaluation"
+    },
+    {
+      "id": "BrowserContentInjection",
+      "name": "Browser Content Injection",
+      "description": "Input-processing weaknesses in which untrusted content is inserted into a browser-consumed document or style context without the contextual encoding or structural separation required by that context.",
+      "parent": "InputProcessing"
+    },
+    {
+      "id": "XSS",
+      "name": "Cross-Site Scripting",
+      "description": "Attacker-controlled script-capable content is inserted into a web page and executes in another user's browser origin because the application or client library fails to neutralize the relevant HTML or script context.",
+      "parent": "BrowserContentInjection"
+    },
+    {
+      "id": "HTMLInjection",
+      "name": "Non-Script HTML Injection",
+      "description": "Attacker-controlled markup changes visible page structure, forms, or navigation without evidence that script executes. Use this only when the defining property is unauthorized HTML structure rather than XSS.",
+      "parent": "BrowserContentInjection"
+    },
+    {
+      "id": "CSSInjection",
+      "name": "CSS Injection",
+      "description": "Attacker-controlled data becomes stylesheet syntax and changes rendering or data-selection behavior in a browser without requiring the injected content to execute as JavaScript.",
+      "parent": "BrowserContentInjection"
+    },
+    {
+      "id": "PathAndResourceSelection",
+      "name": "Path and Resource Selection Weaknesses",
+      "description": "Input-processing weaknesses in which attacker-controlled names, paths, links, or archive entries select a filesystem resource outside the location intended by the application.",
+      "parent": "InputProcessing"
+    },
+    {
+      "id": "PathTraversal",
+      "name": "Path Traversal",
+      "description": "Attacker-controlled path components, encoded separators, or normalization edge cases resolve outside an intended directory and allow access to a filesystem resource beyond the authorized path scope.",
+      "parent": "PathAndResourceSelection"
+    },
+    {
+      "id": "ZipSlip",
+      "name": "Archive Extraction Path Traversal",
+      "description": "A crafted archive entry contains an absolute or traversing path that escapes the extraction directory when unpacked, causing files to be read or written outside the intended archive destination.",
+      "parent": "PathAndResourceSelection"
+    },
+    {
+      "id": "ImproperLinkResolution",
+      "name": "Improper Symbolic-Link Resolution",
+      "description": "The application follows or replaces symbolic links, junctions, or equivalent filesystem references without ensuring that the resolved resource remains inside the authorized boundary.",
+      "parent": "PathAndResourceSelection"
+    },
+    {
+      "id": "FilenameControl",
+      "name": "Unrestricted Filename Control",
+      "description": "Attacker-controlled filenames select or overwrite unintended resources even though directory traversal is not the established mechanism, such as collision with a security-sensitive fixed-location file.",
+      "parent": "PathAndResourceSelection"
+    },
+    {
+      "id": "StructuredDataProcessing",
+      "name": "Unsafe Structured-Data Processing",
+      "description": "Input-processing weaknesses caused when structured objects, documents, or property graphs are reconstructed or interpreted with capabilities that exceed the intended data-only contract.",
+      "parent": "InputProcessing"
+    },
+    {
+      "id": "UntrustedDeserialization",
+      "name": "Deserialization of Untrusted Data",
+      "description": "Attacker-controlled serialized data is restored into objects without adequate type or behavior restrictions, enabling gadget invocation, unsafe object construction, or security-sensitive state manipulation.",
+      "parent": "StructuredDataProcessing"
+    },
+    {
+      "id": "XXE",
+      "name": "XML External Entity Expansion",
+      "description": "An XML parser processes attacker-controlled external entity declarations or references, permitting unintended local-file access, network requests, or disclosure through entity resolution.",
+      "parent": "StructuredDataProcessing"
+    },
+    {
+      "id": "PrototypePollution",
+      "name": "Prototype Pollution",
+      "description": "Attacker-controlled object properties modify a shared prototype or inheritance structure, causing later property lookups or object behavior to use unauthorized values.",
+      "parent": "StructuredDataProcessing"
+    },
+    {
+      "id": "MassAssignment",
+      "name": "Unsafe Mass Assignment",
+      "description": "A framework binds untrusted structured input to object fields without an allowlist, letting the attacker set security-sensitive properties that were not intended to be externally writable.",
+      "parent": "StructuredDataProcessing"
+    },
+    {
+      "id": "RoutingAndDestinationControl",
+      "name": "Network Routing and Destination Control",
+      "description": "Input-processing weaknesses in which attacker-controlled network identifiers cause a server, intermediary, or client to use an unintended destination or routing context.",
+      "parent": "InputProcessing"
+    },
+    {
+      "id": "SSRF",
+      "name": "Server-Side Request Forgery",
+      "description": "Attacker-controlled input coerces the vulnerable server into issuing a request to an unintended internal or external resource using the server's network position or credentials.",
+      "parent": "RoutingAndDestinationControl"
+    },
+    {
+      "id": "OpenRedirect",
+      "name": "Unvalidated Redirect",
+      "description": "Attacker-controlled destination data causes an application response to redirect a user's client to an unintended external location without an adequate destination allowlist.",
+      "parent": "RoutingAndDestinationControl"
+    },
+    {
+      "id": "HostHeaderInjection",
+      "name": "Host Header Injection",
+      "description": "An untrusted HTTP Host or forwarded-host value controls security-sensitive URL generation, tenant routing, password-reset links, or backend selection without authoritative host validation.",
+      "parent": "RoutingAndDestinationControl"
+    },
+    {
+      "id": "FileUploadControl",
+      "name": "File Upload Control Weaknesses",
+      "description": "Input-processing weaknesses in which externally supplied files are accepted, named, typed, or stored without the restrictions required by the upload feature's security boundary.",
+      "parent": "InputProcessing"
+    },
+    {
+      "id": "UnrestrictedFileUpload",
+      "name": "Unrestricted File Upload",
+      "description": "An upload endpoint accepts attacker-controlled files without the access, type, or policy restriction fundamental to the feature, allowing arbitrary content to be placed through an otherwise exposed upload workflow.",
+      "parent": "FileUploadControl"
+    },
+    {
+      "id": "DangerousFileTypeUpload",
+      "name": "Dangerous File-Type Upload",
+      "description": "An upload feature exists legitimately but its type validation permits executable, active, or otherwise dangerous content that the surrounding deployment may process with security-sensitive behavior.",
+      "parent": "FileUploadControl"
+    },
+    {
+      "id": "UploadDestinationControl",
+      "name": "Upload Destination Control",
+      "description": "An attacker can choose an unauthorized storage destination for an uploaded file even though the upload itself is permitted, without relying on archive extraction or generic path traversal.",
+      "parent": "FileUploadControl"
+    },
+
+    {
+      "id": "AccessControl",
+      "name": "Identity and Access Control Weaknesses",
+      "description": "Root family for vulnerabilities caused by failures to establish identity, maintain an authenticated session, or authorize a security-sensitive action or resource. Descendants specialize the failed access-control decision."
+    },
+    {
+      "id": "AuthenticationWeakness",
+      "name": "Authentication Weaknesses",
+      "description": "Access-control weaknesses that prevent the system from reliably establishing or recovering a principal's identity before granting the authenticated security context.",
+      "parent": "AccessControl"
+    },
+    {
+      "id": "BrokenAuthentication",
+      "name": "Broken Authentication",
+      "description": "The primary authentication mechanism can be bypassed or subverted because credential verification, identity binding, or authentication-state establishment is implemented incorrectly.",
+      "parent": "AuthenticationWeakness"
+    },
+    {
+      "id": "WeakPasswordRecovery",
+      "name": "Weak Password Recovery",
+      "description": "An account-recovery workflow authenticates the requester with guessable, exposed, replayable, or insufficient evidence and thereby permits unauthorized credential replacement.",
+      "parent": "AuthenticationWeakness"
+    },
+    {
+      "id": "AuthenticationBypass",
+      "name": "Authentication Bypass",
+      "description": "A reachable alternate path, parsing discrepancy, or logic condition skips a normally required authentication check and directly creates or accepts an authenticated context.",
+      "parent": "AuthenticationWeakness"
+    },
+    {
+      "id": "DefaultCredentials",
+      "name": "Default Credentials",
+      "description": "The product grants an authenticated identity through factory credentials that are shared, predictable, or documented and remain active without a mandatory secure initialization step.",
+      "parent": "AuthenticationWeakness"
+    },
+    {
+      "id": "SessionManagementWeakness",
+      "name": "Session Management Weaknesses",
+      "description": "Access-control weaknesses in the creation, binding, rotation, lifetime, or invalidation of an already authenticated session identifier or token.",
+      "parent": "AccessControl"
+    },
+    {
+      "id": "SessionFixation",
+      "name": "Session Fixation",
+      "description": "The application accepts or preserves a session identifier controlled by the attacker across authentication, allowing the attacker to reuse the victim's resulting authenticated session.",
+      "parent": "SessionManagementWeakness"
+    },
+    {
+      "id": "PredictableSessionToken",
+      "name": "Predictable Session Token",
+      "description": "Authenticated session identifiers can be feasibly predicted because their generation lacks sufficient entropy or exposes a deterministic relationship between tokens.",
+      "parent": "SessionManagementWeakness"
+    },
+    {
+      "id": "MissingSessionExpiration",
+      "name": "Missing Session Expiration",
+      "description": "A session remains valid beyond its intended lifetime or after a security-sensitive invalidation event because expiration, logout, or revocation is not enforced.",
+      "parent": "SessionManagementWeakness"
+    },
+    {
+      "id": "AuthorizationWeakness",
+      "name": "Authorization Weaknesses",
+      "description": "Access-control weaknesses in which an identified or anonymous principal can perform an action or access a resource outside the permissions intended for that principal.",
+      "parent": "AccessControl"
+    },
+    {
+      "id": "ImproperAuthorization",
+      "name": "Improper Authorization",
+      "description": "A security-sensitive operation lacks an effective permission check or applies the wrong authorization policy, granting functionality or resources to a principal that should not receive them.",
+      "parent": "AuthorizationWeakness"
+    },
+    {
+      "id": "IDOR",
+      "name": "Insecure Direct Object Reference",
+      "description": "An attacker changes an object identifier and accesses another principal's resource because object-level authorization is absent or is not bound to the requested identifier.",
+      "parent": "AuthorizationWeakness"
+    },
+    {
+      "id": "PrivilegeEscalation",
+      "name": "Privilege Boundary Bypass",
+      "description": "An already recognized principal crosses an intended privilege boundary and obtains a more powerful role or execution context because the transition is not properly authorized.",
+      "parent": "AuthorizationWeakness"
+    },
+    {
+      "id": "MissingFunctionAuthorization",
+      "name": "Missing Function-Level Authorization",
+      "description": "A privileged endpoint or operation is exposed to lower-privileged callers because access is checked only in the user interface or omitted from the server-side function.",
+      "parent": "AuthorizationWeakness"
+    },
+    {
+      "id": "RequestAuthorizationWeakness",
+      "name": "Request Authorization Weaknesses",
+      "description": "Access-control weaknesses where a request carries valid ambient authority but the application fails to establish that the authorized principal intentionally originated, approved, or freshly issued it.",
+      "parent": "AccessControl"
+    },
+    {
+      "id": "CSRF",
+      "name": "Cross-Site Request Forgery",
+      "description": "A cross-site attacker causes a victim's browser to submit a security-sensitive request with the victim's ambient credentials because the application does not verify request intent or origin.",
+      "parent": "RequestAuthorizationWeakness"
+    },
+    {
+      "id": "CORSOriginValidation",
+      "name": "Improper CORS Origin Authorization",
+      "description": "A server authorizes a malicious or overly broad web origin to read credentialed cross-origin responses because its Access-Control-Allow-Origin decision is incorrectly validated.",
+      "parent": "RequestAuthorizationWeakness"
+    },
+    {
+      "id": "AuthenticatedRequestReplay",
+      "name": "Authenticated Request Replay",
+      "description": "A previously valid authenticated request can be repeated to perform an additional unauthorized action because freshness, nonce, sequence, or one-time authorization is not enforced.",
+      "parent": "RequestAuthorizationWeakness"
+    },
+
+    {
+      "id": "MemorySafety",
+      "name": "Memory Safety Weaknesses",
+      "description": "Root family for vulnerabilities caused by invalid access to storage managed by a native or otherwise memory-unsafe runtime. Descendants distinguish spatial bounds, object initialization, type, and lifetime violations."
+    },
+    {
+      "id": "SpatialMemorySafety",
+      "name": "Spatial Memory Safety",
+      "description": "Memory-safety weaknesses in which an access targets bytes outside the bounds of the object or region that the operation is allowed to read or write.",
+      "parent": "MemorySafety"
+    },
+    {
+      "id": "OutOfBoundsWrite",
+      "name": "Out-of-Bounds Write",
+      "description": "A write operation stores data outside the valid boundary of its destination object or allocation. Descendants identify common boundary-crossing write patterns.",
+      "parent": "SpatialMemorySafety"
+    },
+    {
+      "id": "BufferOverflow",
+      "name": "Buffer Overflow",
+      "description": "Data is copied, appended, or written past the capacity of a fixed-size stack, heap, or static buffer because the implementation fails to enforce the destination boundary.",
+      "parent": "OutOfBoundsWrite"
+    },
+    {
+      "id": "OffByOneWrite",
+      "name": "Off-by-One Write",
+      "description": "A boundary calculation permits exactly one element or byte to be written outside the valid destination region, commonly through an inclusive limit or terminator mistake.",
+      "parent": "OutOfBoundsWrite"
+    },
+    {
+      "id": "IntegerIndexedWrite",
+      "name": "Invalid Integer-Indexed Write",
+      "description": "An unchecked, truncated, wrapped, or signed index selects a write location outside an allocated object without the evidence specifically establishing a sequential buffer-overflow operation.",
+      "parent": "OutOfBoundsWrite"
+    },
+    {
+      "id": "OutOfBoundsRead",
+      "name": "Out-of-Bounds Read",
+      "description": "A read operation accesses bytes outside the valid boundary of an allocated object, buffer, or region and may disclose adjacent process memory or influence execution with unintended values.",
+      "parent": "SpatialMemorySafety"
+    },
+    {
+      "id": "InvalidPointerRead",
+      "name": "Invalid Pointer Read",
+      "description": "The program dereferences an invalid non-null pointer and reads from an unauthorized or unmapped address, without evidence that the access is specifically past a known object's boundary.",
+      "parent": "SpatialMemorySafety"
+    },
+    {
+      "id": "InitializationMemorySafety",
+      "name": "Memory Initialization Weaknesses",
+      "description": "Memory-safety weaknesses in which storage or a pointer is used before the implementation establishes the valid initialized state required by the operation.",
+      "parent": "MemorySafety"
+    },
+    {
+      "id": "UninitializedMemoryRead",
+      "name": "Uninitialized Memory Read",
+      "description": "The program reads bytes whose value has not been initialized for the current object or operation, potentially disclosing prior contents or making control decisions from indeterminate data.",
+      "parent": "InitializationMemorySafety"
+    },
+    {
+      "id": "NullPointerDereference",
+      "name": "Null Pointer Dereference",
+      "description": "The program dereferences a null pointer because a required object or error condition was not checked. Select this mechanism rather than a generic denial-of-service consequence.",
+      "parent": "InitializationMemorySafety"
+    },
+    {
+      "id": "UninitializedPointerUse",
+      "name": "Uninitialized Pointer Use",
+      "description": "A pointer value is consumed before being assigned a valid target, causing memory access through an indeterminate address rather than through a stale freed object.",
+      "parent": "InitializationMemorySafety"
+    },
+    {
+      "id": "TemporalMemorySafety",
+      "name": "Temporal Memory Safety",
+      "description": "Memory-safety weaknesses caused by using, releasing, or reusing an object outside the valid lifetime established by its allocation and ownership rules.",
+      "parent": "MemorySafety"
+    },
+    {
+      "id": "UseAfterFree",
+      "name": "Use After Free",
+      "description": "The program accesses an object after its storage has been released, so subsequent allocation or attacker influence can replace the expected object contents or metadata.",
+      "parent": "TemporalMemorySafety"
+    },
+    {
+      "id": "DoubleFree",
+      "name": "Double Free",
+      "description": "The same allocation is released more than once without an intervening valid allocation, corrupting allocator state or allowing later memory manipulation.",
+      "parent": "TemporalMemorySafety"
+    },
+    {
+      "id": "DanglingPointer",
+      "name": "Dangling Pointer Use",
+      "description": "A pointer remains reachable after its target object's lifetime ends and is later dereferenced, including non-heap lifetime errors not more specifically established as use-after-free.",
+      "parent": "TemporalMemorySafety"
+    },
+    {
+      "id": "StaleHandleUse",
+      "name": "Stale Handle Use",
+      "description": "A recycled or invalidated numeric handle, descriptor, or object token is reused and resolves to a different resource after the original resource lifetime has ended.",
+      "parent": "TemporalMemorySafety"
+    },
+    {
+      "id": "MemoryTypeSafety",
+      "name": "Memory Object Type Safety",
+      "description": "Memory-safety weaknesses in which storage is interpreted as an incompatible object type, layout, or runtime variant and the resulting access violates the object's valid representation.",
+      "parent": "MemorySafety"
+    },
+    {
+      "id": "TypeConfusion",
+      "name": "Type Confusion",
+      "description": "The program treats an object as a different runtime type than the object actually has, causing field, method, or layout access under incompatible assumptions.",
+      "parent": "MemoryTypeSafety"
+    },
+    {
+      "id": "InvalidDowncast",
+      "name": "Invalid Object Downcast",
+      "description": "An unchecked or incorrect cast narrows an object to an incompatible subtype and subsequent native access relies on fields or layout that the original object does not provide.",
+      "parent": "MemoryTypeSafety"
+    },
+    {
+      "id": "VariantDiscriminatorMismatch",
+      "name": "Variant Discriminator Mismatch",
+      "description": "A union, tagged variant, or equivalent structure is accessed through a member inconsistent with its active discriminator, producing invalid object interpretation or memory access.",
+      "parent": "MemoryTypeSafety"
+    },
+
+    {
+      "id": "AvailabilityAndResources",
+      "name": "Availability and Resource Management Weaknesses",
+      "description": "Root family for vulnerabilities whose defining defect is uncontrolled consumption, retention, coordination, or amplification of finite computational resources. Incidental crashes caused by another weakness family are excluded."
+    },
+    {
+      "id": "ResourceConsumption",
+      "name": "Uncontrolled Resource Consumption",
+      "description": "Availability weaknesses in which attacker-triggered work, objects, processes, or requests consume a finite resource without an effective per-client, per-operation, or global bound.",
+      "parent": "AvailabilityAndResources"
+    },
+    {
+      "id": "ResourceExhaustion",
+      "name": "Generic Resource Exhaustion",
+      "description": "Attacker-controlled operations consume CPU, memory, bandwidth, stream state, or another finite resource at an unbounded rate, causing service degradation or denial of service without a more specific descendant mechanism.",
+      "parent": "ResourceConsumption"
+    },
+    {
+      "id": "AlgorithmicComplexity",
+      "name": "Algorithmic Complexity Attack",
+      "description": "Crafted input triggers pathologically expensive algorithmic behavior, such as excessive backtracking, collision handling, or superlinear parsing, and thereby exhausts computation.",
+      "parent": "ResourceConsumption"
+    },
+    {
+      "id": "UncontrolledRecursion",
+      "name": "Uncontrolled Recursion",
+      "description": "Attacker-influenced nesting or cyclic input causes recursion without an adequate depth or cycle bound, exhausting stack space or computation.",
+      "parent": "ResourceConsumption"
+    },
+    {
+      "id": "ConnectionPoolExhaustion",
+      "name": "Connection Pool Exhaustion",
+      "description": "An attacker can occupy or create connections faster than they are released because concurrency, lifetime, or per-client limits do not protect the finite connection pool.",
+      "parent": "ResourceConsumption"
+    },
+    {
+      "id": "ProcessCreationExhaustion",
+      "name": "Unbounded Process or Thread Creation",
+      "description": "Attacker-triggered activity causes processes or threads to be created without an effective bound, exhausting scheduler, memory, identifier, or operating-system resources.",
+      "parent": "ResourceConsumption"
+    },
+    {
+      "id": "ResourceLifecycle",
+      "name": "Resource Lifecycle Weaknesses",
+      "description": "Availability weaknesses where resources acquired for completed or failed operations are not released according to their intended lifecycle and accumulate over time.",
+      "parent": "AvailabilityAndResources"
+    },
+    {
+      "id": "MemoryLeaks",
+      "name": "Memory Leak",
+      "description": "Allocated memory remains reachable or reserved after it is no longer needed because a release path, ownership transfer, or cleanup operation is missing.",
+      "parent": "ResourceLifecycle"
+    },
+    {
+      "id": "UnboundedAllocation",
+      "name": "Unbounded Memory Allocation",
+      "description": "Attacker-controlled sizes or object counts cause new memory allocations without an effective upper bound, regardless of whether each allocation would later be correctly released.",
+      "parent": "ResourceLifecycle"
+    },
+    {
+      "id": "FileDescriptorLeak",
+      "name": "File Descriptor Leak",
+      "description": "Files, sockets, pipes, or comparable operating-system handles are repeatedly opened but not closed on one or more reachable paths, eventually exhausting descriptor capacity.",
+      "parent": "ResourceLifecycle"
+    },
+    {
+      "id": "CoordinationFailure",
+      "name": "Availability Coordination Failures",
+      "description": "Availability weaknesses where concurrent actors cannot make progress because locking, retry, or coordination rules create a stable non-progress condition or self-amplifying workload.",
+      "parent": "AvailabilityAndResources"
+    },
+    {
+      "id": "Deadlock",
+      "name": "Deadlock",
+      "description": "Two or more execution contexts wait indefinitely for resources or conditions held by one another because the locking or acquisition order permits a circular dependency.",
+      "parent": "CoordinationFailure"
+    },
+    {
+      "id": "Livelock",
+      "name": "Livelock",
+      "description": "Execution contexts remain active and repeatedly react to one another but cannot complete useful work because their coordination protocol continually changes or retries state.",
+      "parent": "CoordinationFailure"
+    },
+    {
+      "id": "RetryStorm",
+      "name": "Unbounded Retry Amplification",
+      "description": "A failure or attacker-controlled response causes clients or workers to retry without sufficient limits, delay, or deduplication, amplifying load and preventing recovery.",
+      "parent": "CoordinationFailure"
+    },
+
+    {
+      "id": "CryptographicProtection",
+      "name": "Cryptographic Protection Weaknesses",
+      "description": "Root family for vulnerabilities caused by incorrect selection, construction, validation, randomness, or key management in a cryptographic security control. Merely handling plaintext outside such a control is not sufficient."
+    },
+    {
+      "id": "AlgorithmSelection",
+      "name": "Cryptographic Algorithm Selection",
+      "description": "Cryptographic weaknesses caused by choosing an algorithm, primitive, mode, parameter size, or construction that does not provide the security property claimed by the control.",
+      "parent": "CryptographicProtection"
+    },
+    {
+      "id": "WeakCryptography",
+      "name": "Weak Cryptographic Construction",
+      "description": "The implemented cryptographic construction is known to provide inadequate confidentiality, integrity, or authenticity for the stated threat model, without a more specific descendant selection defect.",
+      "parent": "AlgorithmSelection"
+    },
+    {
+      "id": "DeprecatedCipher",
+      "name": "Deprecated Cipher or Mode",
+      "description": "A deprecated encryption algorithm or mode remains enabled even though practical weaknesses make it unsuitable for protecting the data or protocol in which it is used.",
+      "parent": "AlgorithmSelection"
+    },
+    {
+      "id": "WeakHash",
+      "name": "Weak Cryptographic Hash",
+      "description": "A hash with inadequate collision, preimage, or password-resistance properties is used for a security-sensitive integrity, signature, credential, or identity purpose.",
+      "parent": "AlgorithmSelection"
+    },
+    {
+      "id": "InsufficientKeyLength",
+      "name": "Insufficient Cryptographic Key Length",
+      "description": "A cryptographic key or modulus is configured with a size that permits feasible brute force or cryptanalysis for the required protection lifetime.",
+      "parent": "AlgorithmSelection"
+    },
+    {
+      "id": "KeyManagement",
+      "name": "Cryptographic Key Management",
+      "description": "Cryptographic weaknesses in generation, storage, distribution, separation, rotation, or reuse of secret key material rather than in the selected primitive itself.",
+      "parent": "CryptographicProtection"
+    },
+    {
+      "id": "HardcodedKey",
+      "name": "Hard-Coded Cryptographic Key",
+      "description": "Secret cryptographic key material is embedded identically in software or firmware and therefore becomes recoverable and shared across installations or protected objects.",
+      "parent": "KeyManagement"
+    },
+    {
+      "id": "InsecureKeyStorage",
+      "name": "Insecure Key Storage",
+      "description": "Secret key material is stored with protections that do not match the local attacker or tenant threat model, allowing unauthorized principals to retrieve or replace it.",
+      "parent": "KeyManagement"
+    },
+    {
+      "id": "PredictableKey",
+      "name": "Predictable Cryptographic Key",
+      "description": "Key generation uses predictable state, insufficient entropy, or attacker-influenced values so that an adversary can reconstruct or narrow the generated secret.",
+      "parent": "KeyManagement"
+    },
+    {
+      "id": "KeyReuse",
+      "name": "Unsafe Cryptographic Key Reuse",
+      "description": "The same key material is reused across contexts, tenants, purposes, or epochs whose separation is required for the cryptographic construction's security guarantees.",
+      "parent": "KeyManagement"
+    },
+    {
+      "id": "RandomnessAndNonce",
+      "name": "Randomness and Nonce Weaknesses",
+      "description": "Cryptographic weaknesses caused by predictable, repeated, biased, or insufficiently large random values, tokens, initialization vectors, salts, or nonces.",
+      "parent": "CryptographicProtection"
+    },
+    {
+      "id": "InsufficientRandomness",
+      "name": "Insufficient Randomness",
+      "description": "A security-sensitive random value is generated from a source or transformation with insufficient entropy for the attacker's observation and prediction capabilities.",
+      "parent": "RandomnessAndNonce"
+    },
+    {
+      "id": "PredictableToken",
+      "name": "Predictable Security Token",
+      "description": "A password-reset, invitation, anti-replay, or other security token can be feasibly predicted because token generation exposes deterministic or low-entropy structure.",
+      "parent": "RandomnessAndNonce"
+    },
+    {
+      "id": "ReusedNonce",
+      "name": "Cryptographic Nonce Reuse",
+      "description": "A cryptographic construction receives a nonce, IV, or ephemeral value that repeats under the same key even though uniqueness is required for confidentiality, integrity, or signature security.",
+      "parent": "RandomnessAndNonce"
+    },
+    {
+      "id": "CertificateValidation",
+      "name": "Certificate and Peer Validation",
+      "description": "Cryptographic weaknesses where a secure-channel client or verifier fails to establish that the presented certificate and peer identity satisfy the intended trust policy.",
+      "parent": "CryptographicProtection"
+    },
+    {
+      "id": "ImproperCertificateValidation",
+      "name": "Improper Certificate Validation",
+      "description": "Certificate chain, signature, trust anchor, constraints, or validity requirements are not correctly verified before accepting the peer's authenticated identity.",
+      "parent": "CertificateValidation"
+    },
+    {
+      "id": "MissingHostnameValidation",
+      "name": "Missing Hostname Validation",
+      "description": "A certificate chain may be trusted, but the verifier does not confirm that the certificate identity matches the hostname or service identity requested by the client.",
+      "parent": "CertificateValidation"
+    },
+    {
+      "id": "ExpiredCertificateAcceptance",
+      "name": "Expired Certificate Acceptance",
+      "description": "The verifier accepts a certificate outside its validity interval despite the trust policy requiring current validity at the time of the connection or signed operation.",
+      "parent": "CertificateValidation"
+    },
+
+    {
+      "id": "DeploymentAndInformationHandling",
+      "name": "Deployment and Information-Handling Weaknesses",
+      "description": "Root family for vulnerabilities caused by insecure deployment state or direct mishandling of sensitive information. Descendants exclude disclosures that are merely consequences of a separately established injection, traversal, or memory-safety defect."
+    },
+    {
+      "id": "InsecureDeploymentState",
+      "name": "Insecure Deployment State",
+      "description": "Deployment weaknesses where enabled services, permissions, defaults, or isolation settings create an exposure that is not inherent to the correctly configured product behavior.",
+      "parent": "DeploymentAndInformationHandling"
+    },
+    {
+      "id": "InsecureDefaults",
+      "name": "Insecure Defaults",
+      "description": "A fresh or ordinary deployment enables a security-sensitive capability or permissive policy by default without requiring an explicit risk-accepting administrator decision.",
+      "parent": "InsecureDeploymentState"
+    },
+    {
+      "id": "ExcessivePermissions",
+      "name": "Excessive Deployment Permissions",
+      "description": "Installed files, processes, service accounts, or runtime resources receive broader operating-system or platform permissions than the documented feature requires.",
+      "parent": "InsecureDeploymentState"
+    },
+    {
+      "id": "SecurityFeatureDisabled",
+      "name": "Security Feature Disabled",
+      "description": "A deployment omits or disables an available security control that the product's intended threat model requires, such as authentication, sandboxing, isolation, or transport protection.",
+      "parent": "InsecureDeploymentState"
+    },
+    {
+      "id": "ExposedServiceSurface",
+      "name": "Exposed Service Surface",
+      "description": "Deployment weaknesses where a diagnostic, administrative, development, or unnecessary service is reachable by principals outside its intended operational audience.",
+      "parent": "DeploymentAndInformationHandling"
+    },
+    {
+      "id": "DebugInterfaceExposure",
+      "name": "Exposed Debug Interface",
+      "description": "A debugging endpoint, console, protocol, or diagnostic capability is reachable in deployment and grants observation or control intended only for trusted development use.",
+      "parent": "ExposedServiceSurface"
+    },
+    {
+      "id": "AdminInterfaceExposure",
+      "name": "Exposed Administrative Interface",
+      "description": "A management interface is reachable from an unauthorized network or tenant boundary even though it was intended for a restricted administrative plane.",
+      "parent": "ExposedServiceSurface"
+    },
+    {
+      "id": "DirectoryListing",
+      "name": "Directory Listing Enabled",
+      "description": "The deployed web or file service enumerates directory contents to unauthorized users because automatic index generation or browsing remains enabled.",
+      "parent": "ExposedServiceSurface"
+    },
+    {
+      "id": "UnnecessaryService",
+      "name": "Unnecessary Service Enabled",
+      "description": "A service or protocol not required for the deployment's intended function remains enabled and exposes additional reachable attack surface.",
+      "parent": "ExposedServiceSurface"
+    },
+    {
+      "id": "DirectInformationHandling",
+      "name": "Direct Sensitive-Information Handling",
+      "description": "Information-handling weaknesses where the application directly emits, stores, or transmits sensitive data through an unintended channel, rather than disclosure arising only after exploiting another weakness family.",
+      "parent": "DeploymentAndInformationHandling"
+    },
+    {
+      "id": "InformationExposure",
+      "name": "Diagnostic or Metadata Information Exposure",
+      "description": "Errors, diagnostics, headers, or metadata directly reveal sensitive technical or user information that the normal response contract should not expose. Secondary disclosure from traversal or memory over-read is excluded.",
+      "parent": "DirectInformationHandling"
+    },
+    {
+      "id": "SensitiveDataInLogs",
+      "name": "Sensitive Data in Logs",
+      "description": "The application writes credentials, tokens, personal data, cryptographic material, or comparable secrets into logs accessible beyond the data's intended audience.",
+      "parent": "DirectInformationHandling"
+    },
+    {
+      "id": "CleartextStorage",
+      "name": "Cleartext Storage of Sensitive Data",
+      "description": "Sensitive information is persistently stored without the confidentiality protection required against principals who can access the storage medium or backing service.",
+      "parent": "DirectInformationHandling"
+    },
+    {
+      "id": "CleartextTransmission",
+      "name": "Cleartext Transmission of Sensitive Data",
+      "description": "Sensitive information is transmitted over a channel without the confidentiality protection required against network observers or intermediaries in the stated threat model.",
+      "parent": "DirectInformationHandling"
+    },
+    {
+      "id": "CrossTenantDataLeak",
+      "name": "Cross-Tenant Data Leakage",
+      "description": "A cache, shared state, response mix-up, or tenant-context error directly returns one tenant's data to another without requiring a separate object-identifier authorization bypass.",
+      "parent": "DirectInformationHandling"
+    }
+  ]
+}

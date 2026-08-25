@@ -1,5 +1,6 @@
 import json
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -15,7 +16,7 @@ from cve_agent.research import ResearchSession, ResearchToolExecutor
 from cve_agent.research_context import MAX_NVD_REFERENCE_CANDIDATES, build_research_context, select_reference_candidates
 from cve_agent.schemas import AGENT_TOOLS
 from cve_agent.strategy import ClassificationStrategy, EffectiveClassificationStrategy
-from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
+from cve_agent.taxonomy import Taxonomy, TaxonomyLabel, load_taxonomy
 
 
 def settings(tmp_path):
@@ -449,6 +450,23 @@ def test_strategy_selection_is_taxonomy_aware_and_config_only(tmp_path):
         "classification_strategy": ClassificationStrategy.EXHAUSTIVE,
     })
     assert InvestigationAgent(forced_exhaustive, FixtureWeb(), FullFlowClient())._classification_plan(large_hierarchy).effective_strategy == EffectiveClassificationStrategy.EXHAUSTIVE
+
+
+def test_auto_selects_hybrid_for_large_hybrid_fixture(tmp_path):
+    fixture = Path(__file__).parents[1] / "fixtures" / "hybrid_taxonomy.json"
+    selected_taxonomy = load_taxonomy(fixture)
+    base = settings(tmp_path)
+    configured = base.__class__(**{
+        **base.__dict__,
+        "token_budget": 50_000,
+    })
+
+    plan = InvestigationAgent(configured, FixtureWeb(), FullFlowClient())._classification_plan(selected_taxonomy)
+
+    assert plan.effective_strategy == EffectiveClassificationStrategy.HYBRID
+    assert len(plan.chunks) == 2
+    assert 0 < plan.budget.classification_reserve < configured.token_budget
+    assert plan.budget.investigation_limit == configured.token_budget - plan.budget.classification_reserve
 
 
 def test_flat_taxonomy_logs_that_configured_hybrid_strategy_is_ignored(tmp_path, caplog):

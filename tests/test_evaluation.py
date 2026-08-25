@@ -126,11 +126,32 @@ def test_hierarchical_fixture_matches_the_tree_and_reclassifies_flat_cases():
     assert by_cve["CVE-2018-9206"] == ("InputValidation",)
 
 
+def test_hybrid_fixture_is_large_deep_and_matches_the_curated_cases():
+    hierarchical_taxonomy = load_taxonomy(FIXTURES / "hierarchical_taxonomy.json")
+    hierarchical_benchmark = load_benchmark(
+        FIXTURES / "hierarchical_expected-classification.json",
+        hierarchical_taxonomy,
+    )
+    selected_taxonomy = load_taxonomy(FIXTURES / "hybrid_taxonomy.json")
+    benchmark = load_benchmark(FIXTURES / "hybrid_expected-classification.json", selected_taxonomy)
+    roots = [label for label in selected_taxonomy.labels if label.parent is None]
+    by_cve = {case.cve_id: case.labels for case in benchmark.cases}
+
+    assert len(selected_taxonomy.labels) == 126
+    assert len(roots) == 6
+    assert benchmark.cve_ids == hierarchical_benchmark.cve_ids
+    assert all(case.rationale and case.sources for case in benchmark.cases)
+    assert by_cve["CVE-2021-41773"] == ("PathTraversal",)
+    assert by_cve["CVE-2023-22518"] == ("ImproperAuthorization",)
+    assert by_cve["CVE-2018-9206"] == ("UnrestrictedFileUpload",)
+
+
 def test_fixture_taxonomy_and_benchmark_ids_are_not_hard_coded_in_production():
     fixture_values = set()
     for taxonomy_name, benchmark_name in (
         ("flat_taxonomy.json", "flat_expected-classification.json"),
         ("hierarchical_taxonomy.json", "hierarchical_expected-classification.json"),
+        ("hybrid_taxonomy.json", "hybrid_expected-classification.json"),
     ):
         taxonomy_payload = json.loads((FIXTURES / taxonomy_name).read_text(encoding="utf-8"))
         benchmark_payload = json.loads((FIXTURES / benchmark_name).read_text(encoding="utf-8"))
