@@ -2,15 +2,24 @@
 
 ## Current work
 
-Adaptive hierarchical classification is committed as `9a1f811`. The current uncommitted work
-adds `hybrid_taxonomy.json` and `hybrid_expected-classification.json` as a large adaptive-routing
-benchmark, plus fixture validation and user documentation.
+Adaptive hierarchical classification, the large hybrid benchmark, and taxonomy-name recovery
+are committed through `732704b`. Terminal diagnostics and the reusable application boundary are
+committed as `a6cfe8a`. The accompanying benchmark update adds two multi-label hybrid cases.
 
-An additional uncommitted provider-compatibility fix normalizes an exact, unique label display
-name to its stable ID within the active exhaustive or routing chunk. It preserves strict
-rejection of ambiguous names, invented labels, and labels outside the active chunk. Prompts now
-state explicitly that `label` means the supplied ID. Three deterministic tests cover the shared
-resolver and both scanners.
+Verbose stderr now uses aligned time, semantic status, component, and message columns with
+blank stage boundaries. Interactive terminals use cyan normal, green complete, magenta
+incomplete, yellow warning, and red error output. Redirected/piped output is plain text,
+`NO_COLOR` is honored, and stdout remains JSON-only. Semantic presentation hints use ordinary
+logging records and do not change persistence or classification behavior.
+
+`ClassificationApplication` wraps the existing pipeline and returns immutable typed results
+plus optional evaluation data. Default adapter composition is reusable outside the CLI. The CLI
+continues to own arguments, JSON/table rendering, terminal diagnostics, and exit-code policy.
+
+The hybrid expected benchmark now has exactly two cross-branch multi-label cases:
+`CVE-2021-26855` expects SSRF and AuthenticationBypass, while `CVE-2021-41773` expects
+CommandInjection and PathTraversal under its documented CGI preconditions. The taxonomy itself
+did not need to change, so its fingerprint remains stable.
 
 The hybrid taxonomy has 126 labels, six roots, and a maximum depth of four. At the example
 12,000-token request limit it needs two exhaustive chunks, so `auto` selects hybrid. Its current
@@ -18,10 +27,20 @@ hybrid preflight reserve is about 29,000 tokens; the README recommends a 50,000-
 to leave useful investigation capacity. The expected benchmark reuses the existing 14 curated
 CVEs and maps them to the new tree's most-specific leaves.
 
-The complete deterministic suite now passes 114 tests. The hybrid benchmark fingerprint,
+The complete deterministic suite now passes 120 tests. The hybrid benchmark fingerprint,
 taxonomy membership, automatic strategy selection, production fixture-ID exclusion, and
-curated CVE paths are validated without live services. Bytecode compilation and the Git
-whitespace check pass.
+curated CVE paths are validated without live services. Focused and complete tests plus bytecode
+compilation, CLI import/help, and the final whitespace review pass.
+
+An authorized post-change live run processed `CVE-2021-26855` with `--verbose`, validation, and
+15-second model pacing. It completed without a runtime error in 47.1 seconds, used four model
+requests and 23,130 tokens, persisted run 8, and kept stdout JSON separate from colored stderr.
+The model selected SSRF but missed the expected AuthenticationBypass, producing micro-F1 0.667.
+The developer chose to keep validation correctness exclusively in the classification and
+evaluation tables, so the final operational log contains no exact-match or F1 assessment.
+Whitespace-only continuation lines were removed, and JSON, classification, and evaluation
+output now use matching plain-text section headings without decorating machine-readable stdout.
+These presentation contracts have regression tests.
 
 One authorized live run classified CVE-2023-34362 against the 126-label taxonomy with exact
 precision/recall/F1 of 1.0 in four model requests and 23,226 tokens. The local 50,000-token input
@@ -57,6 +76,8 @@ hybrid routing. The live model returned IDs and selected SQLi plus its three anc
 - `InvestigationAgent` orchestrates `ResearchRunner` and a taxonomy scanner.
   `taxonomy_scan.py` owns exhaustive classification; `hierarchy_scan.py` owns adaptive routing;
   `classification.py` owns taxonomy structure/chunking/policies; `budget.py` owns staged plans.
+- `ClassificationApplication` is the UI-independent execution boundary. The CLI is only a
+  terminal adapter and machine-readable stdout remains separate from human stderr output.
 - Research alone receives `search`, `fetch`, `record_evidence`, and `finish_investigation`.
   Classification and routing never receive web tools.
 - SQLite stores run-scoped metadata, checkpoints, coverage, state, and results. Persistence
@@ -68,5 +89,5 @@ hybrid routing. The live model returned IDs and selected SQLi plus its three anc
 
 ## Handoff
 
-The hybrid benchmark and label-reference compatibility fix are ready for review as two logical
-commits. Do not commit either until the developer approves the proposed Conventional Commits.
+The requested logging, application-boundary, live verification, and multi-label benchmark work
+is complete. No known implementation blocker remains.

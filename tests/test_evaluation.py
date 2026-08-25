@@ -142,7 +142,9 @@ def test_hybrid_fixture_is_large_deep_and_matches_the_curated_cases():
     assert len(roots) == 6
     assert benchmark.cve_ids == hierarchical_benchmark.cve_ids
     assert all(case.rationale and case.sources for case in benchmark.cases)
-    assert by_cve["CVE-2021-41773"] == ("PathTraversal",)
+    assert sum(len(case.labels) > 1 for case in benchmark.cases) == 2
+    assert by_cve["CVE-2021-26855"] == ("SSRF", "AuthenticationBypass")
+    assert by_cve["CVE-2021-41773"] == ("CommandInjection", "PathTraversal")
     assert by_cve["CVE-2023-22518"] == ("ImproperAuthorization",)
     assert by_cve["CVE-2018-9206"] == ("UnrestrictedFileUpload",)
 
