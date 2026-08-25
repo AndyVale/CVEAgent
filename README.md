@@ -104,13 +104,22 @@ not log model prompts or evidence passages. URL query strings and fragments are 
 configured credentials are redacted from provider diagnostics, and noisy dependency logs are
 suppressed.
 
+Interactive verbose output is grouped into stages with aligned timestamp, status, component,
+and message columns. Normal progress is cyan, completed stages are green, incomplete outcomes
+are magenta, warnings are yellow, and failures are red. ANSI color is used only when stderr is
+an interactive terminal; redirected output and pipes remain plain text, and `NO_COLOR` disables
+color explicitly. Stdout remains JSON-only in every case.
+
 `--llm-min-request-interval SECONDS` overrides model pacing for one invocation.
 
 Every invocation ends with a compact mapping on stderr while stdout remains the complete valid
-JSON result:
+JSON result. The JSON, classification table, and optional evaluation report use matching
+plain-text section headings and separators; the JSON heading itself is written to stderr so the
+stdout document remains directly parseable:
 
 ```text
 Classification summary
+======================
 ID             | Labels                  | Precision | Recall | F1
 ---------------+-------------------------+-----------+--------+---
 CVE-2014-0160  | OutOfBoundsRead         | -         | -      | -
@@ -204,6 +213,12 @@ JSON result. A fetched passage cited at investigation finish is promoted automat
 `record_evidence` remains an optional way to preserve a passage across research turns. Full
 passage IDs and document-local forms such as `1` or `p1` are accepted when unambiguous. Search
 snippets are leads, never evidence.
+
+The terminal is an adapter around the UI-independent `ClassificationApplication`. Application
+execution returns typed classification results and an optional evaluation report; argument
+parsing, colored logging, JSON serialization, summary tables, and exit-code policy stay in the
+CLI. A future GUI can therefore reuse application and pipeline behavior without invoking or
+parsing terminal output.
 
 NVD records can contain hundreds of references. To avoid resending an oversized record on every
 turn, the model receives at most 24 unique candidates, prioritizing vendor advisories, patches,

@@ -228,12 +228,14 @@ def format_classification_summary(results: list[ClassificationResult], report: E
             else ("-", "-", "-")
         )
         rows.append((result.cve_id, labels, *metrics))
-    return "Classification summary\n" + _format_table(("ID", "Labels", "Precision", "Recall", "F1"), rows)
+    return _format_output_section(
+        "Classification summary",
+        _format_table(("ID", "Labels", "Precision", "Recall", "F1"), rows),
+    )
 
 
 def format_evaluation_report(report: EvaluationReport) -> str:
     lines = [
-        "Evaluation summary",
         f"  exact matches : {report.exact_matches}/{report.case_count}",
         f"  micro P/R/F1  : {report.micro_precision:.3f} / {report.micro_recall:.3f} / {report.micro_f1:.3f}",
         f"  macro F1      : {report.macro_f1:.3f}",
@@ -255,7 +257,15 @@ def format_evaluation_report(report: EvaluationReport) -> str:
             expected = ", ".join(item.expected) or "none"
             predicted = ", ".join(item.predicted) or "none"
             lines.append(f"    {item.cve_id}: expected={expected}; predicted={predicted}; status={item.status.value}")
-    return "\n".join(lines)
+    return _format_output_section("Evaluation summary", "\n".join(lines))
+
+
+def format_output_header(title: str) -> str:
+    return f"{title}\n{'=' * len(title)}"
+
+
+def _format_output_section(title: str, content: str) -> str:
+    return f"{format_output_header(title)}\n{content}"
 
 
 def _ratio(numerator: int, denominator: int) -> float:

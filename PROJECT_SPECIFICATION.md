@@ -26,6 +26,8 @@ The CLI exposes validation through `--validate PATH`. Its compact classification
 table with ID, predicted labels, precision, recall, and F1 columns. Metric cells are placeholders
 when validation is disabled and per-CVE label-set scores when an expected-classification file is
 supplied. The detailed aggregate report remains separate from the machine-readable JSON output.
+Verbose diagnostics, including any ANSI presentation, are stderr-only. Stdout remains valid JSON
+whether it is attached to a terminal, redirected, or piped.
 
 The classifier should favor evidence-backed decisions and should prefer `not_enough_information` over unsupported speculation.
 
@@ -48,6 +50,11 @@ The system:
 - produces a structured JSON classification result.
 
 The agent has no file-system access and must operate only through the tools exposed to it.
+
+Application execution must remain independent of terminal presentation. The reusable application
+boundary returns typed classification results and optional evaluation data; the CLI owns argument
+parsing, JSON rendering, human-readable summaries, terminal logging, and exit-code policy. Other
+interfaces may call the same application boundary without parsing CLI output.
 
 ## Taxonomy
 

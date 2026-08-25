@@ -6,14 +6,11 @@ import logging
 import sys
 from dataclasses import replace
 
-from cve_agent.adapters import CachedWebClient, NVDClient, TavilySearchProvider
-from cve_agent.agent import InvestigationAgent
-from cve_agent.config import format_settings_table, load_settings, non_secret_settings
-from cve_agent.evaluation import BenchmarkError, evaluate_results, format_classification_summary, format_evaluation_report, load_benchmark
-from cve_agent.logging_config import verbose_logging
-from cve_agent.models import ClassificationStatus
+from cve_agent.application import create_application
+from cve_agent.config import format_settings_table, load_settings
+from cve_agent.evaluation import BenchmarkError, format_classification_summary, format_evaluation_report, format_output_header, load_benchmark
+from cve_agent.logging_config import LogTone, log_extra, verbose_logging
 from cve_agent.persistence import Database
-from cve_agent.pipeline import Pipeline
 from cve_agent.ports import CVESource, Classifier, WebSource
 from cve_agent.taxonomy import TaxonomyError, load_taxonomy
 
@@ -53,32 +50,52 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
                 logger.info("loaded validation classifications=%s cases=%d", args.validate, len(benchmark.cases))
             logger.info("%s", format_settings_table(settings))
             logger.info("processing %d CVE(s)", len(cve_ids))
-            active_web_source = web_source or CachedWebClient(settings, searcher=TavilySearchProvider(settings).search if settings.web_provider == "tavily" else None)
-            pipeline = Pipeline(
-                cve_source or NVDClient(settings),
-                classifier or InvestigationAgent(settings, active_web_source),
-                database or Database(settings.database),
-                run_metadata={"model": settings.model, "settings": non_secret_settings(settings)},
+            application = create_application(
+                settings,
+                cve_source=cve_source,
+                web_source=web_source,
+                classifier=classifier,
+                database=database,
             )
-            results = pipeline.run(cve_ids, taxonomy)
+            outcome = application.run(cve_ids, taxonomy, benchmark)
+            results = list(outcome.results)
+            print("\n" + format_output_header("Classification results (JSON)"), file=sys.stderr, flush=True)
             print(json.dumps([result.to_dict() for result in results], indent=2), flush=True)
-            report = evaluate_results(results, benchmark, taxonomy) if benchmark else None
-            print(format_classification_summary(results, report), file=sys.stderr)
-            if report:
-                print(format_evaluation_report(report), file=sys.stderr)
-            failed = sum(result.status == ClassificationStatus.FAILED for result in results)
-            incomplete = sum(result.status == ClassificationStatus.PARTIAL for result in results)
-            logger.info("run completed: %d classified/information-limited, %d partial, %d failed", len(results) - failed - incomplete, incomplete, failed)
-            return 0 if all(result.status in {ClassificationStatus.CLASSIFIED, ClassificationStatus.NO_MATCHING_LABEL, ClassificationStatus.NOT_ENOUGH_INFORMATION} for result in results) else 2
+            print("\n" + format_classification_summary(results, outcome.evaluation), file=sys.stderr)
+            if outcome.evaluation:
+                print("\n" + format_evaluation_report(outcome.evaluation), file=sys.stderr)
+            logger.info(
+                "run completed successful=%d partial=%d failed=%d",
+                outcome.successful_count,
+                outcome.partial_count,
+                outcome.failed_count,
+                extra=log_extra(
+                    LogTone.ERROR
+                    if outcome.failed_count
+                    else LogTone.INCOMPLETE
+                    if outcome.partial_count
+                    else LogTone.SUCCESS,
+                    section=True,
+                ),
+            )
+            return 0 if outcome.complete else 2
         except TaxonomyError as exc:
-            print(f"taxonomy error: {exc}", file=sys.stderr)
+            _report_error(logger, args.verbose, "taxonomy", exc)
             return 3
         except BenchmarkError as exc:
-            print(f"evaluation error: {exc}", file=sys.stderr)
+            _report_error(logger, args.verbose, "evaluation", exc)
             return 3
         except Exception as exc:
-            print(f"fatal error: {exc}", file=sys.stderr)
+            _report_error(logger, args.verbose, "fatal", exc)
             return 4
+
+
+def _report_error(logger: logging.Logger, verbose: bool, category: str, exc: Exception) -> None:
+    message = f"{category} error: {exc}"
+    if verbose:
+        logger.error(message, extra=log_extra(LogTone.ERROR, section=True))
+    else:
+        print(message, file=sys.stderr)
 
 
 def main() -> None:

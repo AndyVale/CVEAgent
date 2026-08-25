@@ -8,6 +8,7 @@ from typing import Any, Callable, Protocol
 from cve_agent.budget import BudgetExceeded, TokenBudget
 from cve_agent.classification import TaxonomyChunk, label_dict, normalize_label_references
 from cve_agent.models import MAX_INVESTIGATION_FINDINGS, CVERecord, EvidenceRecord, InvestigationState, InvestigationStopReason, LabelClassification
+from cve_agent.logging_config import LogTone, log_extra
 from cve_agent.prompts import CLASSIFICATION_SYSTEM_PROMPT
 from cve_agent.schemas import classification_response_format
 from cve_agent.taxonomy import Taxonomy
@@ -89,6 +90,7 @@ class ExhaustiveTaxonomyScanner:
             len(taxonomy.labels),
             len(state.findings),
             len(state.evidence),
+            extra=log_extra(section=True),
         )
         for position, chunk in enumerate(chunks, start=1):
             logger.info(
@@ -165,6 +167,7 @@ class ExhaustiveTaxonomyScanner:
             completed_chunks,
             len(evaluated_ids),
             len(candidates),
+            extra=log_extra(LogTone.SUCCESS),
         )
         return TaxonomyScanOutcome(
             candidates=tuple(candidates),

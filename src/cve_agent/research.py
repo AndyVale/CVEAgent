@@ -10,7 +10,7 @@ from cve_agent.budget import BudgetExceeded, TokenBudget
 from cve_agent.config import Settings
 from cve_agent.evidence import EvidenceResolutionError, build_passages, resolve_passage
 from cve_agent.investigation import build_investigation_profile
-from cve_agent.logging_config import redact_secrets, safe_url
+from cve_agent.logging_config import LogTone, log_extra, redact_secrets, safe_url
 from cve_agent.models import CVERecord, Document, EvidenceRecord, InvestigationFinding, InvestigationState, InvestigationStopReason
 from cve_agent.ports import WebSource
 from cve_agent.prompts import RESEARCH_SYSTEM_PROMPT
@@ -215,6 +215,7 @@ class ResearchRunner:
             len(cve.references),
             len(reference_candidates),
             len(cve.references) - len(reference_candidates),
+            extra=log_extra(section=True),
         )
         while True:
             elapsed = time.monotonic() - started
@@ -296,6 +297,9 @@ class ResearchRunner:
                         profile.discarded_findings,
                         profile.promoted_evidence,
                         session.turns,
+                        extra=log_extra(
+                            LogTone.SUCCESS if profile.information_status == "sufficient" else LogTone.INCOMPLETE
+                        ),
                     )
                     return ResearchOutcome(
                         profile.information_status,

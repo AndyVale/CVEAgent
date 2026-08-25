@@ -35,6 +35,10 @@ class ExpectedClassifier(Classifier):
         return ClassificationResult(cve.cve_id, "classified", [LabelClassification("EXPECTED", 0.9, ())])
 
 
+class MissingExpectedClassifier(Classifier):
+    pass
+
+
 def test_verbose_keeps_json_on_stdout_and_logs_on_stderr(tmp_path, capsys):
     taxonomy_path = tmp_path / "taxonomy.json"
     taxonomy_path.write_text(json.dumps({"labels": [{"id": "CWE-1", "name": "Example", "description": "fixture"}]}), encoding="utf-8")
@@ -44,12 +48,15 @@ def test_verbose_keeps_json_on_stdout_and_logs_on_stderr(tmp_path, capsys):
     captured = capsys.readouterr()
     assert exit_code == 0
     assert json.loads(captured.out)[0]["cve_id"] == "CVE-1"
+    assert "\033[" not in captured.out
+    assert "\033[" not in captured.err
     assert "starting investigation" in captured.err
     assert "effective configuration" in captured.err
     assert "[LLM]" in captured.err
     assert "nvidia/nemotron-3-ultra-550b-a55b:free" in captured.err
     assert "API key" in captured.err
     assert '"api_key"' not in captured.err
+    assert "Classification results (JSON)\n=============================" in captured.err
 
 
 def test_cli_request_interval_overrides_configuration(tmp_path, capsys):
@@ -114,3 +121,29 @@ def test_validate_supplies_cves_and_prints_metrics_in_table_without_breaking_jso
     assert "CVE-2020-0001 | EXPECTED | 1.000" in captured.err
     assert "exact matches : 1/1" in captured.err
     assert "micro P/R/F1  : 1.000 / 1.000 / 1.000" in captured.err
+
+
+def test_verbose_keeps_validation_correctness_out_of_final_log(tmp_path, capsys):
+    taxonomy_path = tmp_path / "taxonomy.json"
+    taxonomy_path.write_text(json.dumps({"labels": [{"id": "EXPECTED", "name": "Expected", "description": "fixture"}]}), encoding="utf-8")
+    expected_path = tmp_path / "expected.json"
+    expected_path.write_text(json.dumps({
+        "taxonomy_sha256": taxonomy_fingerprint(load_taxonomy(taxonomy_path)),
+        "cases": [{"cve_id": "VULN-1", "labels": ["EXPECTED"]}],
+    }), encoding="utf-8")
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[storage]\ndatabase = 'results.sqlite'\n", encoding="utf-8")
+
+    exit_code = run([
+        "--verbose",
+        "--taxonomy", str(taxonomy_path),
+        "--validate", str(expected_path),
+        "--config", str(config_path),
+    ], cve_source=Source(), web_source=Web(), classifier=MissingExpectedClassifier())
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "exact matches : 0/1" in captured.err
+    assert "COMPLETE" in captured.err
+    assert "run completed successful=1 partial=0 failed=0" in captured.err
+    assert "exact_matches=" not in captured.err

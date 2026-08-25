@@ -12,6 +12,7 @@ from cve_agent.classification import TaxonomyChunk, apply_hierarchy_policy, chun
 from cve_agent.config import Settings
 from cve_agent.hierarchy_scan import HybridTaxonomyScanner
 from cve_agent.llm import RequestPacer, call_chat_completion
+from cve_agent.logging_config import LogTone, log_extra
 from cve_agent.models import CVERecord, ClassificationResult, ClassificationStatus, InvestigationState
 from cve_agent.ports import WebSource
 from cve_agent.research import ResearchRunner
@@ -177,6 +178,11 @@ class InvestigationAgent:
             budget.total_tokens,
             stop_reason.value if stop_reason else "none",
             time.monotonic() - started,
+            extra=log_extra(
+                LogTone.INCOMPLETE
+                if status in {ClassificationStatus.PARTIAL, ClassificationStatus.NOT_ENOUGH_INFORMATION}
+                else LogTone.SUCCESS
+            ),
         )
         return ClassificationResult(cve.cve_id, status, labels, operational=operational)
 

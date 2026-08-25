@@ -25,6 +25,7 @@ from cve_agent.classification import (
 )
 from cve_agent.config import Settings
 from cve_agent.models import CVERecord, EvidenceRecord, InvestigationState, InvestigationStopReason, LabelClassification
+from cve_agent.logging_config import LogTone, log_extra
 from cve_agent.prompts import HIERARCHY_ROUTING_SYSTEM_PROMPT
 from cve_agent.schemas import hierarchy_routing_response_format
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel
@@ -87,6 +88,7 @@ class HybridTaxonomyScanner:
             len(frontier),
             len(taxonomy.labels),
             self.settings.pruning_confidence_threshold,
+            extra=log_extra(section=True),
         )
 
         while frontier:
@@ -343,6 +345,7 @@ class HybridTaxonomyScanner:
             outcome.classification_requests,
             outcome.routing_levels,
             outcome.cost_switches,
+            extra=log_extra(LogTone.SUCCESS if outcome.complete else LogTone.INCOMPLETE),
         )
         return outcome
 

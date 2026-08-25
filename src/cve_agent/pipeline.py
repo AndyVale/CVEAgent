@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from cve_agent.models import ClassificationResult, ClassificationStatus, EvidenceRecord, InvestigationState
+from cve_agent.logging_config import LogTone, log_extra
 from cve_agent.persistence import Database, PersistenceError
 from cve_agent.ports import CVESource, Classifier
 from cve_agent.taxonomy import Taxonomy
@@ -36,7 +37,14 @@ class Pipeline:
             try:
                 for input_position, cve_id in enumerate(cve_ids):
                     state = InvestigationState()
-                    logger.info("[%s] starting investigation run_id=%d", cve_id, run_id)
+                    logger.info(
+                        "[%s] starting investigation run_id=%d input=%d/%d",
+                        cve_id,
+                        run_id,
+                        input_position + 1,
+                        len(cve_ids),
+                        extra=log_extra(section=True),
+                    )
                     try:
                         cve = self.cve_source.get_cve(cve_id)
                         logger.info("[%s] NVD evidence initialized description_chars=%d references=%d", cve_id, len(cve.description), len(cve.references))
@@ -72,10 +80,30 @@ class Pipeline:
                         result.status,
                         len(result.labels),
                         result.operational.get("coverage", {}).get("complete"),
+                        extra=log_extra(
+                            LogTone.ERROR
+                            if result.status == ClassificationStatus.FAILED
+                            else LogTone.INCOMPLETE
+                            if result.status in {ClassificationStatus.PARTIAL, ClassificationStatus.NOT_ENOUGH_INFORMATION}
+                            else LogTone.SUCCESS
+                        ),
                     )
                 run_status = "complete" if all(item.status != ClassificationStatus.FAILED for item in results) else "completed_with_failures"
                 db.finish_run(run_id, run_status)
-                logger.info("run_id=%d persisted status=%s results=%d", run_id, run_status, len(results))
+                logger.info(
+                    "run_id=%d persisted status=%s results=%d",
+                    run_id,
+                    run_status,
+                    len(results),
+                    extra=log_extra(
+                        LogTone.ERROR
+                        if run_status == "completed_with_failures"
+                        else LogTone.INCOMPLETE
+                        if any(item.status in {ClassificationStatus.PARTIAL, ClassificationStatus.NOT_ENOUGH_INFORMATION} for item in results)
+                        else LogTone.SUCCESS,
+                        section=True,
+                    ),
+                )
             except Exception:
                 db.finish_run(run_id, "failed")
                 raise

@@ -72,6 +72,7 @@ def test_compact_classification_summary_preserves_input_order_and_status():
     ])
     assert formatted.splitlines() == [
         "Classification summary",
+        "======================",
         "ID            | Labels              | Precision | Recall | F1",
         "--------------+---------------------+-----------+--------+---",
         "CVE-2020-0001 | A, B                | -         | -      | -",
