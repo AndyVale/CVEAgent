@@ -56,6 +56,13 @@ boundary returns typed classification results and optional evaluation data; the 
 parsing, JSON rendering, human-readable summaries, terminal logging, and exit-code policy. Other
 interfaces may call the same application boundary without parsing CLI output.
 
+The local graphical interface is an independent presentation and HTTP layer, not a mode of the
+CLI. It calls the same application boundary, reads core run history from SQLite, and stores only
+additive GUI chat metadata and progress events. GUI analyses preserve an immutable non-secret
+configuration and taxonomy snapshot. New chats may inherit a prior snapshot, but changing draft
+options must not mutate an existing chat or its result. Cached results require an exact CVE,
+taxonomy-fingerprint, and effective-settings match.
+
 ## Taxonomy
 
 The taxonomy is supplied explicitly for every run as a local JSON file.

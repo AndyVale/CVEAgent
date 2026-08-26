@@ -2,6 +2,29 @@
 
 ## Current work
 
+A focused local graphical interface is implemented through `deb5e90`, `6569a62`, and `e4961d5`
+and remains completely separate from `cli.py`. The Flask entry point calls
+`ClassificationApplication` directly, while a GUI-facing service owns background execution,
+exact configuration/taxonomy cache matching, progress capture, immutable chat snapshots, and
+history payloads. GUI-only metadata and event tables are additive to the existing
+schema-version-2 database.
+
+The browser interface has the requested three-pane layout: persisted CVE history on the left,
+chat/progress and evidence-backed results in the center, and the active taxonomy/effective
+settings on the right. Global database/default paths and next-analysis settings use separate
+dialogs. Secrets remain environment-only. New chats inherit the latest GUI snapshot, stored
+chat settings never mutate, and partial/failed results are not cache hits.
+
+Flask is the only new runtime dependency. Sixteen deterministic GUI tests currently pass,
+covering configuration conversion and secret exclusion, repository compatibility, cache reuse,
+progress persistence, strict CVE validation, local-only request enforcement, routes, and static
+assets. The complete 136-test suite and bytecode compilation pass. A localhost-only server was
+started and its health/history endpoints returned successfully without an analysis or external
+call; it was then stopped. The isolated in-app browser could not reach host loopback, and a
+non-loopback bind was explicitly rejected rather than exposing the GUI. The standard sdist/wheel
+build passes and includes all HTML, CSS, and JavaScript assets. The GUI is hard-bound to
+`127.0.0.1`, rejects non-local Host headers, and its user documentation is updated.
+
 Adaptive hierarchical classification, the large hybrid benchmark, and taxonomy-name recovery
 are committed through `732704b`. Terminal diagnostics and the reusable application boundary are
 committed as `a6cfe8a`. The accompanying benchmark update adds two multi-label hybrid cases.

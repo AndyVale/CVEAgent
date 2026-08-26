@@ -129,6 +129,48 @@ CVE-2021-41773 | PathTraversal, InfoLeak | -         | -      | -
 Precision, recall, and F1 are `-` during an ordinary classification. Pass `--validate` to
 calculate them for each CVE by comparing predicted and expected label sets.
 
+## Graphical interface
+
+The graphical interface is a separate local application; it does not invoke, wrap, or change
+the CLI. Both presentation layers call the same `ClassificationApplication` and pipeline APIs.
+Start it with the same environment credentials used by the CLI:
+
+```bash
+export API_KEY="your-provider-key"
+export TAVILY_API_KEY="your-tavily-key"
+uv run cve-agent-gui \
+  --config config.toml \
+  --taxonomy fixtures/hybrid_taxonomy.json
+```
+
+The command starts a server on `http://127.0.0.1:8765` and opens it in the default browser.
+Use `--no-browser` or `--port` to change that startup behavior. The server is deliberately
+hard-bound to loopback and rejects non-local Host headers: analysis history can contain exact
+vulnerability evidence, and this focused interface is never intended for remote access.
+
+The GUI has a persisted-CVE sidebar, a central chat and live investigation trace, and an active
+configuration sidebar. Entering one CVE ID starts the existing pipeline. When classification
+finishes, each selected label shows its confidence and explanation; its exact application-owned
+quotation is expandable and its canonical source URL is directly clickable.
+
+Global settings hold the SQLite workspace path plus default TOML and taxonomy paths. The gear
+inside the message composer edits the complete non-secret configuration for the next analysis.
+Every completed chat keeps an immutable snapshot of its taxonomy path, fingerprint, hierarchy
+policy, and effective settings. A new chat inherits the most recently used GUI snapshot (or the
+currently selected chat), while edits never retroactively alter an existing result. API keys
+remain environment-only and are never stored in GUI settings or sent to the browser.
+
+The selected SQLite database is also the history and result cache. A completed result is reused
+only when its normalized CVE ID, taxonomy fingerprint, and complete non-secret effective settings
+all match. Partial and failed runs are displayed but never treated as successful cache entries.
+Runs originally created by the CLI appear in history too; older rows can show their stored
+taxonomy fingerprint even though the CLI did not retain the original taxonomy/config file paths.
+
+GUI chat metadata and progress events use additive `gui_analysis_meta` and
+`gui_analysis_events` tables in the same database. They do not change the core schema version or
+CLI persistence contract. Machine-local GUI defaults live in the ignored
+`.data/cve-agent-gui.json` file by default.
+
 ## Evaluating classification performance
 
 `fixtures/flat_expected-classification.json` contains 14 conservatively selected CVEs covering
