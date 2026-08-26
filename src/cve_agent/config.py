@@ -84,7 +84,7 @@ def load_settings(path: str | Path = "config.toml") -> Settings:
         classification_strategy=classification_strategy,
         pruning_confidence_threshold=float(classification.get("pruning_confidence_threshold", 0.8)),
     )
-    _validate_settings(settings)
+    validate_settings(settings)
     return settings
 
 
@@ -93,7 +93,8 @@ def _resolve_path(base: Path, value: str | Path) -> Path:
     return path if path.is_absolute() else base / path
 
 
-def _validate_settings(settings: Settings) -> None:
+def validate_settings(settings: Settings) -> None:
+    """Validate an effective settings snapshot built by any presentation layer."""
     if not settings.model.strip() or not settings.endpoint.strip():
         raise ValueError("runtime model and endpoint must be non-empty")
     if settings.max_tokens <= 0 or settings.max_input_tokens_per_request <= 0 or settings.token_budget <= 0:

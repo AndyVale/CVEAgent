@@ -15,6 +15,12 @@ from cve_agent.taxonomy import Taxonomy
 logger = logging.getLogger(__name__)
 
 
+def persisted_taxonomy_fingerprint(taxonomy: Taxonomy) -> str:
+    """Return the fingerprint format stored in run metadata."""
+    taxonomy_json = json.dumps(taxonomy.to_dict(), ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(taxonomy_json.encode()).hexdigest()
+
+
 class Pipeline:
     def __init__(self, cve_source: CVESource, classifier: Classifier, database: Database, *, run_metadata: dict[str, Any] | None = None):
         self.cve_source = cve_source
@@ -27,10 +33,9 @@ class Pipeline:
         preflight = getattr(self.classifier, "preflight", None)
         if preflight is not None:
             preflight(taxonomy)
-        taxonomy_json = json.dumps(taxonomy.to_dict(), ensure_ascii=False, sort_keys=True)
         with self.database as db:
             run_id = db.start_run(
-                taxonomy_sha256=hashlib.sha256(taxonomy_json.encode()).hexdigest(),
+                taxonomy_sha256=persisted_taxonomy_fingerprint(taxonomy),
                 model=str(self.run_metadata.get("model", "unknown")),
                 settings=dict(self.run_metadata.get("settings", {})),
             )
