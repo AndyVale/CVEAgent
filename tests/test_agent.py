@@ -252,6 +252,7 @@ def test_agent_collects_evidence_then_classifies_complete_taxonomy(tmp_path):
     research_contexts = [json.loads(item["messages"][1]["content"]) for item in client.requests if "tools" in item]
     assert len(research_contexts) == 3
     assert all("taxonomy" not in context for context in research_contexts)
+    assert all("provenance" not in context for context in research_contexts)
     classification_request = next(item for item in client.requests if "tools" not in item)
     classification_payload = json.loads(classification_request["messages"][1]["content"])
     assert classification_request["response_format"]["type"] == "json_schema"
@@ -261,6 +262,9 @@ def test_agent_collects_evidence_then_classifies_complete_taxonomy(tmp_path):
     assert "summary" not in classification_payload["vulnerability_profile"]
     assert [item["evidence_id"] for item in classification_payload["evidence"]] == ["doc-1:p1"]
     assert classification_payload["taxonomy_chunk"]["labels"][0]["id"] == "MEMORY"
+    assert "provenance" not in classification_payload
+    assert result.labels[0].evidence[0].evidence_id == "doc-1:p1"
+    assert result.provenance["evidence"][0]["evidence_id"] == "doc-1:p1"
 
 
 def test_research_context_prioritizes_and_bounds_nvd_references():

@@ -156,6 +156,7 @@ def test_fixture_driven_pipeline_matches_expected_result(tmp_path):
                 "url": "https://example.test/advisory",
                 "quote": record["description"],
                 "explanation": "The advisory directly describes an unchecked buffer copy.",
+                "evidence_id": "fixture-doc:p1",
             }],
         }],
     }
@@ -175,6 +176,10 @@ def test_fixture_driven_pipeline_matches_expected_result(tmp_path):
         scratchpad = json.loads(persisted["scratchpad_json"])
     assert scratchpad["research_information_status"] == "sufficient"
     assert scratchpad["research_summary"]
+    assert scratchpad["provenance"]["target_cve_id"] == record["cve_id"]
+    assert scratchpad["provenance"]["label_links"][0]["label"] == "CWE-120"
+    assert scratchpad["provenance"]["sources"][1]["passages"][0]["text"] == record["description"]
+    assert result["provenance"]["evidence"][0]["evidence_id"] == "fixture-doc:p1"
     assert {item["aspect"] for item in scratchpad["findings"]} == {
         InvestigationAspect.ROOT_CAUSE.value,
         InvestigationAspect.EXPLOITATION_MECHANISM.value,

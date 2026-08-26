@@ -185,7 +185,12 @@ def apply_hierarchy_policy(labels: list[LabelClassification], taxonomy: Taxonomy
         parent = by_id[item.label].parent
         while parent:
             if parent not in selected and parent not in additions:
-                evidence = tuple(Evidence(e.url, e.quote, f"Included through supported descendant {item.label}: {e.explanation}") for e in item.evidence)
+                evidence = tuple(Evidence(
+                    e.url,
+                    e.quote,
+                    f"Included through supported descendant {item.label}: {e.explanation}",
+                    evidence_id=e.evidence_id,
+                ) for e in item.evidence)
                 additions[parent] = LabelClassification(parent, item.confidence, evidence)
             parent = by_id[parent].parent
     return labels + [additions[label.id] for label in taxonomy.labels if label.id in additions]

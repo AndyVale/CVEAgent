@@ -8,12 +8,13 @@ from typing import Any, Callable
 
 from cve_agent.budget import BudgetExceeded, TokenBudget
 from cve_agent.config import Settings
-from cve_agent.evidence import EvidenceResolutionError, build_passages, resolve_passage
+from cve_agent.evidence import EvidenceResolutionError, build_passages, resolve_passage, store_passage_evidence
 from cve_agent.investigation import build_investigation_profile
 from cve_agent.logging_config import LogTone, log_extra, redact_secrets, safe_url
 from cve_agent.models import CVERecord, Document, EvidenceRecord, InvestigationFinding, InvestigationState, InvestigationStopReason
 from cve_agent.ports import WebSource
 from cve_agent.prompts import RESEARCH_SYSTEM_PROMPT
+from cve_agent.provenance import ResearchProvenanceRecorder
 from cve_agent.research_context import build_research_context, select_reference_candidates
 from cve_agent.schemas import AGENT_TOOLS
 
@@ -42,6 +43,7 @@ class ResearchSession:
     turns: int = 0
     seen_calls: set[tuple[str, str]] = field(default_factory=set)
     exchange: list[dict[str, Any]] = field(default_factory=list)
+    provenance: ResearchProvenanceRecorder | None = None
 
 
 class ResearchToolExecutor:
@@ -140,16 +142,12 @@ class ResearchToolExecutor:
             )
         except EvidenceResolutionError as exc:
             return {"error": str(exc), "available_passage_ids": [item.passage_id for item in passages]}
-        record = EvidenceRecord(
-            passage.passage_id,
-            document.url,
-            passage.text,
-            "web",
-            document.requested_url or document.url,
-            "passage_id" if arguments.get("passage_id") else "fuzzy_anchor",
+        record, _ = store_passage_evidence(
+            state,
+            document,
+            passage,
+            verification="passage_id" if arguments.get("passage_id") else "fuzzy_anchor",
         )
-        if all(existing.evidence_id != record.evidence_id for existing in state.evidence):
-            state.evidence.append(record)
         return {
             "recorded": True,
             "evidence_id": record.evidence_id,
@@ -203,7 +201,14 @@ class ResearchRunner:
         started: float,
         checkpoint: Callable[[], None],
     ) -> ResearchOutcome:
-        session = ResearchSession()
+        session = ResearchSession(
+            provenance=ResearchProvenanceRecorder(
+                cve,
+                state,
+                max_preview_chars=self.settings.max_preview_chars,
+            )
+        )
+        checkpoint()
         reference_candidates = select_reference_candidates(cve.references)
         logger.info(
             "[%s] research started max_turns=%d max_searches=%d max_fetches=%d max_seconds=%.1f nvd_references=%d reference_candidates=%d omitted_references=%d",
@@ -269,7 +274,7 @@ class ResearchRunner:
                     arguments = _decode_tool_arguments(call.function.arguments)
                 except ValueError as exc:
                     result = {"error": f"invalid tool arguments: {exc}", "instruction": "Correct the arguments and call a provided tool again."}
-                    self._checkpoint_tool(cve.cve_id, name, {}, result, state, budget, checkpoint)
+                    self._checkpoint_tool(cve.cve_id, name, {}, result, state, session, budget, checkpoint)
                     current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)})
                     continue
 
@@ -287,7 +292,7 @@ class ResearchRunner:
                         "discarded_findings": profile.discarded_findings,
                         "promoted_evidence": profile.promoted_evidence,
                     }
-                    self._checkpoint_tool(cve.cve_id, name, arguments, result, state, budget, checkpoint)
+                    self._checkpoint_tool(cve.cve_id, name, arguments, result, state, session, budget, checkpoint)
                     logger.info(
                         "[%s] research finished status=%s findings=%d aspects=%s discarded=%d promoted_evidence=%d turns=%d",
                         cve.cve_id,
@@ -316,7 +321,7 @@ class ResearchRunner:
                     result = self.tools.execute(name, arguments, state, session)
                 except (KeyError, TypeError, ValueError) as exc:
                     result = {"error": f"invalid tool arguments: {exc}", "instruction": "Correct the arguments and try again."}
-                self._checkpoint_tool(cve.cve_id, name, arguments, result, state, budget, checkpoint)
+                self._checkpoint_tool(cve.cve_id, name, arguments, result, state, session, budget, checkpoint)
                 current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)})
             session.exchange = current_exchange
 
@@ -327,9 +332,13 @@ class ResearchRunner:
         arguments: dict[str, Any],
         result: dict[str, Any],
         state: InvestigationState,
+        session: ResearchSession,
         budget: TokenBudget,
         checkpoint: Callable[[], None],
     ) -> None:
+        if session.provenance is None:
+            raise AssertionError("research session lacks a provenance recorder")
+        session.provenance.record_tool_call(name, arguments, result, session.documents)
         event = self.tools.tool_event(name, arguments, result)
         state.tool_history.append(event)
         state.token_usage = budget.to_dict()
@@ -352,20 +361,53 @@ class ResearchRunner:
                 len(result.get("results", [])),
             )
         elif name == "fetch":
+            fetch_trace = state.provenance.fetches[-1]
+            source_trace = next(
+                (
+                    item for item in state.provenance.sources
+                    if item.document_id == fetch_trace.document_id
+                ),
+                None,
+            )
+            candidate_by_id = {item.candidate_id: item for item in state.provenance.candidates}
+            origin_kinds = ",".join(dict.fromkeys(
+                candidate_by_id[candidate_id].kind
+                for candidate_id in fetch_trace.candidate_ids
+                if candidate_id in candidate_by_id
+            )) or "unknown"
             logger.info(
-                "[%s] research tool=fetch status=success url=%s document_id=%s passages=%d truncated=%s",
+                "[%s] research tool=fetch status=success url=%s document_id=%s passages=%d truncated=%s origins=%s cve_association=%s",
                 cve_id,
                 safe_url(str(result.get("url", arguments.get("url", "")))),
                 result.get("document_id"),
                 len(result.get("passages", [])),
                 result.get("truncated", False),
+                origin_kinds,
+                source_trace.association.status if source_trace else "unavailable",
             )
+            if source_trace and source_trace.association.warnings:
+                logger.warning(
+                    "[%s] source association warning document_id=%s status=%s warnings=%s other_cves=%s",
+                    cve_id,
+                    source_trace.document_id,
+                    source_trace.association.status,
+                    ",".join(source_trace.association.warnings),
+                    ",".join(source_trace.association.other_cve_ids) or "none",
+                )
         elif name == "record_evidence":
+            evidence_trace = next(
+                (
+                    item for item in state.provenance.evidence
+                    if item.evidence_id == result.get("evidence_id")
+                ),
+                None,
+            )
             logger.info(
-                "[%s] research tool=record_evidence status=success evidence_id=%s evidence_count=%d",
+                "[%s] research tool=record_evidence status=success evidence_id=%s evidence_count=%d selection_method=%s",
                 cve_id,
                 result.get("evidence_id"),
                 result.get("evidence_count", 0),
+                evidence_trace.selection_method if evidence_trace else "unavailable",
             )
 
     @staticmethod

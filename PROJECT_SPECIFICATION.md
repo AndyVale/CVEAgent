@@ -211,6 +211,26 @@ Reasoning should remain tied to observable evidence. Avoid presenting unsupporte
 
 A source may provide direct evidence, while the explanation may describe the logical connection between that evidence and the taxonomy label.
 
+The harness must maintain a versioned provenance ledger independently of model context. It
+records bounded NVD references and search results, every search and fetch attempt, requested and
+resolved URLs, redirects, the complete bounded passages exposed to the model, evidence
+selection methods, accepted findings, and final label/evidence associations. Search results,
+fetches, documents, and provenance events receive deterministic investigation-scoped IDs.
+Multiple matching discovery origins must be preserved rather than reduced to an invented
+single cause. Returned label links must snapshot the exact taxonomy name, description, and
+ancestor path used during classification so a later clarification does not depend on a taxonomy
+file that may have changed.
+
+The ledger computes transparent CVE-association signals from the target identifier, source URL,
+title, content, NVD-reference membership, targeted searches, and other CVE identifiers found in
+the document. These signals warn but do not reject evidence. Exact target mentions cannot be a
+universal requirement because legitimate patches and vendor material may omit the CVE ID.
+
+The detailed ledger is persisted but MUST NOT be included in routine research or taxonomy
+requests. It is cold context: a later clarification feature may load only the sources,
+passages, findings, and label links reachable from a selected label. The ledger records
+observable tool activity and accepted model outputs, not hidden chain-of-thought.
+
 ## Classification behavior
 
 The classifier must perform multi-label classification over the supplied taxonomy.
@@ -304,13 +324,18 @@ A successful classification should follow this conceptual shape:
         {
           "url": "https://example.com/advisory",
           "quote": "...",
-          "explanation": "..."
+          "explanation": "...",
+          "evidence_id": "document-id:p2"
         }
       ]
     }
   ]
 }
 ```
+
+A classified or partial result also contains a versioned top-level `provenance` catalog. Normal
+output includes only sources and evidence reachable from returned labels. The complete audit,
+including failed calls and unused sources, remains in the persisted investigation scratchpad.
 
 When the CVE cannot be classified reliably from the available information:
 
@@ -340,6 +365,10 @@ Persisted JSON metadata records configured/effective strategy, threshold, routin
 low-confidence normalization, pruned branch sizes, switches, and exact coverage. Persisted
 records are scoped by run ID and input position so repeated classification of the same CVE does
 not overwrite prior experiments.
+
+Every research-tool checkpoint must include the updated provenance ledger. Finalization must
+persist final label/evidence links. The ledger is stored in existing JSON state and does not
+require a schema migration; older records may omit it.
 
 An interrupted CVE does not need to be automatically resumed in the initial implementation.
 

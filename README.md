@@ -99,7 +99,8 @@ uv run cve-agent --verbose --taxonomy fixtures/flat_taxonomy.json CVE-2025-6965
 The verbose trace reports research turns, bounded search queries, sanitized fetched URLs,
 evidence IDs, finding aspects, configured and effective classification strategy, taxonomy
 chunks or routing levels, routing decisions, pruning normalization, branch sizes, cost-based
-switches, supported label IDs, token usage, coverage, checkpoints, and stop reasons. It does
+switches, supported label IDs, source-origin types, CVE-association warnings, token usage,
+coverage, checkpoints, and stop reasons. It does
 not log model prompts or evidence passages. URL query strings and fragments are removed,
 configured credentials are redacted from provider diagnostics, and noisy dependency logs are
 suppressed.
@@ -274,10 +275,27 @@ structured model requests without web tools.
 
 Final model decisions reference evidence IDs rather than writing quotes or URLs. The
 application materializes the canonical resolved URL and exact stored passage into the public
-JSON result. A fetched passage cited at investigation finish is promoted automatically;
+JSON result and preserves the evidence ID. A fetched passage cited at investigation finish is
+promoted automatically;
 `record_evidence` remains an optional way to preserve a passage across research turns. Full
 passage IDs and document-local forms such as `1` or `p1` are accepted when unambiguous. Search
 snippets are leads, never evidence.
+
+Every investigation also builds a versioned, harness-owned provenance ledger. It records the
+bounded NVD and search candidates shown to the model, every search and fetch attempt, URL
+normalization and redirects, the complete bounded passages shown for each fetched document,
+evidence selection methods, accepted findings, and final label-to-evidence links. This ledger
+also snapshots each returned label's exact taxonomy definition and ancestor path. It is
+checkpointed in SQLite but is deliberately excluded from research and classification
+prompts, so retaining it does not consume model tokens. It is intended as cold context that a
+future clarification or deep-dive feature can hydrate selectively for one label.
+
+Normal JSON does not dump the complete audit. Its top-level `provenance` catalog contains only
+sources and evidence reachable from returned labels, including discovery origins, fetch
+details, deterministic CVE-association signals, adjacent passage context, and the investigation
+claims supported by each quotation. Failed calls and unused sources remain available only in
+the persisted scratchpad. Association diagnostics warn rather than reject evidence: a vendor
+patch can be relevant even when it does not repeat the CVE identifier.
 
 The terminal is an adapter around the UI-independent `ClassificationApplication`. Application
 execution returns typed classification results and an optional evaluation report; argument
@@ -360,7 +378,9 @@ run ID, taxonomy fingerprint, model, non-secret effective settings, timestamps, 
 per-CVE checkpoints/results. Checkpoints are written after NVD retrieval, evidence changes,
 the structured investigation profile, completed taxonomy chunks, hierarchy-routing chunks,
 cost-based strategy switches, and finalization. Routing decisions and generic coverage live in
-the existing JSON metadata, so this feature does not change the database schema.
+the existing JSON metadata. The complete evidence-provenance ledger also lives in the
+scratchpad JSON, so this feature does not change the database schema. Existing schema-version-2
+records remain readable and simply have no provenance ledger.
 
 The current schema is version 2. A legacy development database is not migrated automatically;
 remove the configured database explicitly when the CLI reports an incompatible schema.

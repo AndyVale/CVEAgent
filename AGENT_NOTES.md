@@ -2,6 +2,28 @@
 
 ## Current work
 
+An evidence-provenance refactor is implemented and ready for review. A versioned, harness-owned
+ledger now links the target CVE, bounded NVD/search candidates, every fetch attempt and redirect,
+the complete bounded passages shown to the model, selected evidence, accepted findings, and
+final label explanations. Normal model requests explicitly exclude this cold context. Normal
+JSON exposes only paths reachable from returned labels, while SQLite checkpoints retain failed
+and unused paths in the existing scratchpad JSON without an SQL schema migration. Deterministic
+CVE-association signals warn without rejecting weakly linked sources, and adjacent passages are
+stored as context rather than evidence. Evidence construction is centralized for explicit and
+finish-time selection. The complete 165-test suite, bytecode compilation, whitespace review,
+secret scan, and sdist/wheel build pass.
+
+A live CLI run (not the GUI) classified `CVE-2014-0160` with the flat taxonomy and validation,
+using the configured Gemini provider and a forced 15-second request interval. It exited 0 in
+51.6 seconds after four model requests and 16,782 tokens, persisted run 3, and produced valid
+stdout JSON separate from verbose stderr. It selected the expected `OutOfBoundsRead` plus the
+broad overlapping `InputValidation` label, so benchmark precision/recall/F1 were
+0.500/1.000/0.667. The additional label is evidence-backed by the fixture definition and source
+text rather than a provenance failure. Public provenance contained only the three evidence
+records used by final labels; the scratchpad retained all 29 discovery candidates, four evidence
+records, four research events, and all 34 fetched source passages. Source origin matching and
+CVE association were correct and produced no warnings.
+
 The verbose formatter no longer constructs `LogTone` from missing or invalid third-party log
 metadata. The previous exception-driven fallback worked during normal execution but caused
 debuggers configured for raised exceptions to pause on every ordinary record because its absent

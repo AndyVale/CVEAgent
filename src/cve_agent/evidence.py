@@ -3,11 +3,34 @@ from __future__ import annotations
 import re
 from difflib import SequenceMatcher
 
-from cve_agent.models import Passage
+from cve_agent.models import Document, EvidenceRecord, InvestigationState, Passage
 
 
 class EvidenceResolutionError(ValueError):
     """Raised when an evidence locator cannot resolve to one canonical passage."""
+
+
+def store_passage_evidence(
+    state: InvestigationState,
+    document: Document,
+    passage: Passage,
+    *,
+    verification: str,
+) -> tuple[EvidenceRecord, bool]:
+    """Store one canonical passage without duplicating evidence construction paths."""
+    existing = next((item for item in state.evidence if item.evidence_id == passage.passage_id), None)
+    if existing is not None:
+        return existing, False
+    record = EvidenceRecord(
+        passage.passage_id,
+        document.url,
+        passage.text,
+        "web",
+        document.requested_url or document.url,
+        verification,
+    )
+    state.evidence.append(record)
+    return record, True
 
 
 def build_passages(document_id: str, content: str, *, max_chars: int, passage_chars: int = 900) -> tuple[Passage, ...]:

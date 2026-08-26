@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from cve_agent.evidence import build_passages, passage_id_candidates
+from cve_agent.evidence import build_passages, passage_id_candidates, store_passage_evidence
 from cve_agent.models import MAX_INVESTIGATION_FINDINGS, Document, EvidenceRecord, InvestigationAspect, InvestigationFinding, InvestigationState, Passage
 
 
@@ -134,14 +134,11 @@ def _materialize_reference(
 
     passage = candidates[0]
     document = passage_documents[passage.passage_id]
-    record = EvidenceRecord(
-        passage.passage_id,
-        document.url,
-        passage.text,
-        "web",
-        document.requested_url or document.url,
-        "finish_reference",
+    record, created = store_passage_evidence(
+        state,
+        document,
+        passage,
+        verification="finish_reference",
     )
-    state.evidence.append(record)
     evidence_by_id[record.evidence_id] = record
-    return record.evidence_id, True
+    return record.evidence_id, created

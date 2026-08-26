@@ -15,6 +15,7 @@ from cve_agent.llm import RequestPacer, call_chat_completion
 from cve_agent.logging_config import LogTone, log_extra
 from cve_agent.models import CVERecord, ClassificationResult, ClassificationStatus, InvestigationState
 from cve_agent.ports import WebSource
+from cve_agent.provenance_output import build_public_provenance, record_label_links
 from cve_agent.research import ResearchRunner
 from cve_agent.taxonomy import Taxonomy
 from cve_agent.taxonomy_scan import ClassificationScanner, ExhaustiveTaxonomyScanner, TaxonomyScanOutcome
@@ -167,6 +168,10 @@ class InvestigationAgent:
         if scan.error:
             operational["stop_detail"] = scan.error
 
+        record_label_links(labels, state, taxonomy)
+        provenance = build_public_provenance(labels, state)
+        checkpoint_fn()
+
         logger.info(
             "[%s] agent finished status=%s labels=%d evaluated=%d pruned=%d unresolved=%d tokens=%d stop_reason=%s duration_seconds=%.3f",
             cve.cve_id,
@@ -184,7 +189,13 @@ class InvestigationAgent:
                 else LogTone.SUCCESS
             ),
         )
-        return ClassificationResult(cve.cve_id, status, labels, operational=operational)
+        return ClassificationResult(
+            cve.cve_id,
+            status,
+            labels,
+            operational=operational,
+            provenance=provenance,
+        )
 
     def _chat(self, context: str, budget: TokenBudget, stage: str, **request: Any) -> Any:
         estimated_prompt = estimate_tokens(request)

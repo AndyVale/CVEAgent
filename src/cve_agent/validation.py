@@ -106,7 +106,12 @@ def validate_classification(
                 raise ValueError("evidence explanation must be a non-empty string")
             seen_evidence.add(evidence_id)
             record = evidence_by_id[evidence_id]
-            materialized.append(Evidence(record.url, record.quote, explanation.strip()))
+            materialized.append(Evidence(
+                record.url,
+                record.quote,
+                explanation.strip(),
+                evidence_id=record.evidence_id,
+            ))
         labels.append(LabelClassification(label_id, confidence, tuple(materialized)))
 
     if status == ClassificationStatus.CLASSIFIED and not labels:
