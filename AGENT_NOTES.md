@@ -2,6 +2,46 @@
 
 ## Current work
 
+An uncommitted GUI follow-up fixes navigation, overflow, and settings feedback. The separate
+new-analysis button is removed; the home view now has the primary CVE input, stored chats expose
+an explicit Back button, and the secondary input is labelled as starting another analysis.
+Analysis options moved from both composers to the Active snapshot sidebar. History, chat, and
+configuration panes now have independent bounded scrolling, long evidence content cannot widen
+the shared grid, stored chats reopen at the top, and stale history responses/scroll callbacks
+cannot overwrite the latest selection.
+
+Global settings submit on Enter, reject database directories and database paths whose parent
+directory does not exist, and keep validation notices in the dialog's top layer as fixed
+overlays so errors remain visible without changing dialog dimensions.
+
+The GUI now owns an ignored root-level `config.gui.toml`. On first use it copies the selected
+root-level initialization TOML without changing it; option saves validate the complete effective
+settings, preserve comments and unknown keys with `tomlkit`, and atomically update only the
+GUI-owned file. The TOML is no longer exposed as an analysis or global editable field.
+
+All GUI file access is constrained by `GuiPathPolicy`: taxonomy reads stay below `fixtures/`,
+SQLite and GUI-state files below `.data/`, web cache below `.cache/`, and TOML files at the
+project root. Canonical resolution rejects traversal and symlink escapes; extensions are
+restricted; persisted state is revalidated on load; state/config writes use unpredictable
+same-directory temporary files. Mutating HTTP requests require JSON and same-origin headers
+when an Origin is present, bodies are capped, CVE/analysis IDs are bounded, and the existing
+loopback/Host/CSP protections remain. Cache paths and client-supplied config paths are no longer
+editable. The UI uses server-generated taxonomy/database selectors with only `fixtures/`,
+`.data/`, and `./` prefixes visible; it can create a validated new SQLite filename.
+
+The settings form publishes numeric bounds and choices, hides hierarchy controls for flat
+taxonomies, hides pruning for exhaustive scans, and hides provider-specific controls when web
+research is disabled. Stored CVE snapshots remain immutable.
+
+Loopback-only browser checks at 1280x720 verified independent scrolling, no horizontal
+overflow, clean old-CVE transitions, Back navigation, the relocated options control, Enter
+submission, invalid SQLite feedback, unchanged dialog geometry, flat-taxonomy filtering,
+provider-dependent filtering, numeric bounds, fixed-overlay cross-field errors, project-relative
+path presentation, constrained taxonomy/database choices, and safe new-database creation. A
+rejected save left the temporary TOML unchanged. The complete 158-test suite passes, as do
+bytecode compilation, whitespace review, and the CLI-isolation check. The temporary servers were
+stopped without starting a classification.
+
 A focused local graphical interface is implemented through `deb5e90`, `6569a62`, and `e4961d5`
 and remains completely separate from `cli.py`. The Flask entry point calls
 `ClassificationApplication` directly, while a GUI-facing service owns background execution,
@@ -112,5 +152,5 @@ hybrid routing. The live model returned IDs and selected SQLi plus its three anc
 
 ## Handoff
 
-The requested logging, application-boundary, live verification, and multi-label benchmark work
-is complete. No known implementation blocker remains.
+The GUI follow-up described at the top is implemented, verified, and ready for developer review
+and commit approval. No known implementation blocker remains.

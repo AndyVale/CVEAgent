@@ -267,7 +267,7 @@ def parse_analysis_id(value: str) -> tuple[int, int]:
         parsed = int(run_id), int(input_position)
     except (AttributeError, TypeError, ValueError) as exc:
         raise ValueError(f"invalid analysis ID: {value!r}") from exc
-    if min(parsed) < 0:
+    if min(parsed) < 0 or max(parsed) > 2**63 - 1:
         raise ValueError(f"invalid analysis ID: {value!r}")
     return parsed
 

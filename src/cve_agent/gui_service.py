@@ -11,21 +11,25 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from cve_agent.application import ApplicationRun, create_application
+from cve_agent.classification import is_hierarchical
 from cve_agent.config import Settings, load_settings, non_secret_settings
 from cve_agent.gui_config import (
     GlobalSettingsStore,
     GuiConfigurationError,
     apply_chat_overrides,
+    ensure_gui_config,
     public_configuration,
     taxonomy_display_name,
+    write_gui_settings,
 )
+from cve_agent.gui_paths import GuiPathError, GuiPathPolicy
 from cve_agent.gui_repository import GuiAnalysisRepository, StoredAnalysis, settings_fingerprint
 from cve_agent.logging_config import LogTone, redact_secrets, safe_url
 from cve_agent.pipeline import persisted_taxonomy_fingerprint
 from cve_agent.taxonomy import Taxonomy, load_taxonomy
 
 
-_CVE_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
+_CVE_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,12}$", re.IGNORECASE)
 _COMPLETE_CACHE_STATUSES = {"classified", "no_matching_label", "not_enough_information"}
 
 
@@ -53,8 +57,8 @@ class AnalysisConfiguration:
             taxonomy_name=self.taxonomy_name,
             taxonomy_fingerprint=self.taxonomy_fingerprint,
             taxonomy_labels=len(self.taxonomy.labels),
+            taxonomy_hierarchical=is_hierarchical(self.taxonomy),
             hierarchy_policy=self.taxonomy.hierarchy_policy.value,
-            config_path=self.config_path,
         )
 
 
@@ -98,6 +102,7 @@ class GuiService:
         executor: ThreadPoolExecutor | None = None,
     ):
         self.settings_store = settings_store
+        self.path_policy = settings_store.path_policy
         self.application_factory = application_factory
         self._executor = executor or ThreadPoolExecutor(max_workers=1, thread_name_prefix="cve-gui")
         self._owns_executor = executor is None
@@ -115,14 +120,41 @@ class GuiService:
     def global_settings(self) -> dict[str, str]:
         return self.settings_store.get().to_dict()
 
+    def path_options(self) -> dict[str, Any]:
+        return {
+            "configuration": {
+                "prefix": "./",
+                "name": self.settings_store.get().default_config_path.name,
+            },
+            "taxonomies": _path_choices(
+                self.path_policy.taxonomy_files(),
+                self.path_policy.fixtures_root,
+                "fixtures/",
+            ),
+            "databases": _path_choices(
+                self.path_policy.database_files(),
+                self.path_policy.data_root,
+                ".data/",
+            ),
+        }
+
     def update_global_settings(self, raw: dict[str, Any]) -> dict[str, str]:
         if self._has_active_analysis():
             raise GuiConfigurationError("global settings cannot change while an analysis is running")
-        candidate = self.settings_store.validate(raw)
+        if not isinstance(raw, dict):
+            raise GuiConfigurationError("global settings must be an object")
+        unknown = sorted(set(raw) - {"database_path", "default_taxonomy_path"})
+        if unknown:
+            raise GuiConfigurationError(f"unknown global setting fields: {unknown}")
+        normalized = {
+            **raw,
+            "default_config_path": str(self.settings_store.get().default_config_path),
+        }
+        candidate = self.settings_store.validate(normalized)
         load_taxonomy(candidate.default_taxonomy_path)
         repository = GuiAnalysisRepository(candidate.database_path)
         repository.initialize()
-        updated = self.settings_store.update(raw)
+        updated = self.settings_store.update(normalized)
         with self._lock:
             self._repository_path = updated.database_path
             self._repository = repository
@@ -132,6 +164,7 @@ class GuiService:
         return [self._history_item(analysis) for analysis in self._get_repository().list_analyses(limit=limit)]
 
     def defaults(self, from_analysis_id: str | None = None) -> dict[str, Any]:
+        global_settings = self.settings_store.get()
         if from_analysis_id:
             running, stored_alias = self._lookup_running(from_analysis_id)
             if running:
@@ -143,12 +176,34 @@ class GuiService:
             latest = self._get_repository().list_analyses(limit=1)
             if latest and latest[0].taxonomy_path and latest[0].config_path:
                 return self._stored_configuration(latest[0])
-        global_settings = self.settings_store.get()
         return self._resolve_configuration(
-            config_path=global_settings.default_config_path,
             taxonomy_path=global_settings.default_taxonomy_path,
             values={},
         ).to_public_dict()
+
+    def update_analysis_options(self, raw: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            raise GuiConfigurationError("analysis options must be an object")
+        unknown = sorted(set(raw) - {"taxonomy_path", "values"})
+        if unknown:
+            raise GuiConfigurationError(f"unknown analysis option fields: {unknown}")
+        values = raw.get("values", {})
+        global_settings = self.settings_store.get()
+        taxonomy_path = raw.get("taxonomy_path") or global_settings.default_taxonomy_path
+        with self._lock:
+            configuration = self._resolve_configuration(
+                taxonomy_path=taxonomy_path,
+                values=values,
+            )
+            write_gui_settings(
+                global_settings.default_config_path,
+                configuration.settings,
+                self.path_policy,
+            )
+            return self._resolve_configuration(
+                taxonomy_path=taxonomy_path,
+                values={},
+            ).to_public_dict()
 
     def get_analysis(self, analysis_id: str) -> dict[str, Any] | None:
         running, stored_alias = self._lookup_running(analysis_id)
@@ -160,13 +215,18 @@ class GuiService:
     def start_analysis(self, raw: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(raw, dict):
             raise GuiConfigurationError("analysis request must be an object")
+        unknown_request = sorted(set(raw) - {"cve_id", "configuration"})
+        if unknown_request:
+            raise GuiConfigurationError(f"unknown analysis request fields: {unknown_request}")
         cve_id = normalize_cve_id(raw.get("cve_id"))
         configuration_raw = raw.get("configuration", {})
         if not isinstance(configuration_raw, dict):
             raise GuiConfigurationError("configuration must be an object")
+        unknown = sorted(set(configuration_raw) - {"taxonomy_path", "values"})
+        if unknown:
+            raise GuiConfigurationError(f"unknown analysis configuration fields: {unknown}")
         global_settings = self.settings_store.get()
         configuration = self._resolve_configuration(
-            config_path=configuration_raw.get("config_path") or global_settings.default_config_path,
             taxonomy_path=(configuration_raw.get("taxonomy_path") or global_settings.default_taxonomy_path),
             values=configuration_raw.get("values", {}),
         )
@@ -244,26 +304,22 @@ class GuiService:
     def _resolve_configuration(
         self,
         *,
-        config_path: str | Path,
         taxonomy_path: str | Path,
         values: Any,
     ) -> AnalysisConfiguration:
-        resolved_config = Path(config_path).expanduser().resolve()
-        resolved_taxonomy = Path(taxonomy_path).expanduser().resolve()
-        if not resolved_config.is_file():
-            raise GuiConfigurationError(f"configuration file does not exist: {resolved_config}")
-        if not resolved_taxonomy.is_file():
-            raise GuiConfigurationError(f"taxonomy file does not exist: {resolved_taxonomy}")
+        global_settings = self.settings_store.get()
         try:
+            resolved_config = self.path_policy.configuration_file(global_settings.default_config_path)
+            resolved_taxonomy = self.path_policy.taxonomy_file(taxonomy_path)
             base = load_settings(resolved_config)
             taxonomy = load_taxonomy(resolved_taxonomy)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, GuiPathError) as exc:
             raise GuiConfigurationError(str(exc)) from exc
         settings = apply_chat_overrides(
             base,
             values,
-            config_directory=resolved_config.parent,
-            database_path=self.settings_store.get().database_path,
+            database_path=global_settings.database_path,
+            path_policy=self.path_policy,
         )
         fingerprint = persisted_taxonomy_fingerprint(taxonomy)
         return AnalysisConfiguration(
@@ -299,8 +355,8 @@ class GuiService:
             taxonomy_name=name,
             taxonomy_fingerprint=analysis.taxonomy_fingerprint,
             taxonomy_labels=analysis.taxonomy_labels,
+            taxonomy_hierarchical=_taxonomy_hierarchical(analysis.taxonomy_path, self.path_policy),
             hierarchy_policy=analysis.hierarchy_policy,
-            config_path=analysis.config_path,
         )
 
     def _save_configuration_snapshot(self, analysis_id: str, configuration: AnalysisConfiguration) -> None:
@@ -367,6 +423,26 @@ def normalize_cve_id(value: Any) -> str:
     if not isinstance(value, str) or not _CVE_PATTERN.fullmatch(value.strip()):
         raise GuiConfigurationError("enter a CVE ID such as CVE-2021-44228")
     return value.strip().upper()
+
+
+def _taxonomy_hierarchical(path: str | None, path_policy: GuiPathPolicy) -> bool | None:
+    if not path:
+        return None
+
+
+def _path_choices(paths: tuple[Path, ...], root: Path, prefix: str) -> list[dict[str, str]]:
+    return [
+        {
+            "path": str(path),
+            "value": f"{prefix}{path.relative_to(root)}",
+            "label": str(path.relative_to(root)),
+        }
+        for path in paths
+    ]
+    try:
+        return is_hierarchical(load_taxonomy(path_policy.taxonomy_file(path)))
+    except (OSError, ValueError, GuiPathError):
+        return None
 
 
 def _event(*, tone: str, component: str, message: str) -> dict[str, Any]:

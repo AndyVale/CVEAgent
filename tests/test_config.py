@@ -58,6 +58,8 @@ def test_pruning_threshold_accepts_closed_interval_boundaries(tmp_path, threshol
     [
         ("[web]\nprovider = 'invented'\n", "unsupported web provider"),
         ("[web]\nmax_preview_chars = 20\nmax_document_chars = 10\n", "max_preview_chars"),
+        ("[runtime]\nendpoint = 'not-a-url'\n", "HTTP\\(S\\) URL"),
+        ("[limits]\nmax_agent_turns = 0\n", "maximum turns"),
         ("[limits]\nfinalization_overrun_percent = -1\n", "finalization_overrun_percent"),
         ("[classification]\nstrategy = 'invented'\n", "classification strategy"),
         ("[classification]\npruning_confidence_threshold = 1.1\n", "pruning_confidence_threshold"),

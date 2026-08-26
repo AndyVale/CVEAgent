@@ -1,6 +1,7 @@
 .venv
 .env
 config.toml
+config.gui.toml
 .DS_Store
 __pycache__/
 *.py[cod]

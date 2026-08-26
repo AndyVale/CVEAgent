@@ -11,7 +11,8 @@ from urllib.parse import urlsplit
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from cve_agent.gui_config import GlobalGuiSettings, GlobalSettingsStore, GuiConfigurationError
+from cve_agent.gui_config import GlobalGuiSettings, GlobalSettingsStore, GuiConfigurationError, ensure_gui_config
+from cve_agent.gui_paths import GuiPathPolicy
 from cve_agent.gui_service import GuiService
 from cve_agent.persistence import IncompatibleDatabaseError, PersistenceError
 from cve_agent.taxonomy import TaxonomyError
@@ -22,12 +23,21 @@ def create_gui_app(service: GuiService) -> Flask:
     static_directory = Path(__file__).with_name("gui_static")
     app = Flask(__name__, static_folder=None)
     app.config["JSON_SORT_KEYS"] = False
+    app.config["MAX_CONTENT_LENGTH"] = 1_000_000
 
     @app.before_request
     def require_local_host():  # type: ignore[no-untyped-def]
         hostname = (urlsplit(f"//{request.host}").hostname or "").lower()
         if hostname not in {"127.0.0.1", "localhost", "::1"}:
             return jsonify({"error": "the GUI accepts local requests only"}), 403
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            if not request.is_json:
+                return jsonify({"error": "state-changing requests must use JSON"}), 415
+            origin = request.headers.get("Origin")
+            if origin:
+                parsed_origin = urlsplit(origin)
+                if parsed_origin.scheme not in {"http", "https"} or parsed_origin.netloc != request.host:
+                    return jsonify({"error": "cross-origin requests are not allowed"}), 403
         return None
 
     @app.after_request
@@ -39,8 +49,13 @@ def create_gui_app(service: GuiService) -> Flask:
             "script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"
         )
         response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
+
+    @app.errorhandler(413)
+    def request_too_large(_exc):  # type: ignore[no-untyped-def]
+        return jsonify({"error": "request body is too large"}), 413
 
     @app.get("/")
     def index():  # type: ignore[no-untyped-def]
@@ -58,6 +73,10 @@ def create_gui_app(service: GuiService) -> Flask:
     def get_global_settings():  # type: ignore[no-untyped-def]
         return jsonify(service.global_settings())
 
+    @app.get("/api/path-options")
+    def path_options():  # type: ignore[no-untyped-def]
+        return jsonify(service.path_options())
+
     @app.put("/api/global-settings")
     def update_global_settings():  # type: ignore[no-untyped-def]
         return jsonify(service.update_global_settings(_json_body()))
@@ -69,6 +88,10 @@ def create_gui_app(service: GuiService) -> Flask:
     @app.get("/api/defaults")
     def defaults():  # type: ignore[no-untyped-def]
         return jsonify(service.defaults(request.args.get("from")))
+
+    @app.put("/api/analysis-options")
+    def update_analysis_options():  # type: ignore[no-untyped-def]
+        return jsonify(service.update_analysis_options(_json_body()))
 
     @app.post("/api/analyses")
     def start_analysis():  # type: ignore[no-untyped-def]
@@ -99,7 +122,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cve-agent-gui")
     parser.add_argument("--port", type=int, default=8765, help="local port to bind")
     parser.add_argument("--state", default=".data/cve-agent-gui.json", help="path to GUI global settings")
-    parser.add_argument("--config", default="config.toml", help="initial configuration path")
+    parser.add_argument(
+        "--config",
+        default="config.toml",
+        help="configuration used to initialize config.gui.toml on first use",
+    )
     parser.add_argument(
         "--taxonomy",
         default="fixtures/hybrid_taxonomy.json",
@@ -113,17 +140,30 @@ def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
     if not 1 <= args.port <= 65535:
         raise SystemExit("port must be in [1, 65535]")
-    config_path = Path(args.config).expanduser().resolve()
-    taxonomy_path = Path(args.taxonomy).expanduser().resolve()
     try:
         # The configured database is resolved by load_settings when defaults are read.
         from cve_agent.config import load_settings
 
+        path_policy = GuiPathPolicy(Path.cwd())
+        path_policy.prepare_runtime_directories()
+        source_config_path = path_policy.configuration_file(args.config, must_exist=False)
+        taxonomy_path = path_policy.taxonomy_file(args.taxonomy)
+        config_path = ensure_gui_config(source_config_path, path_policy)
         initial_settings = load_settings(config_path)
+        database_path = path_policy.database_file(initial_settings.database)
+        path_policy.cache_directory(initial_settings.cache_dir)
         store = GlobalSettingsStore(
             args.state,
-            GlobalGuiSettings(initial_settings.database.resolve(), config_path, taxonomy_path),
+            GlobalGuiSettings(database_path, config_path, taxonomy_path),
+            path_policy,
         )
+        current = store.get()
+        current_config_path = ensure_gui_config(current.default_config_path, path_policy)
+        if current_config_path != current.default_config_path:
+            store.update({
+                **current.to_dict(),
+                "default_config_path": str(current_config_path),
+            })
         service = GuiService(store)
     except Exception as exc:
         raise SystemExit(f"GUI startup error: {exc}") from exc

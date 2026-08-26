@@ -4,6 +4,7 @@ import os
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from cve_agent.strategy import ClassificationStrategy
 
@@ -97,6 +98,14 @@ def validate_settings(settings: Settings) -> None:
     """Validate an effective settings snapshot built by any presentation layer."""
     if not settings.model.strip() or not settings.endpoint.strip():
         raise ValueError("runtime model and endpoint must be non-empty")
+    for name, value in (
+        ("runtime endpoint", settings.endpoint),
+        ("NVD endpoint", settings.nvd_base_url),
+        ("Tavily endpoint", settings.tavily_base_url),
+    ):
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(f"{name} must be an HTTP(S) URL")
     if settings.max_tokens <= 0 or settings.max_input_tokens_per_request <= 0 or settings.token_budget <= 0:
         raise ValueError("token limits must be positive")
     if not 0 <= settings.temperature <= 2 or not 0 < settings.top_p <= 1:
@@ -117,8 +126,10 @@ def validate_settings(settings: Settings) -> None:
         raise ValueError("web content limits must be positive")
     if settings.max_preview_chars > settings.max_document_chars:
         raise ValueError("max_preview_chars cannot exceed max_document_chars")
-    if min(settings.max_agent_turns, settings.max_search_calls, settings.max_fetch_calls) < 0 or settings.max_investigation_seconds <= 0:
-        raise ValueError("investigation limits must be non-negative and duration must be positive")
+    if settings.max_agent_turns <= 0 or min(settings.max_search_calls, settings.max_fetch_calls) < 0:
+        raise ValueError("maximum turns must be positive; search and fetch limits must be non-negative")
+    if settings.max_investigation_seconds <= 0:
+        raise ValueError("maximum investigation duration must be positive")
     if not 0 <= settings.finalization_overrun_percent <= 100:
         raise ValueError("finalization_overrun_percent must be in [0, 100]")
     if not 0 <= settings.pruning_confidence_threshold <= 1:

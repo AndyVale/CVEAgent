@@ -1,3 +1,5 @@
+import pytest
+
 from cve_agent.gui_repository import GuiAnalysisRepository, parse_analysis_id, settings_fingerprint
 from cve_agent.models import ClassificationResult, InvestigationState, LabelClassification
 from cve_agent.persistence import Database
@@ -82,3 +84,5 @@ def test_partial_results_are_not_used_as_complete_cache_entries(tmp_path):
 
 def test_analysis_ids_are_strictly_parsed():
     assert parse_analysis_id("12:3") == (12, 3)
+    with pytest.raises(ValueError):
+        parse_analysis_id(f"{2**63}:0")

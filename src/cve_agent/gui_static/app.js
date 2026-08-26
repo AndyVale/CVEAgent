@@ -2,6 +2,7 @@
 
 const state = {
   global: null,
+  paths: null,
   history: [],
   selectedId: null,
   analysis: null,
@@ -13,27 +14,48 @@ const elements = {};
 
 document.addEventListener("DOMContentLoaded", async () => {
   [
-    "topTaxonomy", "topStatus", "globalSettingsButton", "footerSettingsButton", "newAnalysisButton",
+    "homeButton", "topTaxonomy", "topStatus", "globalSettingsButton", "footerSettingsButton",
     "historyList", "databasePath", "chatKicker", "chatTitle", "chatStatus", "welcomeState",
-    "messageList", "resultReport", "chatViewport", "composer", "cveInput", "submitButton",
-    "chatOptionsButton", "composerNote", "configurationView", "globalSettingsDialog",
+    "backButton", "welcomeComposer", "welcomeCveInput", "welcomeSubmitButton", "messageList",
+    "resultReport", "chatViewport", "nextAnalysisPanel", "composer", "cveInput", "submitButton",
+    "composerNote", "configurationView", "configurationOptionsButton", "globalSettingsDialog",
     "globalSettingsForm", "saveGlobalButton", "chatSettingsDialog", "chatSettingsForm",
-    "chatSettingsFields", "saveChatSettingsButton", "toast",
+    "chatSettingsFields", "saveChatSettingsButton", "toast", "globalDatabaseSelect",
+    "globalTaxonomySelect", "analysisTaxonomySelect", "newDatabaseField", "newDatabaseName",
+    "guiConfigName",
   ].forEach((id) => { elements[id] = document.getElementById(id); });
 
   elements.globalSettingsButton.addEventListener("click", openGlobalSettings);
   elements.footerSettingsButton.addEventListener("click", openGlobalSettings);
-  elements.newAnalysisButton.addEventListener("click", startDraft);
-  elements.chatOptionsButton.addEventListener("click", openChatSettings);
-  elements.saveGlobalButton.addEventListener("click", saveGlobalSettings);
-  elements.saveChatSettingsButton.addEventListener("click", saveChatSettings);
+  elements.homeButton.addEventListener("click", startDraft);
+  elements.backButton.addEventListener("click", startDraft);
+  elements.configurationOptionsButton.addEventListener("click", openChatSettings);
+  elements.globalDatabaseSelect.addEventListener("change", toggleNewDatabaseField);
+  elements.welcomeComposer.addEventListener("submit", submitAnalysis);
   elements.composer.addEventListener("submit", submitAnalysis);
+  elements.globalSettingsForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveGlobalSettings();
+  });
+  elements.globalSettingsForm.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    elements.globalSettingsForm.requestSubmit();
+  });
+  elements.chatSettingsForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveChatSettings();
+  });
+  document.querySelectorAll("[data-dialog-close]").forEach((button) => {
+    button.addEventListener("click", () => button.closest("dialog").close());
+  });
 
   try {
-    const [globalSettings, historyResponse, defaults] = await Promise.all([
-      api("/api/global-settings"), api("/api/history"), api("/api/defaults"),
+    const [globalSettings, pathOptions, historyResponse, defaults] = await Promise.all([
+      api("/api/global-settings"), api("/api/path-options"), api("/api/history"), api("/api/defaults"),
     ]);
     state.global = globalSettings;
+    state.paths = pathOptions;
     state.history = historyResponse.analyses;
     state.draftConfiguration = defaults;
     renderGlobalSettings();
@@ -56,7 +78,11 @@ async function api(path, options = {}) {
 }
 
 function renderGlobalSettings() {
-  elements.databasePath.textContent = state.global?.database_path || "Not configured";
+  elements.databasePath.textContent = scopedPath(
+    state.global?.database_path,
+    state.paths?.databases,
+    ".data/",
+  ) || "Not configured";
 }
 
 function renderHistory() {
@@ -69,6 +95,7 @@ function renderHistory() {
   state.history.forEach((item) => {
     const button = node("button", `history-item${item.id === state.selectedId ? " active" : ""}`);
     button.type = "button";
+    button.disabled = isAnalysisActive();
     const primary = node("span", "history-primary");
     primary.append(node("span", "history-cve", item.cve_id), node("span", "history-time", relativeTime(item.updated_at)));
     button.append(primary, node("span", "history-taxonomy", item.taxonomy_name));
@@ -88,18 +115,26 @@ async function refreshHistory() {
 }
 
 async function selectAnalysis(id) {
+  if (isAnalysisActive() && id !== state.selectedId) {
+    showToast("Wait for the active analysis to finish before opening another chat.", true);
+    return;
+  }
   clearPolling();
   state.selectedId = id;
   renderHistory();
   setTopStatus("running", "Loading");
   try {
     const analysis = await api(`/api/analyses/${encodeURIComponent(id)}`);
+    if (state.selectedId !== id) return;
     state.analysis = analysis;
     state.draftConfiguration = structuredClone(analysis.configuration);
     state.selectedId = analysis.id;
-    renderAnalysis();
+    renderAnalysis({followProgress: false});
     renderHistory();
   } catch (error) {
+    if (state.selectedId !== id) return;
+    setAnalysisControls(false);
+    elements.homeButton.disabled = false;
     setTopStatus("failed", "Error");
     showToast(error.message, true);
   }
@@ -111,33 +146,39 @@ function startDraft() {
   state.analysis = null;
   renderHistory();
   renderDraft();
-  elements.cveInput.focus();
+  elements.welcomeCveInput.focus();
 }
 
 function renderDraft() {
   elements.chatKicker.textContent = "New analysis";
-  elements.chatTitle.textContent = "Investigate a CVE";
+  elements.chatTitle.textContent = "Start a new CVE analysis";
   elements.chatStatus.className = "result-status hidden";
+  elements.backButton.classList.add("hidden");
   elements.welcomeState.classList.remove("hidden");
+  elements.nextAnalysisPanel.classList.add("hidden");
   elements.messageList.replaceChildren();
   elements.resultReport.replaceChildren();
-  elements.cveInput.disabled = false;
-  elements.submitButton.disabled = false;
+  elements.welcomeCveInput.value = "";
+  elements.cveInput.value = "";
+  setAnalysisControls(false);
+  elements.homeButton.disabled = false;
   elements.composerNote.textContent = "New analyses inherit the options shown on the right.";
   renderConfiguration(state.draftConfiguration);
   setTopStatus("ready", "Ready");
+  elements.chatViewport.scrollTop = 0;
 }
 
 async function submitAnalysis(event) {
   event.preventDefault();
-  const cveId = elements.cveInput.value.trim().toUpperCase();
+  const submittedInput = event.currentTarget.elements.namedItem("cve_id");
+  const cveId = submittedInput.value.trim().toUpperCase();
   if (!cveId) return;
   if (!state.draftConfiguration) {
     showToast("Analysis configuration is still loading.", true);
     return;
   }
-  elements.submitButton.disabled = true;
-  elements.cveInput.disabled = true;
+  setAnalysisControls(true);
+  elements.homeButton.disabled = true;
   setTopStatus("running", "Starting");
   try {
     const response = await api("/api/analyses", {
@@ -146,7 +187,6 @@ async function submitAnalysis(event) {
         cve_id: cveId,
         configuration: {
           taxonomy_path: state.draftConfiguration.taxonomy.path,
-          config_path: state.draftConfiguration.config_path,
           values: state.draftConfiguration.values,
         },
       }),
@@ -159,8 +199,9 @@ async function submitAnalysis(event) {
     }
     await pollAnalysis(response.id);
   } catch (error) {
-    elements.submitButton.disabled = false;
-    elements.cveInput.disabled = false;
+    setAnalysisControls(false);
+    elements.homeButton.disabled = false;
+    submittedInput.focus();
     setTopStatus("failed", "Error");
     showToast(error.message, true);
   }
@@ -172,7 +213,7 @@ async function pollAnalysis(id) {
     const analysis = await api(`/api/analyses/${encodeURIComponent(id)}`);
     state.analysis = analysis;
     state.selectedId = analysis.id;
-    renderAnalysis();
+    renderAnalysis({followProgress: true});
     if (analysis.lifecycle === "queued" || analysis.lifecycle === "running") {
       state.pollTimer = window.setTimeout(() => pollAnalysis(id), 850);
     } else {
@@ -190,19 +231,24 @@ function clearPolling() {
   state.pollTimer = null;
 }
 
-function renderAnalysis() {
+function renderAnalysis({followProgress = false} = {}) {
   const analysis = state.analysis;
   if (!analysis) return renderDraft();
+  const previousScrollTop = elements.chatViewport.scrollTop;
+  const shouldFollow = followProgress && isNearBottom(elements.chatViewport);
   elements.welcomeState.classList.add("hidden");
+  elements.nextAnalysisPanel.classList.remove("hidden");
   elements.chatKicker.textContent = analysis.lifecycle === "running" ? "Live investigation" : "Persisted analysis";
   elements.chatTitle.textContent = analysis.cve_id;
   elements.cveInput.value = "";
+  elements.welcomeCveInput.value = "";
   const active = ["queued", "running"].includes(analysis.lifecycle);
-  elements.cveInput.disabled = active;
-  elements.submitButton.disabled = active;
+  elements.backButton.classList.toggle("hidden", active);
+  setAnalysisControls(active);
+  elements.homeButton.disabled = active;
   elements.composerNote.textContent = active
-    ? "The pipeline is running. Progress is saved when the analysis completes."
-    : "Options are inherited from this chat for the next analysis; this stored result remains unchanged.";
+    ? "The pipeline is running. A new analysis can start after it finishes."
+    : "The stored CVE remains unchanged; the new analysis inherits its configuration.";
   renderEvents(analysis.events || []);
   renderResult(analysis.result);
   renderConfiguration(analysis.configuration);
@@ -219,7 +265,12 @@ function renderAnalysis() {
     elements.chatStatus.className = "result-status hidden";
     setTopStatus("running", analysis.lifecycle === "queued" ? "Queued" : "Analyzing");
   }
-  requestAnimationFrame(() => { elements.chatViewport.scrollTop = elements.chatViewport.scrollHeight; });
+  requestAnimationFrame(() => {
+    if (state.analysis?.id !== analysis.id) return;
+    if (!followProgress) elements.chatViewport.scrollTop = 0;
+    else if (shouldFollow) elements.chatViewport.scrollTop = elements.chatViewport.scrollHeight;
+    else elements.chatViewport.scrollTop = previousScrollTop;
+  });
 }
 
 function renderEvents(events) {
@@ -310,17 +361,27 @@ function renderConfiguration(configuration) {
   elements.topTaxonomy.textContent = configuration.taxonomy.name;
   const taxonomy = node("section", "taxonomy-card");
   taxonomy.append(node("h3", "", configuration.taxonomy.name));
-  taxonomy.append(node("p", "", configuration.taxonomy.path || `Fingerprint ${configuration.taxonomy.fingerprint}`));
+  taxonomy.append(node(
+    "p",
+    "",
+    scopedPath(configuration.taxonomy.path, state.paths?.taxonomies, "fixtures/")
+      || `Fingerprint ${configuration.taxonomy.fingerprint}`,
+  ));
   const stats = node("div", "taxonomy-stats");
   if (configuration.taxonomy.labels != null) stats.append(node("span", "", `${configuration.taxonomy.labels} labels`));
+  if (configuration.taxonomy.hierarchical != null) {
+    stats.append(node("span", "", configuration.taxonomy.hierarchical ? "hierarchical" : "flat"));
+  }
   if (configuration.taxonomy.hierarchy_policy) stats.append(node("span", "", configuration.taxonomy.hierarchy_policy.replaceAll("_", " ")));
   taxonomy.append(stats);
   elements.configurationView.append(taxonomy);
   (configuration.groups || []).forEach((group) => {
+    const relevantFields = group.fields.filter((field) => settingIsRelevant(field, configuration));
+    if (!relevantFields.length) return;
     const section = node("section", "config-group");
     section.append(node("h3", "", group.name));
     const list = document.createElement("dl");
-    group.fields.forEach((field) => {
+    relevantFields.forEach((field) => {
       const row = node("div", "config-row");
       row.append(node("dt", "", field.label), node("dd", "", formatValue(field.value)));
       list.append(row);
@@ -332,18 +393,34 @@ function renderConfiguration(configuration) {
 
 function openGlobalSettings() {
   if (!state.global) return;
-  Object.entries(state.global).forEach(([name, value]) => {
-    const input = elements.globalSettingsForm.elements.namedItem(name);
-    if (input) input.value = value;
-  });
+  hideToast();
+  populateScopedSelect(
+    elements.globalDatabaseSelect,
+    state.paths?.databases || [],
+    state.global.database_path,
+    {allowNew: true},
+  );
+  populateScopedSelect(
+    elements.globalTaxonomySelect,
+    state.paths?.taxonomies || [],
+    state.global.default_taxonomy_path,
+  );
+  elements.guiConfigName.textContent = state.paths?.configuration?.name || "config.gui.toml";
+  elements.newDatabaseName.value = "";
+  toggleNewDatabaseField();
   elements.globalSettingsDialog.showModal();
 }
 
 async function saveGlobalSettings() {
   const body = Object.fromEntries(new FormData(elements.globalSettingsForm).entries());
+  if (body.database_path === "__new__") {
+    if (!elements.newDatabaseName.reportValidity()) return;
+    body.database_path = `.data/${elements.newDatabaseName.value}`;
+  }
   elements.saveGlobalButton.disabled = true;
   try {
     state.global = await api("/api/global-settings", { method: "PUT", body: JSON.stringify(body) });
+    state.paths = await api("/api/path-options");
     state.history = [];
     state.selectedId = null;
     state.analysis = null;
@@ -363,8 +440,12 @@ async function saveGlobalSettings() {
 function openChatSettings() {
   const config = state.draftConfiguration || state.analysis?.configuration;
   if (!config) return;
-  elements.chatSettingsForm.elements.namedItem("taxonomy_path").value = config.taxonomy.path || "";
-  elements.chatSettingsForm.elements.namedItem("config_path").value = config.config_path || "";
+  hideToast();
+  populateScopedSelect(
+    elements.analysisTaxonomySelect,
+    state.paths?.taxonomies || [],
+    config.taxonomy.path,
+  );
   elements.chatSettingsFields.replaceChildren();
   config.groups.forEach((group) => {
     const section = node("section", "settings-field-group");
@@ -374,11 +455,21 @@ function openChatSettings() {
     section.append(grid);
     elements.chatSettingsFields.append(section);
   });
+  elements.chatSettingsForm.querySelectorAll("select[name^='setting:']").forEach((input) => {
+    input.addEventListener("change", () => refreshSettingVisibility(config));
+  });
+  refreshSettingVisibility(config);
   elements.chatSettingsDialog.showModal();
 }
 
 function settingInput(field) {
   const label = document.createElement("label");
+  label.dataset.settingName = field.name;
+  if (field.hierarchical_only) label.dataset.hierarchicalOnly = "true";
+  if (field.depends_on) {
+    label.dataset.dependsOn = field.depends_on;
+    label.dataset.dependsValues = JSON.stringify(field.depends_values || []);
+  }
   label.append(document.createTextNode(field.label));
   let input;
   if (field.kind === "select") {
@@ -393,7 +484,11 @@ function settingInput(field) {
     input.type = ["number", "integer"].includes(field.kind) ? "number" : field.kind === "url" ? "url" : "text";
     if (field.kind === "integer") input.step = "1";
     if (field.step) input.step = field.step;
+    if (field.minimum != null) input.min = field.minimum;
+    if (field.maximum != null) input.max = field.maximum;
+    if (field.exclusive_minimum) input.dataset.exclusiveMinimum = "true";
     input.value = field.value ?? "";
+    input.addEventListener("input", () => validateSettingInput(input));
   }
   input.name = `setting:${field.name}`;
   input.dataset.kind = field.kind;
@@ -402,24 +497,99 @@ function settingInput(field) {
   return label;
 }
 
-function saveChatSettings() {
+async function saveChatSettings() {
   const config = structuredClone(state.draftConfiguration || state.analysis?.configuration);
   const form = elements.chatSettingsForm;
+  form.querySelectorAll("[name^='setting:']").forEach(validateSettingInput);
   if (!form.reportValidity()) return;
   config.taxonomy.path = form.elements.namedItem("taxonomy_path").value.trim();
-  config.config_path = form.elements.namedItem("config_path").value.trim();
-  form.querySelectorAll("[name^='setting:']").forEach((input) => {
+  form.querySelectorAll("[name^='setting:']:not(:disabled)").forEach((input) => {
     const name = input.name.slice("setting:".length);
     config.values[name] = input.dataset.kind === "integer" ? Number.parseInt(input.value, 10)
       : input.dataset.kind === "number" ? Number.parseFloat(input.value) : input.value;
-    const field = config.groups.flatMap((group) => group.fields).find((item) => item.name === name);
-    if (field) field.value = config.values[name];
   });
-  config.taxonomy.name = config.taxonomy.path.split(/[\\/]/).pop()?.replace(/\.json$/i, "") || "Selected taxonomy";
-  state.draftConfiguration = config;
-  if (!state.analysis) renderConfiguration(config);
-  elements.chatSettingsDialog.close();
-  showToast("Options saved for the next analysis.");
+  elements.saveChatSettingsButton.disabled = true;
+  try {
+    state.draftConfiguration = await api("/api/analysis-options", {
+      method: "PUT",
+      body: JSON.stringify({taxonomy_path: config.taxonomy.path, values: config.values}),
+    });
+    if (!state.analysis) renderConfiguration(state.draftConfiguration);
+    elements.chatSettingsDialog.close();
+    showToast("Configuration validated and saved for the next analysis.");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    elements.saveChatSettingsButton.disabled = false;
+  }
+}
+
+function refreshSettingVisibility(configuration) {
+  elements.chatSettingsForm.querySelectorAll("[data-setting-name]").forEach((label) => {
+    const field = configuration.groups.flatMap((group) => group.fields)
+      .find((item) => item.name === label.dataset.settingName);
+    const visible = field && settingIsRelevant(field, configuration, elements.chatSettingsForm);
+    label.classList.toggle("hidden", !visible);
+    label.querySelector("input, select").disabled = !visible;
+  });
+  elements.chatSettingsForm.querySelectorAll(".settings-field-group").forEach((group) => {
+    group.classList.toggle("hidden", !group.querySelector("[data-setting-name]:not(.hidden)"));
+  });
+}
+
+function settingIsRelevant(field, configuration, form = null) {
+  if (field.hierarchical_only && configuration.taxonomy.hierarchical === false) return false;
+  if (!field.depends_on) return true;
+  const dependencyInput = form?.elements.namedItem(`setting:${field.depends_on}`);
+  const dependencyValue = dependencyInput?.value ?? configuration.values[field.depends_on];
+  return (field.depends_values || []).includes(String(dependencyValue));
+}
+
+function validateSettingInput(input) {
+  input.setCustomValidity("");
+  if (input.disabled || input.value === "" || input.dataset.exclusiveMinimum !== "true") return;
+  if (Number(input.value) <= Number(input.min)) {
+    input.setCustomValidity(`Value must be greater than ${input.min}.`);
+  }
+}
+
+function populateScopedSelect(select, entries, currentPath, {allowNew = false} = {}) {
+  select.replaceChildren();
+  entries.forEach((entry) => {
+    const option = document.createElement("option");
+    option.value = entry.value;
+    option.textContent = entry.label;
+    option.selected = entry.path === currentPath;
+    select.append(option);
+  });
+  if (currentPath && !entries.some((entry) => entry.path === currentPath)) {
+    const unavailable = document.createElement("option");
+    unavailable.value = "";
+    unavailable.textContent = "Previously selected file is unavailable";
+    unavailable.disabled = true;
+    unavailable.selected = true;
+    select.prepend(unavailable);
+  }
+  if (allowNew) {
+    const create = document.createElement("option");
+    create.value = "__new__";
+    create.textContent = "Create a new database…";
+    select.append(create);
+  }
+}
+
+function toggleNewDatabaseField() {
+  const creating = elements.globalDatabaseSelect.value === "__new__";
+  elements.newDatabaseField.classList.toggle("hidden", !creating);
+  elements.newDatabaseName.disabled = !creating;
+  elements.newDatabaseName.required = creating;
+  if (creating) elements.newDatabaseName.focus();
+}
+
+function scopedPath(path, entries = [], prefix = "") {
+  if (!path) return "";
+  const match = entries.find((entry) => entry.path === path);
+  return match ? `${prefix}${match.label}` : "Unavailable stored file";
 }
 
 function setTopStatus(kind, text) {
@@ -427,11 +597,44 @@ function setTopStatus(kind, text) {
   elements.topStatus.replaceChildren(document.createElement("i"), document.createTextNode(text));
 }
 
+function setAnalysisControls(disabled) {
+  elements.welcomeCveInput.disabled = disabled;
+  elements.welcomeSubmitButton.disabled = disabled;
+  elements.cveInput.disabled = disabled;
+  elements.submitButton.disabled = disabled;
+}
+
+function isAnalysisActive() {
+  return state.analysis && ["queued", "running"].includes(state.analysis.lifecycle);
+}
+
+function isNearBottom(element) {
+  return element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+}
+
 function showToast(message, isError = false) {
-  elements.toast.textContent = message;
+  const activeDialog = document.querySelector("dialog[open]");
+  const target = activeDialog?.querySelector("form") || document.body;
+  if (activeDialog) {
+    const introduction = target.querySelector(".dialog-intro");
+    if (introduction) introduction.after(elements.toast);
+    else target.prepend(elements.toast);
+  } else {
+    target.append(elements.toast);
+  }
+  elements.toast.setAttribute("role", isError ? "alert" : "status");
+  elements.toast.textContent = `${isError ? "Error" : "Success"}: ${message}`;
   elements.toast.className = `toast visible${isError ? " error" : ""}`;
+  if (activeDialog) elements.toast.scrollIntoView({block: "nearest"});
   window.clearTimeout(showToast.timer);
-  showToast.timer = window.setTimeout(() => { elements.toast.className = "toast"; }, 3500);
+  showToast.timer = window.setTimeout(hideToast, 4500);
+}
+
+function hideToast() {
+  window.clearTimeout(showToast.timer);
+  elements.toast.className = "toast";
+  elements.toast.textContent = "";
+  if (elements.toast.parentElement !== document.body) document.body.append(elements.toast);
 }
 
 function node(tag, className = "", text = null) {

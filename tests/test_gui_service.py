@@ -4,8 +4,9 @@ from pathlib import Path
 import pytest
 
 from cve_agent.application import ClassificationApplication
-from cve_agent.config import non_secret_settings
+from cve_agent.config import load_settings, non_secret_settings
 from cve_agent.gui_config import GlobalGuiSettings, GlobalSettingsStore, GuiConfigurationError
+from cve_agent.gui_paths import GuiPathPolicy
 from cve_agent.gui_service import GuiService, normalize_cve_id
 from cve_agent.models import CVERecord, ClassificationResult, Evidence, LabelClassification
 from cve_agent.persistence import Database
@@ -37,12 +38,26 @@ class Classifier:
 
 
 def service(tmp_path):
-    config = Path("config.example.toml").resolve()
-    taxonomy = Path("fixtures/flat_taxonomy.json").resolve()
-    database = tmp_path / "gui.sqlite3"
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    taxonomy = fixtures / "flat_taxonomy.json"
+    taxonomy.write_text(
+        Path("fixtures/flat_taxonomy.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    policy = GuiPathPolicy(tmp_path)
+    policy.prepare_runtime_directories()
+    config = tmp_path / "config.gui.toml"
+    template = Path("config.example.toml").read_text(encoding="utf-8")
+    config.write_text(
+        template.replace("[runtime]\n", "[runtime]\n# keep this GUI-only option\nenable_thinking = true\n", 1),
+        encoding="utf-8",
+    )
+    database = tmp_path / ".data" / "gui.sqlite3"
     store = GlobalSettingsStore(
-        tmp_path / "gui-settings.json",
+        tmp_path / ".data" / "gui-settings.json",
         GlobalGuiSettings(database, config, taxonomy),
+        policy,
     )
 
     def factory(settings):
@@ -64,7 +79,6 @@ def test_service_runs_persists_progress_and_reuses_exact_cache(tmp_path):
         "cve_id": "cve-2024-12345",
         "configuration": {
             "taxonomy_path": defaults["taxonomy"]["path"],
-            "config_path": defaults["config_path"],
             "values": defaults["values"],
         },
     })
@@ -80,7 +94,6 @@ def test_service_runs_persists_progress_and_reuses_exact_cache(tmp_path):
         "cve_id": "CVE-2024-12345",
         "configuration": {
             "taxonomy_path": defaults["taxonomy"]["path"],
-            "config_path": defaults["config_path"],
             "values": defaults["values"],
         },
     })
@@ -95,6 +108,96 @@ def test_service_rejects_invalid_cve_and_secret_overrides(tmp_path):
         gui.start_analysis({"cve_id": "not-a-cve"})
     with pytest.raises(GuiConfigurationError, match="unknown chat configuration"):
         gui.start_analysis({"cve_id": "CVE-2024-1234", "configuration": {"values": {"api_key": "secret"}}})
+    with pytest.raises(GuiConfigurationError, match="unknown analysis configuration"):
+        gui.start_analysis({
+            "cve_id": "CVE-2024-1234",
+            "configuration": {"config_path": "/tmp/attacker.toml"},
+        })
+    with pytest.raises(GuiConfigurationError, match="CVE ID"):
+        gui.start_analysis({"cve_id": "CVE-2024-" + "1" * 100})
+
+
+def test_service_rejects_taxonomy_and_cache_path_escapes(tmp_path):
+    gui = service(tmp_path)
+    defaults = gui.defaults()
+    outside_taxonomy = tmp_path / "outside.json"
+    outside_taxonomy.write_text('{"labels": []}', encoding="utf-8")
+
+    with pytest.raises(GuiConfigurationError, match="inside fixtures"):
+        gui.update_analysis_options({
+            "taxonomy_path": str(outside_taxonomy),
+            "values": defaults["values"],
+        })
+
+    escaped_values = dict(defaults["values"])
+    escaped_values["cache_dir"] = str(tmp_path / "outside-cache")
+    with pytest.raises(GuiConfigurationError, match="unknown chat configuration"):
+        gui.update_analysis_options({
+            "taxonomy_path": defaults["taxonomy"]["path"],
+            "values": escaped_values,
+        })
+
+
+def test_service_validates_and_persists_gui_options_without_touching_unknown_toml(tmp_path):
+    gui = service(tmp_path)
+    defaults = gui.defaults()
+    config_path = gui.settings_store.get().default_config_path
+    original = config_path.read_text(encoding="utf-8")
+    values = dict(defaults["values"])
+    values["temperature"] = 0.4
+
+    updated = gui.update_analysis_options({
+        "taxonomy_path": defaults["taxonomy"]["path"],
+        "values": values,
+    })
+
+    persisted = config_path.read_text(encoding="utf-8")
+    assert updated["values"]["temperature"] == 0.4
+    assert updated["taxonomy"]["hierarchical"] is False
+    assert "# keep this GUI-only option" in persisted
+    assert "enable_thinking = true" in persisted
+    assert load_settings(config_path).temperature == 0.4
+
+    invalid_values = dict(updated["values"])
+    invalid_values["temperature"] = 3
+    with pytest.raises(GuiConfigurationError, match="temperature"):
+        gui.update_analysis_options({
+            "taxonomy_path": defaults["taxonomy"]["path"],
+            "values": invalid_values,
+        })
+    assert config_path.read_text(encoding="utf-8") == persisted
+    assert original != persisted
+
+
+def test_global_settings_keep_the_gui_configuration_fixed(tmp_path):
+    gui = service(tmp_path)
+    taxonomy = tmp_path / "fixtures" / "flat_taxonomy.json"
+    gui_config = tmp_path / "config.gui.toml"
+    gui_original = gui_config.read_text(encoding="utf-8")
+
+    updated = gui.update_global_settings({
+        "database_path": str(tmp_path / ".data" / "history.sqlite3"),
+        "default_taxonomy_path": str(taxonomy),
+    })
+
+    assert updated["default_config_path"] == str(gui_config)
+    assert gui_config.read_text(encoding="utf-8") == gui_original
+    with pytest.raises(GuiConfigurationError, match="unknown global setting"):
+        gui.update_global_settings({
+            "database_path": updated["database_path"],
+            "default_taxonomy_path": str(taxonomy),
+            "default_config_path": str(tmp_path / "other.toml"),
+        })
+
+
+def test_service_lists_only_scoped_path_choices(tmp_path):
+    gui = service(tmp_path)
+
+    options = gui.path_options()
+
+    assert options["configuration"] == {"prefix": "./", "name": "config.gui.toml"}
+    assert options["taxonomies"][0]["value"] == "fixtures/flat_taxonomy.json"
+    assert options["databases"][0]["value"] == ".data/gui.sqlite3"
 
 
 def test_normalize_cve_id_is_case_insensitive_but_strict():

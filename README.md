@@ -143,18 +143,39 @@ uv run cve-agent-gui \
   --taxonomy fixtures/hybrid_taxonomy.json
 ```
 
+Run the GUI from the project root. On first use, `--config` is only the initialization source:
+the GUI copies it to the ignored root-level `config.gui.toml`. Subsequent GUI edits are validated
+and written atomically only to that dedicated file; the CLI's `config.toml` is never modified.
+Comments and unsupported provider-specific keys are preserved. Existing GUI state that still
+points at the initialization source is moved to the GUI-owned file automatically.
+
 The command starts a server on `http://127.0.0.1:8765` and opens it in the default browser.
 Use `--no-browser` or `--port` to change that startup behavior. The server is deliberately
-hard-bound to loopback and rejects non-local Host headers: analysis history can contain exact
-vulnerability evidence, and this focused interface is never intended for remote access.
+hard-bound to loopback and rejects non-local Host headers, cross-origin mutations, non-JSON
+mutations, and oversized requests: analysis history can contain exact vulnerability evidence,
+and this focused interface is never intended for remote access.
 
-The GUI has a persisted-CVE sidebar, a central chat and live investigation trace, and an active
-configuration sidebar. Entering one CVE ID starts the existing pipeline. When classification
-finishes, each selected label shows its confidence and explanation; its exact application-owned
-quotation is expandable and its canonical source URL is directly clickable.
+The GUI has a scrollable persisted-CVE sidebar, a central chat and live investigation trace,
+and a separately scrollable active-configuration sidebar. Enter a CVE ID directly on the home
+screen to start the existing pipeline. Selecting a stored CVE opens its chat from the beginning;
+live progress follows the latest event only while the reader remains near the bottom. When
+classification finishes, each selected label shows its confidence and explanation; its exact
+application-owned quotation is expandable and its canonical source URL is directly clickable.
 
-Global settings hold the SQLite workspace path plus default TOML and taxonomy paths. The gear
-inside the message composer edits the complete non-secret configuration for the next analysis.
+Global settings use project-scoped file selectors rather than arbitrary paths. The interface
+shows only the fixed relative prefixes: taxonomies are selected below `fixtures/`, SQLite
+databases below `.data/`, the GUI state stays below `.data/`, the web cache stays below
+`.cache/`, and the configuration is fixed at `./config.gui.toml`. A new SQLite filename may be
+created from the selector. Canonical-path checks reject parent traversal, wrong extensions,
+missing parents, and symbolic-link escapes before any file is read or written.
+
+Pressing Enter saves global settings just like the Save button, and validation errors remain
+visible without resizing the open dialog. Analysis options are opened from the Active snapshot
+sidebar rather than from the CVE input. Saving options first validates the complete effective
+configuration and changes no file if validation fails. Numeric controls expose their supported
+ranges, enumerated values use fixed choices, hierarchical strategy controls are absent for flat
+taxonomies, pruning is hidden for exhaustive scans, and web-provider-specific controls are
+hidden when web research is disabled.
 Every completed chat keeps an immutable snapshot of its taxonomy path, fingerprint, hierarchy
 policy, and effective settings. A new chat inherits the most recently used GUI snapshot (or the
 currently selected chat), while edits never retroactively alter an existing result. API keys

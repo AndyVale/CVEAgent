@@ -9,10 +9,10 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand" aria-label="CVE Agent">
+    <button id="homeButton" class="brand" type="button" title="Start a new analysis" aria-label="CVE Agent home">
       <span class="brand-mark">C</span>
       <span>CVE Agent</span>
-    </div>
+    </button>
     <div class="top-context">
       <span id="topTaxonomy" class="context-chip">No taxonomy selected</span>
       <span id="topStatus" class="status-chip status-ready"><i></i>Ready</span>
@@ -29,7 +29,6 @@
           <p class="eyebrow">Workspace</p>
           <h1>Analyses</h1>
         </div>
-        <button id="newAnalysisButton" class="square-button" type="button" title="New analysis" aria-label="New analysis">+</button>
       </div>
       <div id="historyList" class="history-list" aria-live="polite"></div>
       <div class="history-footer">
@@ -41,9 +40,12 @@
 
     <section class="chat-panel">
       <div class="chat-heading">
-        <div>
-          <p id="chatKicker" class="eyebrow">New analysis</p>
-          <h2 id="chatTitle">Investigate a CVE</h2>
+        <div class="chat-heading-main">
+          <button id="backButton" class="back-button hidden" type="button" aria-label="Back to new analysis">←</button>
+          <div class="chat-heading-copy">
+            <p id="chatKicker" class="eyebrow">New analysis</p>
+            <h2 id="chatTitle">Start a new CVE analysis</h2>
+          </div>
         </div>
         <span id="chatStatus" class="result-status hidden"></span>
       </div>
@@ -51,25 +53,35 @@
       <div id="chatViewport" class="chat-viewport">
         <div id="welcomeState" class="welcome-state">
           <div class="welcome-symbol">CVE</div>
-          <h2>Evidence-first vulnerability analysis</h2>
-          <p>Enter one CVE ID. The investigator will research it, record verifiable evidence, and evaluate the active taxonomy.</p>
+          <h2>Create a new vulnerability analysis</h2>
+          <p>Enter one CVE ID to start a new investigation. The agent will research it, record verifiable evidence, and evaluate the active taxonomy.</p>
           <div class="welcome-hints">
             <span>Web-backed research</span><span>Canonical quotations</span><span>Taxonomy-aware classification</span>
           </div>
+          <form id="welcomeComposer" class="composer welcome-composer">
+            <label class="composer-input">
+              <span class="sr-only">CVE ID</span>
+              <input id="welcomeCveInput" name="cve_id" autocomplete="off" spellcheck="false" placeholder="CVE ID for the new analysis, for example CVE-2021-44228" required autofocus>
+            </label>
+            <button id="welcomeSubmitButton" class="send-button" type="submit"><span>Create analysis</span><span aria-hidden="true">↑</span></button>
+          </form>
+          <p class="welcome-note">The analysis will use the taxonomy and options shown on the right.</p>
         </div>
         <div id="messageList" class="message-list"></div>
         <div id="resultReport" class="result-report"></div>
       </div>
 
-      <form id="composer" class="composer">
-        <button id="chatOptionsButton" class="composer-option" type="button" title="Options for the next analysis" aria-label="Analysis options">⚙</button>
-        <label class="composer-input">
-          <span class="sr-only">CVE ID</span>
-          <input id="cveInput" name="cve_id" autocomplete="off" spellcheck="false" placeholder="Enter a CVE ID, for example CVE-2021-44228" required>
-        </label>
-        <button id="submitButton" class="send-button" type="submit"><span>Analyze</span><span aria-hidden="true">↑</span></button>
-      </form>
-      <p id="composerNote" class="composer-note">New analyses inherit the options shown on the right.</p>
+      <div id="nextAnalysisPanel" class="next-analysis-panel hidden">
+        <p class="next-analysis-title">Start another analysis</p>
+        <form id="composer" class="composer">
+          <label class="composer-input">
+            <span class="sr-only">CVE ID for a new analysis</span>
+            <input id="cveInput" name="cve_id" autocomplete="off" spellcheck="false" placeholder="CVE ID for a new analysis" required>
+          </label>
+          <button id="submitButton" class="send-button" type="submit"><span>Start new analysis</span><span aria-hidden="true">↑</span></button>
+        </form>
+        <p id="composerNote" class="composer-note">The stored CVE remains unchanged; the new analysis inherits its configuration.</p>
+      </div>
     </section>
 
     <aside class="config-panel panel-border">
@@ -78,48 +90,55 @@
           <p class="eyebrow">Active snapshot</p>
           <h2>Configuration</h2>
         </div>
+        <button id="configurationOptionsButton" class="icon-button labeled" type="button" title="Options for the next analysis" aria-label="Analysis options"><span>⚙</span><span>Options</span></button>
       </div>
       <div id="configurationView" class="configuration-view"></div>
     </aside>
   </main>
 
   <dialog id="globalSettingsDialog" class="settings-dialog">
-    <form id="globalSettingsForm" method="dialog">
+    <form id="globalSettingsForm">
       <div class="dialog-heading">
         <div><p class="eyebrow">Application</p><h2>Global settings</h2></div>
-        <button class="dialog-close" value="cancel" aria-label="Close" type="submit" formnovalidate>×</button>
+        <button class="dialog-close" data-dialog-close aria-label="Close" type="button">×</button>
       </div>
-      <p class="dialog-intro">These paths apply to the whole GUI. Changing the database switches the history workspace.</p>
-      <label>SQLite database path<input name="database_path" required></label>
-      <label>Default TOML configuration<input name="default_config_path" required></label>
-      <label>Default taxonomy JSON<input name="default_taxonomy_path" required></label>
+      <p class="dialog-intro">These paths apply to the whole GUI. Configuration stays in the project root, taxonomies in fixtures/, and SQLite data in .data/.</p>
+      <label>SQLite database
+        <span class="scoped-picker"><span class="path-prefix">.data/</span><select id="globalDatabaseSelect" name="database_path" required></select></span>
+      </label>
+      <label id="newDatabaseField" class="hidden">New SQLite filename
+        <span class="scoped-picker"><span class="path-prefix">.data/</span><input id="newDatabaseName" autocomplete="off" pattern="[A-Za-z0-9][A-Za-z0-9._-]*\.(db|sqlite|sqlite3)" title="Use a filename ending in .db, .sqlite, or .sqlite3"></span>
+      </label>
+      <div class="fixed-path-field"><span>GUI TOML configuration</span><span class="scoped-picker readonly"><span class="path-prefix">./</span><code id="guiConfigName">config.gui.toml</code></span></div>
+      <label>Default taxonomy JSON
+        <span class="scoped-picker"><span class="path-prefix">fixtures/</span><select id="globalTaxonomySelect" name="default_taxonomy_path" required></select></span>
+      </label>
       <div class="dialog-actions">
-        <button class="secondary-button" value="cancel" type="submit" formnovalidate>Cancel</button>
-        <button id="saveGlobalButton" class="primary-button" value="default" type="button">Save settings</button>
+        <button class="secondary-button" data-dialog-close type="button">Cancel</button>
+        <button id="saveGlobalButton" class="primary-button" type="submit">Save settings</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="chatSettingsDialog" class="settings-dialog wide">
-    <form id="chatSettingsForm" method="dialog">
+    <form id="chatSettingsForm">
       <div class="dialog-heading">
         <div><p class="eyebrow">Next run</p><h2>Analysis options</h2></div>
-        <button class="dialog-close" value="cancel" aria-label="Close" type="submit" formnovalidate>×</button>
+        <button class="dialog-close" data-dialog-close aria-label="Close" type="button">×</button>
       </div>
-      <p class="dialog-intro">Options are captured when an analysis begins. Previously stored chats and results never change.</p>
-      <div class="path-fields">
-        <label>Taxonomy JSON<input name="taxonomy_path" required></label>
-        <label>Base TOML configuration<input name="config_path" required></label>
-      </div>
+      <p class="dialog-intro">Valid options are saved to the GUI configuration file. Previously stored chats and results never change.</p>
+      <label class="taxonomy-path-field">Taxonomy JSON
+        <span class="scoped-picker"><span class="path-prefix">fixtures/</span><select id="analysisTaxonomySelect" name="taxonomy_path" required></select></span>
+      </label>
       <div id="chatSettingsFields" class="settings-groups"></div>
       <div class="dialog-actions sticky-actions">
-        <button class="secondary-button" value="cancel" type="submit" formnovalidate>Cancel</button>
-        <button id="saveChatSettingsButton" class="primary-button" value="default" type="button">Use for next analysis</button>
+        <button class="secondary-button" data-dialog-close type="button">Cancel</button>
+        <button id="saveChatSettingsButton" class="primary-button" type="submit">Validate and save</button>
       </div>
     </form>
   </dialog>
 
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="toast" class="toast" role="status" aria-live="assertive" aria-atomic="true"></div>
   <script src="/assets/app.js" defer></script>
 </body>
 </html>
