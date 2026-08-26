@@ -42,6 +42,15 @@ def test_verbose_formatter_uses_semantic_badges_and_colors():
     assert "\033[31m" in error and "ERROR" in error
 
 
+def test_verbose_formatter_ignores_missing_or_invalid_external_tones():
+    formatter = VerboseFormatter(color=False)
+
+    assert "INFO" in formatter.format(record("missing", tone=None))
+    assert "INFO" in formatter.format(record("unknown", tone="provider-defined"))
+    assert "WARNING" in formatter.format(record("warning", level=logging.WARNING, tone=None))
+    assert "ERROR" in formatter.format(record("error", level=logging.ERROR, tone=[]))
+
+
 def test_color_support_requires_a_tty_and_honors_no_color(monkeypatch):
     monkeypatch.delenv("NO_COLOR", raising=False)
     assert supports_color(TerminalBuffer())

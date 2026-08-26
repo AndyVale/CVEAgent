@@ -2,9 +2,17 @@
 
 ## Current work
 
-An uncommitted GUI follow-up fixes navigation, overflow, and settings feedback. The separate
-new-analysis button is removed; the home view now has the primary CVE input, stored chats expose
-an explicit Back button, and the secondary input is labelled as starting another analysis.
+The verbose formatter no longer constructs `LogTone` from missing or invalid third-party log
+metadata. The previous exception-driven fallback worked during normal execution but caused
+debuggers configured for raised exceptions to pause on every ordinary record because its absent
+tone appeared as `None`. Direct value lookup now falls back to log severity without raising.
+Tests cover `None`, unknown strings, and unhashable values. An offline direct CLI orchestration
+run with verbose logging exercised the original startup line and completed with exit 0.
+
+The GUI follow-up committed as `54af3eb` fixes navigation, overflow, and settings feedback. The
+separate new-analysis button is removed; the home view now has the primary CVE input, stored
+chats expose an explicit Back button, and the secondary input is labelled as starting another
+analysis.
 Analysis options moved from both composers to the Active snapshot sidebar. History, chat, and
 configuration panes now have independent bounded scrolling, long evidence content cannot widen
 the shared grid, stored chats reopen at the top, and stale history responses/scroll callbacks

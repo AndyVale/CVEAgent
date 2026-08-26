@@ -25,6 +25,7 @@ _COLORS = {
     LogTone.WARNING: "\033[33m",
     LogTone.ERROR: "\033[31m",
 }
+_TONES_BY_VALUE = {tone.value: tone for tone in LogTone}
 _RESET = "\033[0m"
 
 
@@ -66,10 +67,10 @@ class VerboseFormatter(logging.Formatter):
     @staticmethod
     def _tone(record: logging.LogRecord) -> LogTone:
         configured = getattr(record, "tone", None)
-        try:
-            return LogTone(configured)
-        except (TypeError, ValueError):
-            pass
+        if isinstance(configured, LogTone):
+            return configured
+        if isinstance(configured, str) and configured in _TONES_BY_VALUE:
+            return _TONES_BY_VALUE[configured]
         if record.levelno >= logging.ERROR:
             return LogTone.ERROR
         if record.levelno >= logging.WARNING:
