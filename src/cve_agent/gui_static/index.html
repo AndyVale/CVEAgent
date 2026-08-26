@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>CVE Agent</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" aria-label="CVE Agent">
+      <span class="brand-mark">C</span>
+      <span>CVE Agent</span>
+    </div>
+    <div class="top-context">
+      <span id="topTaxonomy" class="context-chip">No taxonomy selected</span>
+      <span id="topStatus" class="status-chip status-ready"><i></i>Ready</span>
+      <button id="globalSettingsButton" class="icon-button labeled" type="button" title="Global application settings">
+        <span aria-hidden="true">⚙</span><span>Global settings</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <aside class="history-panel panel-border">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Workspace</p>
+          <h1>Analyses</h1>
+        </div>
+        <button id="newAnalysisButton" class="square-button" type="button" title="New analysis" aria-label="New analysis">+</button>
+      </div>
+      <div id="historyList" class="history-list" aria-live="polite"></div>
+      <div class="history-footer">
+        <span class="footer-label">SQLite database</span>
+        <span id="databasePath" class="path-value">Loading…</span>
+        <button id="footerSettingsButton" class="text-button" type="button">Application options</button>
+      </div>
+    </aside>
+
+    <section class="chat-panel">
+      <div class="chat-heading">
+        <div>
+          <p id="chatKicker" class="eyebrow">New analysis</p>
+          <h2 id="chatTitle">Investigate a CVE</h2>
+        </div>
+        <span id="chatStatus" class="result-status hidden"></span>
+      </div>
+
+      <div id="chatViewport" class="chat-viewport">
+        <div id="welcomeState" class="welcome-state">
+          <div class="welcome-symbol">CVE</div>
+          <h2>Evidence-first vulnerability analysis</h2>
+          <p>Enter one CVE ID. The investigator will research it, record verifiable evidence, and evaluate the active taxonomy.</p>
+          <div class="welcome-hints">
+            <span>Web-backed research</span><span>Canonical quotations</span><span>Taxonomy-aware classification</span>
+          </div>
+        </div>
+        <div id="messageList" class="message-list"></div>
+        <div id="resultReport" class="result-report"></div>
+      </div>
+
+      <form id="composer" class="composer">
+        <button id="chatOptionsButton" class="composer-option" type="button" title="Options for the next analysis" aria-label="Analysis options">⚙</button>
+        <label class="composer-input">
+          <span class="sr-only">CVE ID</span>
+          <input id="cveInput" name="cve_id" autocomplete="off" spellcheck="false" placeholder="Enter a CVE ID, for example CVE-2021-44228" required>
+        </label>
+        <button id="submitButton" class="send-button" type="submit"><span>Analyze</span><span aria-hidden="true">↑</span></button>
+      </form>
+      <p id="composerNote" class="composer-note">New analyses inherit the options shown on the right.</p>
+    </section>
+
+    <aside class="config-panel panel-border">
+      <div class="panel-heading compact">
+        <div>
+          <p class="eyebrow">Active snapshot</p>
+          <h2>Configuration</h2>
+        </div>
+      </div>
+      <div id="configurationView" class="configuration-view"></div>
+    </aside>
+  </main>
+
+  <dialog id="globalSettingsDialog" class="settings-dialog">
+    <form id="globalSettingsForm" method="dialog">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Application</p><h2>Global settings</h2></div>
+        <button class="dialog-close" value="cancel" aria-label="Close" type="submit" formnovalidate>×</button>
+      </div>
+      <p class="dialog-intro">These paths apply to the whole GUI. Changing the database switches the history workspace.</p>
+      <label>SQLite database path<input name="database_path" required></label>
+      <label>Default TOML configuration<input name="default_config_path" required></label>
+      <label>Default taxonomy JSON<input name="default_taxonomy_path" required></label>
+      <div class="dialog-actions">
+        <button class="secondary-button" value="cancel" type="submit" formnovalidate>Cancel</button>
+        <button id="saveGlobalButton" class="primary-button" value="default" type="button">Save settings</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="chatSettingsDialog" class="settings-dialog wide">
+    <form id="chatSettingsForm" method="dialog">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Next run</p><h2>Analysis options</h2></div>
+        <button class="dialog-close" value="cancel" aria-label="Close" type="submit" formnovalidate>×</button>
+      </div>
+      <p class="dialog-intro">Options are captured when an analysis begins. Previously stored chats and results never change.</p>
+      <div class="path-fields">
+        <label>Taxonomy JSON<input name="taxonomy_path" required></label>
+        <label>Base TOML configuration<input name="config_path" required></label>
+      </div>
+      <div id="chatSettingsFields" class="settings-groups"></div>
+      <div class="dialog-actions sticky-actions">
+        <button class="secondary-button" value="cancel" type="submit" formnovalidate>Cancel</button>
+        <button id="saveChatSettingsButton" class="primary-button" value="default" type="button">Use for next analysis</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
