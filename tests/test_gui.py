@@ -115,6 +115,31 @@ def test_gui_panels_scroll_independently_and_history_views_reset_scroll():
     assert '.configuration-view { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto;' in styles
 
 
+def test_gui_renders_accessible_human_readable_evidence_chains():
+    gui = client()
+    script = gui.get("/assets/app.js").get_data(as_text=True)
+    styles = gui.get("/assets/styles.css").get_data(as_text=True)
+
+    assert 'renderLabel(label, result.provenance)' in script
+    assert '"NVD reference"' in script
+    assert '"Web search"' in script
+    assert '"NVD record"' in script
+    assert '"Supporting quote"' in script
+    assert 'sourceButton.title = sourceUrl' in script
+    assert 'detail.replaceChildren(renderer())' in script
+    assert 'renderOriginDetail(origin)' in script
+    assert 'renderSourceDetail(chain)' in script
+    assert 'renderQuoteDetail(evidence, chain)' in script
+    assert '"Surrounding context"' in script
+    assert '"Investigation findings supported by this quote"' in script
+    assert '"The page does not explicitly mention the target CVE."' in script
+    assert '"Source chain unavailable for this analysis."' in script
+    assert 'innerHTML' not in script
+    assert '.evidence-chain-scroll { max-width: 100%; overflow-x: auto;' in styles
+    assert '.chain-node.active {' in styles
+    assert 'button:focus-visible' in styles
+
+
 def test_gui_json_routes_delegate_to_service():
     gui = client()
 

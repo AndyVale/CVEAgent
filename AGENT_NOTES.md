@@ -2,6 +2,18 @@
 
 ## Current work
 
+The GUI now renders the public provenance catalog as a human-readable evidence chain inside
+each expanded quotation. Discovery nodes (`NVD reference`, `Web search`, or `Direct source`),
+the canonical hostname, and `Supporting quote` are keyboard-accessible buttons backed by one
+inline detail panel. Discovery details show queries or NVD tags; source details show safe full
+URLs, redirects, cache/fetch state, and humanized CVE-association diagnostics; quotation details
+show exact context and accepted findings. Internal provenance IDs remain join keys only and are
+never interface labels. Legacy analyses retain their existing quote/link with a quiet unavailable
+notice. Focused GUI/provenance tests pass. Local browser verification against the persisted
+`CVE-2020-11022` result confirmed the NVD and NVD-reference/vendor chains, node switching, full
+URL tooltip, readable warning, context/findings, no console errors, and no page overflow at
+1280-, 800-, and 500-pixel widths
+
 An evidence-provenance refactor is implemented and ready for review. A versioned, harness-owned
 ledger now links the target CVE, bounded NVD/search candidates, every fetch attempt and redirect,
 the complete bounded passages shown to the model, selected evidence, accepted findings, and

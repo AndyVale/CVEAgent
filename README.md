@@ -162,6 +162,13 @@ screen to start the existing pipeline. Selecting a stored CVE opens its chat fro
 live progress follows the latest event only while the reader remains near the bottom. When
 classification finishes, each selected label shows its confidence and explanation; its exact
 application-owned quotation is expandable and its canonical source URL is directly clickable.
+New analyses also show a human-readable evidence chain such as `NVD reference → vendor page →
+Supporting quote`. Selecting a discovery, source, or quotation node reveals the search or NVD
+origin, redirects and CVE-association checks, or the exact surrounding context and supported
+investigation findings. Full resolved URLs appear on the source node and in its detail panel;
+internal document, evidence, fetch, and event identifiers are never presented as interface
+labels. Analyses created before provenance tracking retain their quotation and source link and
+report that the source chain is unavailable.
 
 Global settings use project-scoped file selectors rather than arbitrary paths. The interface
 shows only the fixed relative prefixes: taxonomies are selected below `fixtures/`, SQLite
