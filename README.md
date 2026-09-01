@@ -207,7 +207,8 @@ Machine-local GUI defaults live in the ignored `.data/cve-agent-gui.json` file b
 `fixtures/flat_expected-classification.json` contains 14 conservatively selected CVEs covering
 every label in `fixtures/flat_taxonomy.json`. Each case records expected label IDs, a short
 mapping rationale, and the primary or NVD sources used to curate it. The benchmark also contains
-a taxonomy fingerprint, so it cannot accidentally be evaluated against another taxonomy.
+a taxonomy fingerprint, so it cannot accidentally be evaluated against another taxonomy. The
+`cases` array is the single authoritative CVE list; taxonomy files carry stable display names.
 
 `fixtures/hierarchical_taxonomy.json` provides a 27-label, five-root tree using the
 `most_specific` policy. Its corresponding

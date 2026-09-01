@@ -1,23 +1,7 @@
 {
   "schema_version": 1,
   "taxonomy": "flat_taxonomy.json",
-  "taxonomy_sha256": "1af26fe1b8194aaba69ab7b859f90743370f3910e0c540b2fa6ebef79f892d9a",
-  "cves": [
-    "CVE-2020-11022",
-    "CVE-2023-34362",
-    "CVE-2024-22424",
-    "CVE-2021-26855",
-    "CVE-2021-41773",
-    "CVE-2014-6271",
-    "CVE-2017-9841",
-    "CVE-2017-9805",
-    "CVE-2015-7547",
-    "CVE-2014-0160",
-    "CVE-2019-5786",
-    "CVE-2023-22518",
-    "CVE-2023-44487",
-    "CVE-2018-9206"
-  ],
+  "taxonomy_sha256": "b42687ebe02101e6b575f03530bdba7b3e63b2d009bbd2e9348a976be516f5e8",
   "cases": [
     {
       "cve_id": "CVE-2020-11022",

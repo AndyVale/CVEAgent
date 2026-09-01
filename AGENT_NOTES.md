@@ -4,15 +4,19 @@
 
 The approved whole-repository refactor is in progress on `main`. The first unit is committed as
 `ccec8e8 refactor: centralize input validation and fingerprints`; its 189 offline tests and live
-CLI/GUI checks passed. The second unit replaces schema version 2 and GUI-specific tables with one
-schema-version-3 repository: immutable run snapshots, lightweight analyses, checkpoint/result
-payloads, sequenced events, and separate provenance records. Exact SQL cache lookup, stale-run
+CLI/GUI checks passed. The second unit is committed as
+`5213eaf refactor: unify analysis persistence`; its schema-version-3 repository provides immutable
+run snapshots, lightweight analyses, checkpoint/result payloads, sequenced events, and separate
+provenance records. Exact SQL cache lookup, stale-run
 recovery, immutable taxonomy history, saved fresh-session defaults, and copied old-analysis
 defaults are covered. The complete suite passes 196 tests plus compilation and whitespace
 checks. Fresh-schema online tests exercised flat and hierarchical CVEs, successful, partial,
 failed, rate-limited, retried, and unavailable-document paths; every terminal state and immutable
-snapshot was stored correctly. Fixture accuracy remained diagnostic only. Credentials remained
-process-only. Next: commit the persistence unit, then normalize fixture metadata separately.
+snapshot was stored correctly. Fixture accuracy remained diagnostic only. The third unit adds
+stable taxonomy names, updates their benchmark fingerprints, and removes duplicated top-level CVE
+lists from expected results. A renamed flat fixture produced a real cache miss, recovered from a
+transient model error, and completed. Credentials remained process-only. Next: commit the fixture
+unit as `test: normalize benchmark fixture metadata`, then isolate web retrieval and trust policy.
 
 ## Current work
 

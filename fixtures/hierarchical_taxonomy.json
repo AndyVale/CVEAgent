@@ -1,4 +1,5 @@
 {
+  "name": "Hierarchical Vulnerability Mechanisms",
   "hierarchy_policy": "most_specific",
   "labels": [
     {

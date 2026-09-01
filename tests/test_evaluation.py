@@ -110,6 +110,7 @@ def test_curated_flat_fixture_matches_and_covers_the_flat_taxonomy():
     benchmark = load_benchmark(FIXTURES / "flat_expected-classification.json", selected_taxonomy)
     expected_labels = {label for case in benchmark.cases for label in case.labels}
 
+    assert selected_taxonomy.name == "Flat Vulnerability Mechanisms"
     assert len(benchmark.cases) == 14
     assert expected_labels == set(selected_taxonomy.by_id)
     assert all(case.rationale and case.sources for case in benchmark.cases)
@@ -122,6 +123,7 @@ def test_hierarchical_fixture_matches_the_tree_and_reclassifies_flat_cases():
     benchmark = load_benchmark(FIXTURES / "hierarchical_expected-classification.json", selected_taxonomy)
     by_cve = {case.cve_id: case.labels for case in benchmark.cases}
 
+    assert selected_taxonomy.name == "Hierarchical Vulnerability Mechanisms"
     assert len(selected_taxonomy.labels) == 27
     assert {label.id for label in selected_taxonomy.labels if label.parent is None} == {
         "InputValidation", "AccessControl", "Memory", "ResourceManagement", "Misconfiguration",
@@ -145,6 +147,7 @@ def test_hybrid_fixture_is_large_deep_and_matches_the_curated_cases():
     roots = [label for label in selected_taxonomy.labels if label.parent is None]
     by_cve = {case.cve_id: case.labels for case in benchmark.cases}
 
+    assert selected_taxonomy.name == "Adaptive Vulnerability Mechanisms"
     assert len(selected_taxonomy.labels) == 126
     assert len(roots) == 6
     assert benchmark.cve_ids == hierarchical_benchmark.cve_ids
@@ -165,6 +168,7 @@ def test_fixture_taxonomy_and_benchmark_ids_are_not_hard_coded_in_production():
     ):
         taxonomy_payload = json.loads((FIXTURES / taxonomy_name).read_text(encoding="utf-8"))
         benchmark_payload = json.loads((FIXTURES / benchmark_name).read_text(encoding="utf-8"))
+        assert "cves" not in benchmark_payload
         fixture_values.update(item["id"] for item in taxonomy_payload["labels"])
         fixture_values.update(item["cve_id"] for item in benchmark_payload["cases"])
     production = "\n".join(path.read_text(encoding="utf-8") for path in (FIXTURES.parent / "src" / "cve_agent").glob("*.py"))
