@@ -1,5 +1,18 @@
 # Agent Notes
 
+## Active refactor
+
+The approved whole-repository refactor is in progress on `main`, split into reasonably large
+logical commits that require explicit approval before creation. The baseline was 166 passing
+tests. The first unit now centralizes canonical JSON fingerprints, strict CVE normalization,
+taxonomy parsing/metadata/indexes, and exact finite configuration parsing; it also fixes the
+unreachable GUI taxonomy-shape helper and verifies NVD response IDs. The complete offline suite
+passes 189 tests, as do bytecode compilation and whitespace checks. A live CLI run for
+`CVE-2014-0160` completed in 17.3 seconds through NVD, Tavily/cache, and the configured model,
+using 16,782 tokens and persisting a classified result. A loopback GUI launch returned HTTP 200
+for health and history, then was stopped. Credentials remained process-only. Next: review this
+diff and request approval for `refactor: centralize input validation and fingerprints`.
+
 ## Current work
 
 The GUI now renders the public provenance catalog as a human-readable evidence chain inside

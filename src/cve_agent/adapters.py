@@ -14,6 +14,7 @@ import httpx
 import trafilatura
 
 from cve_agent.config import Settings
+from cve_agent.identifiers import normalize_cve_id
 from cve_agent.logging_config import safe_url
 from cve_agent.models import CVERecord, Document, Reference, SearchResult
 
@@ -45,6 +46,7 @@ class NVDClient:
         self.settings = settings
 
     def get_cve(self, cve_id: str) -> CVERecord:
+        cve_id = normalize_cve_id(cve_id)
         logger.info("[%s] NVD request started", cve_id)
         url = f"{self.settings.nvd_base_url}?{urllib.parse.urlencode({'cveId': cve_id})}"
         payload = _request_json(url, self.settings.nvd_timeout, self.settings.nvd_retry_count)
@@ -52,10 +54,16 @@ class NVDClient:
         if not vulnerabilities:
             raise LookupError(f"CVE not found: {cve_id}")
         cve = vulnerabilities[0].get("cve", {})
+        try:
+            returned_cve_id = normalize_cve_id(cve.get("id"))
+        except ValueError as exc:
+            raise LookupError("NVD returned a response without a valid CVE ID") from exc
+        if returned_cve_id != cve_id:
+            raise LookupError(f"NVD returned {returned_cve_id} for requested {cve_id}")
         descriptions = cve.get("descriptions", [])
         description = next((x.get("value", "") for x in descriptions if x.get("lang") == "en"), descriptions[0].get("value", "") if descriptions else "")
         references = tuple(Reference(x.get("url", ""), x.get("source"), tuple(x.get("tags", []))) for x in cve.get("references", []) if x.get("url"))
-        record = CVERecord(cve.get("id", cve_id), description, references, {"published": cve.get("published"), "last_modified": cve.get("lastModified"), "source_identifier": cve.get("sourceIdentifier")})
+        record = CVERecord(returned_cve_id, description, references, {"published": cve.get("published"), "last_modified": cve.get("lastModified"), "source_identifier": cve.get("sourceIdentifier")})
         logger.info("[%s] NVD request finished description_chars=%d references=%d", cve_id, len(description), len(references))
         return record
 

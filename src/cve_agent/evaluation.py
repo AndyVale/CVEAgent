@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 from cve_agent.models import ClassificationResult, ClassificationStatus
-from cve_agent.taxonomy import Taxonomy
+from cve_agent.identifiers import CVEIdentifierError, normalize_cve_id
+from cve_agent.taxonomy import Taxonomy, taxonomy_fingerprint
 
 
 class BenchmarkError(ValueError):
@@ -33,7 +33,10 @@ class Benchmark:
         return [case.cve_id for case in self.cases]
 
     def select(self, cve_ids: Iterable[str]) -> Benchmark:
-        requested = list(cve_ids)
+        try:
+            requested = [normalize_cve_id(cve_id) for cve_id in cve_ids]
+        except CVEIdentifierError as exc:
+            raise BenchmarkError(str(exc)) from exc
         if len(requested) != len(set(requested)):
             raise BenchmarkError("evaluation CVE IDs must be unique")
         by_id = {case.cve_id: case for case in self.cases}
@@ -106,11 +109,6 @@ class EvaluationReport:
         return sum(item.status in {ClassificationStatus.PARTIAL, ClassificationStatus.FAILED} for item in self.comparisons)
 
 
-def taxonomy_fingerprint(taxonomy: Taxonomy) -> str:
-    serialized = json.dumps(taxonomy.to_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(serialized.encode()).hexdigest()
-
-
 def load_benchmark(path: str | Path, taxonomy: Taxonomy) -> Benchmark:
     benchmark_path = Path(path)
     try:
@@ -131,10 +129,12 @@ def load_benchmark(path: str | Path, taxonomy: Taxonomy) -> Benchmark:
     for index, entry in enumerate(raw["cases"]):
         if not isinstance(entry, dict):
             raise BenchmarkError(f"expected case {index} must be an object")
-        cve_id = entry.get("cve_id")
+        raw_cve_id = entry.get("cve_id")
         labels = entry.get("labels")
-        if not isinstance(cve_id, str) or not cve_id.strip():
-            raise BenchmarkError(f"expected case {index} requires a non-empty cve_id")
+        try:
+            cve_id = normalize_cve_id(raw_cve_id)
+        except CVEIdentifierError as exc:
+            raise BenchmarkError(f"expected case {index} has an invalid cve_id: {raw_cve_id!r}") from exc
         if cve_id in seen_cves:
             raise BenchmarkError(f"duplicate expected CVE ID: {cve_id}")
         if not isinstance(labels, list) or any(not isinstance(label, str) or not label for label in labels):

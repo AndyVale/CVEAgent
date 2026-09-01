@@ -44,10 +44,10 @@ def test_verbose_keeps_json_on_stdout_and_logs_on_stderr(tmp_path, capsys):
     taxonomy_path.write_text(json.dumps({"labels": [{"id": "CWE-1", "name": "Example", "description": "fixture"}]}), encoding="utf-8")
     config_path = tmp_path / "config.toml"
     config_path.write_text("[storage]\ndatabase = 'results.sqlite'\n", encoding="utf-8")
-    exit_code = run(["--verbose", "--taxonomy", str(taxonomy_path), "--config", str(config_path), "CVE-1"], cve_source=Source(), web_source=Web(), classifier=Classifier())
+    exit_code = run(["--verbose", "--taxonomy", str(taxonomy_path), "--config", str(config_path), "CVE-2024-0001"], cve_source=Source(), web_source=Web(), classifier=Classifier())
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert json.loads(captured.out)[0]["cve_id"] == "CVE-1"
+    assert json.loads(captured.out)[0]["cve_id"] == "CVE-2024-0001"
     assert "\033[" not in captured.out
     assert "\033[" not in captured.err
     assert "starting investigation" in captured.err
@@ -64,7 +64,7 @@ def test_cli_request_interval_overrides_configuration(tmp_path, capsys):
     taxonomy_path.write_text(json.dumps({"labels": [{"id": "CWE-1", "name": "Example", "description": "fixture"}]}), encoding="utf-8")
     config_path = tmp_path / "config.toml"
     config_path.write_text("[runtime]\nmin_request_interval_seconds = 1\n[storage]\ndatabase = 'results.sqlite'\n", encoding="utf-8")
-    exit_code = run(["--verbose", "--llm-min-request-interval", "2.5", "--taxonomy", str(taxonomy_path), "--config", str(config_path), "CVE-1"], cve_source=Source(), web_source=Web(), classifier=Classifier())
+    exit_code = run(["--verbose", "--llm-min-request-interval", "2.5", "--taxonomy", str(taxonomy_path), "--config", str(config_path), "CVE-2024-0001"], cve_source=Source(), web_source=Web(), classifier=Classifier())
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "Min request interval" in captured.err
@@ -76,7 +76,7 @@ def test_partial_result_has_nonzero_exit_code(tmp_path, capsys):
     taxonomy_path.write_text(json.dumps({"labels": [{"id": "CWE-1", "name": "Example", "description": "fixture"}]}), encoding="utf-8")
     config_path = tmp_path / "config.toml"
     config_path.write_text("[storage]\ndatabase = 'results.sqlite'\n", encoding="utf-8")
-    exit_code = run(["--taxonomy", str(taxonomy_path), "--config", str(config_path), "CVE-1"], cve_source=Source(), web_source=Web(), classifier=PartialClassifier())
+    exit_code = run(["--taxonomy", str(taxonomy_path), "--config", str(config_path), "CVE-2024-0001"], cve_source=Source(), web_source=Web(), classifier=PartialClassifier())
     capsys.readouterr()
     assert exit_code == 2
 
@@ -90,7 +90,7 @@ def test_verbose_logging_restores_third_party_logger_levels(tmp_path, capsys):
     previous = httpx_logger.level
     httpx_logger.setLevel(logging.DEBUG)
     try:
-        assert run(["--verbose", "--taxonomy", str(taxonomy_path), "--config", str(config_path), "VULN-1"], cve_source=Source(), web_source=Web(), classifier=Classifier()) == 0
+        assert run(["--verbose", "--taxonomy", str(taxonomy_path), "--config", str(config_path), "CVE-2024-0001"], cve_source=Source(), web_source=Web(), classifier=Classifier()) == 0
         assert httpx_logger.level == logging.DEBUG
     finally:
         httpx_logger.setLevel(previous)
@@ -129,7 +129,7 @@ def test_verbose_keeps_validation_correctness_out_of_final_log(tmp_path, capsys)
     expected_path = tmp_path / "expected.json"
     expected_path.write_text(json.dumps({
         "taxonomy_sha256": taxonomy_fingerprint(load_taxonomy(taxonomy_path)),
-        "cases": [{"cve_id": "VULN-1", "labels": ["EXPECTED"]}],
+        "cases": [{"cve_id": "CVE-2024-0001", "labels": ["EXPECTED"]}],
     }), encoding="utf-8")
     config_path = tmp_path / "config.toml"
     config_path.write_text("[storage]\ndatabase = 'results.sqlite'\n", encoding="utf-8")
@@ -147,3 +147,25 @@ def test_verbose_keeps_validation_correctness_out_of_final_log(tmp_path, capsys)
     assert "COMPLETE" in captured.err
     assert "run completed successful=1 partial=0 failed=0" in captured.err
     assert "exact_matches=" not in captured.err
+
+
+def test_invalid_cve_and_unreadable_taxonomy_use_input_exit_code(tmp_path, capsys):
+    taxonomy_path = tmp_path / "taxonomy.json"
+    taxonomy_path.write_text(
+        json.dumps({"labels": [{"id": "GENERIC", "name": "Generic", "description": "fixture"}]}),
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[storage]\ndatabase = 'results.sqlite'\n", encoding="utf-8")
+
+    assert run([
+        "--taxonomy", str(taxonomy_path), "--config", str(config_path), "CVE-1",
+    ], cve_source=Source(), web_source=Web(), classifier=Classifier()) == 3
+    assert "input error" in capsys.readouterr().err
+
+    assert run([
+        "--taxonomy", str(tmp_path / "missing.json"),
+        "--config", str(config_path),
+        "CVE-2024-0001",
+    ], cve_source=Source(), web_source=Web(), classifier=Classifier()) == 3
+    assert "taxonomy error" in capsys.readouterr().err

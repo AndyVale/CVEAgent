@@ -17,7 +17,13 @@ from tomlkit import parse as parse_toml
 from tomlkit import table as toml_table
 from tomlkit.exceptions import ParseError
 
-from cve_agent.config import Settings, load_settings, validate_settings
+from cve_agent.config import (
+    Settings,
+    load_settings,
+    parse_finite_number,
+    parse_integer,
+    validate_settings,
+)
 from cve_agent.gui_paths import GuiPathError, GuiPathPolicy
 from cve_agent.strategy import ClassificationStrategy
 
@@ -380,13 +386,9 @@ def taxonomy_display_name(path: str | Path) -> str:
 def _convert_value(field: SettingField, value: Any, path_policy: GuiPathPolicy) -> Any:
     try:
         if field.kind == "integer":
-            if isinstance(value, bool):
-                raise ValueError
-            return int(value)
+            return parse_integer(value, field.name)
         if field.kind == "number":
-            if isinstance(value, bool):
-                raise ValueError
-            return float(value)
+            return parse_finite_number(value, field.name)
         if field.kind == "path":
             return path_policy.cache_directory(value)
         if field.name == "classification_strategy":

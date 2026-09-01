@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from collections.abc import Iterator
@@ -9,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from cve_agent.config import settings_fingerprint as canonical_settings_fingerprint
 from cve_agent.persistence import Database, PersistenceError
 
 
@@ -256,9 +256,8 @@ class GuiAnalysisRepository:
 
 
 def settings_fingerprint(settings: dict[str, Any]) -> str:
-    effective = {key: value for key, value in settings.items() if not key.startswith("_")}
-    serialized = json.dumps(effective, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(serialized.encode()).hexdigest()
+    """Compatibility alias for the canonical settings fingerprint."""
+    return canonical_settings_fingerprint(settings)
 
 
 def parse_analysis_id(value: str) -> tuple[int, int]:

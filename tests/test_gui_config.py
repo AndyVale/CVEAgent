@@ -70,6 +70,13 @@ def test_chat_overrides_reject_unknown_fields_and_invalid_ranges(tmp_path):
             database_path=database,
             path_policy=policy,
         )
+    with pytest.raises(GuiConfigurationError, match="invalid value for Max completion tokens"):
+        apply_chat_overrides(
+            base,
+            {"max_tokens": 1.9},
+            database_path=database,
+            path_policy=policy,
+        )
 
 
 def test_public_configuration_contains_editable_fields_but_no_secrets(tmp_path):

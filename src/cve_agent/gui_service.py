@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -24,12 +23,12 @@ from cve_agent.gui_config import (
 )
 from cve_agent.gui_paths import GuiPathError, GuiPathPolicy
 from cve_agent.gui_repository import GuiAnalysisRepository, StoredAnalysis, settings_fingerprint
+from cve_agent.identifiers import CVEIdentifierError, normalize_cve_id as normalize_public_cve_id
 from cve_agent.logging_config import LogTone, redact_secrets, safe_url
 from cve_agent.pipeline import persisted_taxonomy_fingerprint
 from cve_agent.taxonomy import Taxonomy, load_taxonomy
 
 
-_CVE_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,12}$", re.IGNORECASE)
 _COMPLETE_CACHE_STATUSES = {"classified", "no_matching_label", "not_enough_information"}
 
 
@@ -420,13 +419,18 @@ class _ProgressHandler(logging.Handler):
 
 
 def normalize_cve_id(value: Any) -> str:
-    if not isinstance(value, str) or not _CVE_PATTERN.fullmatch(value.strip()):
-        raise GuiConfigurationError("enter a CVE ID such as CVE-2021-44228")
-    return value.strip().upper()
+    try:
+        return normalize_public_cve_id(value)
+    except CVEIdentifierError as exc:
+        raise GuiConfigurationError("enter a CVE ID such as CVE-2021-44228") from exc
 
 
 def _taxonomy_hierarchical(path: str | None, path_policy: GuiPathPolicy) -> bool | None:
     if not path:
+        return None
+    try:
+        return is_hierarchical(load_taxonomy(path_policy.taxonomy_file(path)))
+    except (OSError, ValueError, GuiPathError):
         return None
 
 
@@ -439,10 +443,6 @@ def _path_choices(paths: tuple[Path, ...], root: Path, prefix: str) -> list[dict
         }
         for path in paths
     ]
-    try:
-        return is_hierarchical(load_taxonomy(path_policy.taxonomy_file(path)))
-    except (OSError, ValueError, GuiPathError):
-        return None
 
 
 def _event(*, tone: str, component: str, message: str) -> dict[str, Any]:

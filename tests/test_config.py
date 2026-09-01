@@ -70,3 +70,38 @@ def test_invalid_settings_fail_at_startup(tmp_path, content, message):
     config.write_text(content, encoding="utf-8")
     with pytest.raises(ValueError, match=message):
         load_settings(config)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "[runtime]\nmax_tokens = 1.9\n",
+        "[limits]\nmax_agent_turns = 2.0\n",
+    ],
+)
+def test_integer_settings_reject_fractional_and_float_values(tmp_path, content):
+    config = tmp_path / "config.toml"
+    config.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be an integer"):
+        load_settings(config)
+
+
+@pytest.mark.parametrize("value", ["nan", "+inf", "-inf"])
+def test_numeric_settings_reject_non_finite_values(tmp_path, value):
+    config = tmp_path / "config.toml"
+    config.write_text(f"[runtime]\ntimeout_seconds = {value}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="finite number"):
+        load_settings(config)
+
+
+def test_disabled_tavily_provider_ignores_unused_provider_ranges(tmp_path):
+    config = tmp_path / "config.toml"
+    config.write_text(
+        "[web]\nprovider = 'none'\ntavily_base_url = 'disabled'\n"
+        "tavily_max_results = 0\ntavily_search_depth = 'disabled'\n",
+        encoding="utf-8",
+    )
+
+    assert load_settings(config).web_provider == "none"

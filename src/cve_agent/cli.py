@@ -7,8 +7,9 @@ import sys
 from dataclasses import replace
 
 from cve_agent.application import create_application
-from cve_agent.config import format_settings_table, load_settings
+from cve_agent.config import format_settings_table, load_settings, parse_finite_number
 from cve_agent.evaluation import BenchmarkError, format_classification_summary, format_evaluation_report, format_output_header, load_benchmark
+from cve_agent.identifiers import CVEIdentifierError, normalize_cve_id
 from cve_agent.logging_config import LogTone, log_extra, verbose_logging
 from cve_agent.persistence import Database
 from cve_agent.ports import CVESource, Classifier, WebSource
@@ -39,12 +40,16 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
             else:
                 if not args.cve_ids:
                     raise BenchmarkError("provide at least one CVE_ID or use --validate")
-                cve_ids = args.cve_ids
+                cve_ids = [normalize_cve_id(cve_id) for cve_id in args.cve_ids]
             settings = load_settings(args.config)
             if args.llm_min_request_interval is not None:
-                if args.llm_min_request_interval < 0:
+                request_interval = parse_finite_number(
+                    args.llm_min_request_interval,
+                    "--llm-min-request-interval",
+                )
+                if request_interval < 0:
                     raise ValueError("--llm-min-request-interval must be non-negative")
-                settings = replace(settings, llm_min_request_interval=args.llm_min_request_interval)
+                settings = replace(settings, llm_min_request_interval=request_interval)
             logger.info("loaded taxonomy=%s labels=%d", args.taxonomy, len(taxonomy.labels))
             if benchmark:
                 logger.info("loaded validation classifications=%s cases=%d", args.validate, len(benchmark.cases))
@@ -84,6 +89,9 @@ def run(argv: list[str], *, cve_source: CVESource | None = None, web_source: Web
             return 3
         except BenchmarkError as exc:
             _report_error(logger, args.verbose, "evaluation", exc)
+            return 3
+        except CVEIdentifierError as exc:
+            _report_error(logger, args.verbose, "input", exc)
             return 3
         except Exception as exc:
             _report_error(logger, args.verbose, "fatal", exc)

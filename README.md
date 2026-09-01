@@ -48,8 +48,10 @@ descriptions:
 ancestor when a selected descendant exists. `include_ancestors` adds every ancestor of a
 supported label. Array-only taxonomies remain supported and use the default policy.
 
-Validation rejects missing fields, duplicate IDs, unknown parents, hierarchy cycles, and
-unknown hierarchy policies. Extra label fields are preserved but do not affect classification.
+Validation rejects empty taxonomies, blank fields, duplicate IDs, unknown parents, hierarchy
+cycles, hierarchies deeper than 64 parent links, and unknown hierarchy policies. Required
+strings are trimmed. An optional top-level `name`, other top-level metadata, and extra label
+fields are retained in the canonical taxonomy snapshot and fingerprint.
 
 ### Choosing a classification strategy
 
@@ -112,6 +114,9 @@ an interactive terminal; redirected output and pipes remain plain text, and `NO_
 color explicitly. Stdout remains JSON-only in every case.
 
 `--llm-min-request-interval SECONDS` overrides model pacing for one invocation.
+CLI and GUI inputs accept CVE identifiers in the form `CVE-YYYY-NNNN`, with 4–12 sequence
+digits; surrounding whitespace and letter case are normalized. Numeric configuration rejects
+fractional values for integer fields and non-finite values such as `nan` and `inf`.
 
 Every invocation ends with a compact mapping on stderr while stdout remains the complete valid
 JSON result. The JSON, classification table, and optional evaluation report use matching
@@ -396,7 +401,7 @@ Exit codes are:
 
 - `0`: every CVE is classified, has no matching label, or lacks sufficient information;
 - `2`: at least one CVE is partial or failed;
-- `3`: invalid taxonomy input;
+- `3`: invalid CVE, taxonomy, or evaluation input;
 - `4`: fatal configuration, preflight, provider-initialization, or persistence error.
 
 ## Development

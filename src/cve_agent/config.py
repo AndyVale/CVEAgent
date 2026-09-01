@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import math
 import os
+import re
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, Mapping
 from urllib.parse import urlsplit
 
+from cve_agent.serialization import json_fingerprint
 from cve_agent.strategy import ClassificationStrategy
+
+
+_INTEGER_PATTERN = re.compile(r"^[+-]?\d+$")
 
 
 @dataclass(frozen=True)
@@ -60,30 +67,44 @@ def load_settings(path: str | Path = "config.toml") -> Settings:
     except ValueError as exc:
         raise ValueError(f"unsupported classification strategy: {classification.get('strategy')!r}") from exc
     settings = Settings(
-        model=runtime.get("model", "nvidia/nemotron-3-ultra-550b-a55b:free"), endpoint=runtime.get("endpoint", "https://openrouter.ai/api/v1"),
-        api_key=os.getenv("API_KEY"), max_tokens=int(runtime.get("max_tokens", 2048)),
-        temperature=float(runtime.get("temperature", 0.0)), top_p=float(runtime.get("top_p", 1.0)),
-        llm_timeout=float(runtime.get("timeout_seconds", 120)),
-        llm_retry_count=int(runtime.get("retry_count", 2)),
-        llm_retry_wait=float(runtime.get("retry_wait_seconds", 1.0)),
-        llm_retry_max_wait=float(runtime.get("retry_max_wait_seconds", 8.0)),
-        llm_min_request_interval=float(runtime.get("min_request_interval_seconds", 0.0)),
-        nvd_base_url=nvd.get("base_url", "https://services.nvd.nist.gov/rest/json/cves/2.0"),
-        nvd_timeout=float(nvd.get("timeout_seconds", 20)), nvd_retry_count=int(nvd.get("retry_count", 2)), web_timeout=float(web.get("timeout_seconds", 20)),
-        web_retry_count=int(web.get("retry_count", 2)),
-        web_provider=str(web.get("provider", "tavily")), tavily_base_url=str(web.get("tavily_base_url", "https://api.tavily.com")),
-        tavily_max_results=int(web.get("tavily_max_results", 5)), tavily_search_depth=str(web.get("tavily_search_depth", "basic")),
+        model=_text(runtime.get("model", "nvidia/nemotron-3-ultra-550b-a55b:free"), "runtime.model"),
+        endpoint=_text(runtime.get("endpoint", "https://openrouter.ai/api/v1"), "runtime.endpoint"),
+        api_key=os.getenv("API_KEY"),
+        max_tokens=parse_integer(runtime.get("max_tokens", 2048), "runtime.max_tokens"),
+        temperature=parse_finite_number(runtime.get("temperature", 0.0), "runtime.temperature"),
+        top_p=parse_finite_number(runtime.get("top_p", 1.0), "runtime.top_p"),
+        llm_timeout=parse_finite_number(runtime.get("timeout_seconds", 120), "runtime.timeout_seconds"),
+        llm_retry_count=parse_integer(runtime.get("retry_count", 2), "runtime.retry_count"),
+        llm_retry_wait=parse_finite_number(runtime.get("retry_wait_seconds", 1.0), "runtime.retry_wait_seconds"),
+        llm_retry_max_wait=parse_finite_number(runtime.get("retry_max_wait_seconds", 8.0), "runtime.retry_max_wait_seconds"),
+        llm_min_request_interval=parse_finite_number(runtime.get("min_request_interval_seconds", 0.0), "runtime.min_request_interval_seconds"),
+        nvd_base_url=_text(nvd.get("base_url", "https://services.nvd.nist.gov/rest/json/cves/2.0"), "nvd.base_url"),
+        nvd_timeout=parse_finite_number(nvd.get("timeout_seconds", 20), "nvd.timeout_seconds"),
+        nvd_retry_count=parse_integer(nvd.get("retry_count", 2), "nvd.retry_count"),
+        web_timeout=parse_finite_number(web.get("timeout_seconds", 20), "web.timeout_seconds"),
+        web_retry_count=parse_integer(web.get("retry_count", 2), "web.retry_count"),
+        web_provider=_text(web.get("provider", "tavily"), "web.provider"),
+        tavily_base_url=_text(web.get("tavily_base_url", "https://api.tavily.com"), "web.tavily_base_url"),
+        tavily_max_results=parse_integer(web.get("tavily_max_results", 5), "web.tavily_max_results"),
+        tavily_search_depth=_text(web.get("tavily_search_depth", "basic"), "web.tavily_search_depth"),
         tavily_api_key=os.getenv("TAVILY_API_KEY"),
         cache_dir=_resolve_path(config_path.parent, web.get("cache_dir", ".cache/cve-agent/web")),
-        max_document_chars=int(web.get("max_document_chars", 100000)), max_preview_chars=int(web.get("max_preview_chars", 12000)),
-        max_download_bytes=int(web.get("max_download_bytes", 2_000_000)),
-        database=_resolve_path(config_path.parent, storage.get("database", ".data/cve-agent.sqlite3")), token_budget=int(limits.get("token_budget", 12000)),
-        max_agent_turns=int(limits.get("max_agent_turns", 20)), max_search_calls=int(limits.get("max_search_calls", 5)),
-        max_fetch_calls=int(limits.get("max_fetch_calls", 8)), max_investigation_seconds=float(limits.get("max_investigation_seconds", 300)),
-        max_input_tokens_per_request=int(limits.get("max_input_tokens_per_request", 12000)),
-        finalization_overrun_percent=float(limits.get("finalization_overrun_percent", 15.0)),
+        max_document_chars=parse_integer(web.get("max_document_chars", 100000), "web.max_document_chars"),
+        max_preview_chars=parse_integer(web.get("max_preview_chars", 12000), "web.max_preview_chars"),
+        max_download_bytes=parse_integer(web.get("max_download_bytes", 2_000_000), "web.max_download_bytes"),
+        database=_resolve_path(config_path.parent, storage.get("database", ".data/cve-agent.sqlite3")),
+        token_budget=parse_integer(limits.get("token_budget", 12000), "limits.token_budget"),
+        max_agent_turns=parse_integer(limits.get("max_agent_turns", 20), "limits.max_agent_turns"),
+        max_search_calls=parse_integer(limits.get("max_search_calls", 5), "limits.max_search_calls"),
+        max_fetch_calls=parse_integer(limits.get("max_fetch_calls", 8), "limits.max_fetch_calls"),
+        max_investigation_seconds=parse_finite_number(limits.get("max_investigation_seconds", 300), "limits.max_investigation_seconds"),
+        max_input_tokens_per_request=parse_integer(limits.get("max_input_tokens_per_request", 12000), "limits.max_input_tokens_per_request"),
+        finalization_overrun_percent=parse_finite_number(limits.get("finalization_overrun_percent", 15.0), "limits.finalization_overrun_percent"),
         classification_strategy=classification_strategy,
-        pruning_confidence_threshold=float(classification.get("pruning_confidence_threshold", 0.8)),
+        pruning_confidence_threshold=parse_finite_number(
+            classification.get("pruning_confidence_threshold", 0.8),
+            "classification.pruning_confidence_threshold",
+        ),
     )
     validate_settings(settings)
     return settings
@@ -94,15 +115,82 @@ def _resolve_path(base: Path, value: str | Path) -> Path:
     return path if path.is_absolute() else base / path
 
 
+def parse_integer(value: Any, name: str) -> int:
+    """Parse an integer without silently truncating fractional values."""
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and _INTEGER_PATTERN.fullmatch(value.strip()):
+        return int(value)
+    raise ValueError(f"{name} must be an integer")
+
+
+def parse_finite_number(value: Any, name: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a finite number")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a finite number") from exc
+    if not math.isfinite(parsed):
+        raise ValueError(f"{name} must be a finite number")
+    return parsed
+
+
+def _text(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be a non-empty string")
+    return value.strip()
+
+
 def validate_settings(settings: Settings) -> None:
     """Validate an effective settings snapshot built by any presentation layer."""
+    for name, value in (
+        ("max_tokens", settings.max_tokens),
+        ("llm_retry_count", settings.llm_retry_count),
+        ("nvd_retry_count", settings.nvd_retry_count),
+        ("web_retry_count", settings.web_retry_count),
+        ("tavily_max_results", settings.tavily_max_results),
+        ("max_document_chars", settings.max_document_chars),
+        ("max_preview_chars", settings.max_preview_chars),
+        ("max_download_bytes", settings.max_download_bytes),
+        ("token_budget", settings.token_budget),
+        ("max_agent_turns", settings.max_agent_turns),
+        ("max_search_calls", settings.max_search_calls),
+        ("max_fetch_calls", settings.max_fetch_calls),
+        ("max_input_tokens_per_request", settings.max_input_tokens_per_request),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{name} must be an integer")
+    for name, value in (
+        ("temperature", settings.temperature),
+        ("top_p", settings.top_p),
+        ("llm_timeout", settings.llm_timeout),
+        ("llm_retry_wait", settings.llm_retry_wait),
+        ("llm_retry_max_wait", settings.llm_retry_max_wait),
+        ("llm_min_request_interval", settings.llm_min_request_interval),
+        ("nvd_timeout", settings.nvd_timeout),
+        ("web_timeout", settings.web_timeout),
+        ("max_investigation_seconds", settings.max_investigation_seconds),
+        ("finalization_overrun_percent", settings.finalization_overrun_percent),
+        ("pruning_confidence_threshold", settings.pruning_confidence_threshold),
+    ):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"{name} must be a finite number")
+    if not isinstance(settings.model, str) or not isinstance(settings.endpoint, str):
+        raise ValueError("runtime model and endpoint must be strings")
     if not settings.model.strip() or not settings.endpoint.strip():
         raise ValueError("runtime model and endpoint must be non-empty")
-    for name, value in (
+    endpoints = [
         ("runtime endpoint", settings.endpoint),
         ("NVD endpoint", settings.nvd_base_url),
-        ("Tavily endpoint", settings.tavily_base_url),
-    ):
+    ]
+    if settings.web_provider == "tavily":
+        endpoints.append(("Tavily endpoint", settings.tavily_base_url))
+    for name, value in endpoints:
+        if not isinstance(value, str):
+            raise ValueError(f"{name} must be an HTTP(S) URL")
         parsed = urlsplit(value)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError(f"{name} must be an HTTP(S) URL")
@@ -120,7 +208,9 @@ def validate_settings(settings: Settings) -> None:
         raise ValueError("retry_max_wait_seconds must be at least retry_wait_seconds")
     if settings.web_provider not in {"tavily", "none"}:
         raise ValueError(f"unsupported web provider: {settings.web_provider!r}")
-    if settings.tavily_max_results <= 0 or settings.tavily_search_depth not in {"basic", "advanced"}:
+    if settings.web_provider == "tavily" and (
+        settings.tavily_max_results <= 0 or settings.tavily_search_depth not in {"basic", "advanced"}
+    ):
         raise ValueError("invalid Tavily result limit or search depth")
     if settings.max_document_chars <= 0 or settings.max_preview_chars <= 0 or settings.max_download_bytes <= 0:
         raise ValueError("web content limits must be positive")
@@ -192,3 +282,13 @@ def non_secret_settings(settings: Settings) -> dict[str, object]:
     values.pop("api_key", None)
     values.pop("tavily_api_key", None)
     return {key: str(value) if isinstance(value, Path) else value for key, value in values.items()}
+
+
+def settings_fingerprint(settings: Settings | Mapping[str, Any]) -> str:
+    values = non_secret_settings(settings) if isinstance(settings, Settings) else dict(settings)
+    effective = {
+        key: value
+        for key, value in values.items()
+        if not key.startswith("_") and key not in {"api_key", "tavily_api_key"}
+    }
+    return json_fingerprint(effective)
