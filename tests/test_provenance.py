@@ -146,10 +146,10 @@ def test_provenance_records_complete_multi_origin_chain_and_public_label_subset(
     assert public["labels"][0]["label"] == "LENGTH-TRUST"
 
     with Database(tmp_path / "provenance.sqlite3") as database:
-        run_id = database.start_run(taxonomy_sha256="fixture", model="fixture", settings={})
+        run_id = database.start_run(taxonomy=taxonomy, model="fixture", settings={})
         database.save_investigation(run_id, 0, cve_id, "investigating", state)
-        persisted = json.loads(database.get(run_id, cve_id)["scratchpad_json"])
-    assert {item["document_id"] for item in persisted["provenance"]["sources"]} >= {
+        persisted = database.get_provenance(run_id, cve_id)
+    assert {item["document_id"] for item in persisted["sources"]} >= {
         "vendor-doc",
         "unused-doc",
     }

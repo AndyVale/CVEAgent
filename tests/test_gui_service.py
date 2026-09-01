@@ -8,7 +8,13 @@ from cve_agent.config import load_settings, non_secret_settings
 from cve_agent.gui_config import GlobalGuiSettings, GlobalSettingsStore, GuiConfigurationError
 from cve_agent.gui_paths import GuiPathPolicy
 from cve_agent.gui_service import GuiService, normalize_cve_id
-from cve_agent.models import CVERecord, ClassificationResult, Evidence, LabelClassification
+from cve_agent.models import (
+    CVERecord,
+    ClassificationResult,
+    Evidence,
+    InvestigationState,
+    LabelClassification,
+)
 from cve_agent.persistence import Database
 from cve_agent.pipeline import Pipeline
 
@@ -99,6 +105,62 @@ def test_service_runs_persists_progress_and_reuses_exact_cache(tmp_path):
     })
     assert cached == {"id": analysis["id"], "cached": True, "lifecycle": "completed"}
     assert len(gui.history()) == 1
+
+
+def test_fresh_defaults_use_saved_config_while_old_analysis_keeps_its_snapshot(tmp_path):
+    gui = service(tmp_path)
+    original = gui.defaults()
+    started = gui.start_analysis({
+        "cve_id": "CVE-2024-12345",
+        "configuration": {
+            "taxonomy_path": original["taxonomy"]["path"],
+            "values": original["values"],
+        },
+    })
+    completed = gui.get_analysis(started["id"])
+    changed_values = dict(original["values"])
+    changed_values["temperature"] = 0.6
+    gui.update_analysis_options({
+        "taxonomy_path": original["taxonomy"]["path"],
+        "values": changed_values,
+    })
+
+    fresh_defaults = gui.defaults()
+    copied_defaults = gui.defaults(completed["id"])
+    stored_again = gui.get_analysis(completed["id"])
+
+    assert fresh_defaults["values"]["temperature"] == 0.6
+    assert copied_defaults["values"]["temperature"] == original["values"]["temperature"]
+    assert copied_defaults["taxonomy"] == completed["configuration"]["taxonomy"]
+    assert stored_again["configuration"] == completed["configuration"]
+
+
+def test_service_displays_recovered_stale_analysis_as_interrupted(tmp_path):
+    gui = service(tmp_path)
+    settings = gui.settings_store.get()
+    taxonomy = gui._resolve_configuration(
+        taxonomy_path=settings.default_taxonomy_path,
+        values={},
+    ).taxonomy
+    with Database(settings.database_path) as database:
+        run_id = database.start_run(taxonomy=taxonomy, model="fixture", settings={})
+        database.save_investigation(
+            run_id,
+            0,
+            "CVE-2024-12345",
+            "investigating",
+            InvestigationState(),
+        )
+        database.connection.execute(
+            "UPDATE analyses SET updated_at='2020-01-01T00:00:00+00:00'"
+        )
+        database.connection.commit()
+    gui._get_repository().initialize()
+
+    stored = gui.get_analysis(f"{run_id}:0")
+
+    assert stored["lifecycle"] == "interrupted"
+    assert stored["error"] == "analysis process stopped before completion"
 
 
 def test_service_rejects_invalid_cve_and_secret_overrides(tmp_path):

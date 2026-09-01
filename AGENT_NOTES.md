@@ -2,16 +2,17 @@
 
 ## Active refactor
 
-The approved whole-repository refactor is in progress on `main`, split into reasonably large
-logical commits that require explicit approval before creation. The baseline was 166 passing
-tests. The first unit now centralizes canonical JSON fingerprints, strict CVE normalization,
-taxonomy parsing/metadata/indexes, and exact finite configuration parsing; it also fixes the
-unreachable GUI taxonomy-shape helper and verifies NVD response IDs. The complete offline suite
-passes 189 tests, as do bytecode compilation and whitespace checks. A live CLI run for
-`CVE-2014-0160` completed in 17.3 seconds through NVD, Tavily/cache, and the configured model,
-using 16,782 tokens and persisting a classified result. A loopback GUI launch returned HTTP 200
-for health and history, then was stopped. Credentials remained process-only. Next: review this
-diff and request approval for `refactor: centralize input validation and fingerprints`.
+The approved whole-repository refactor is in progress on `main`. The first unit is committed as
+`ccec8e8 refactor: centralize input validation and fingerprints`; its 189 offline tests and live
+CLI/GUI checks passed. The second unit replaces schema version 2 and GUI-specific tables with one
+schema-version-3 repository: immutable run snapshots, lightweight analyses, checkpoint/result
+payloads, sequenced events, and separate provenance records. Exact SQL cache lookup, stale-run
+recovery, immutable taxonomy history, saved fresh-session defaults, and copied old-analysis
+defaults are covered. The complete suite passes 196 tests plus compilation and whitespace
+checks. Fresh-schema online tests exercised flat and hierarchical CVEs, successful, partial,
+failed, rate-limited, retried, and unavailable-document paths; every terminal state and immutable
+snapshot was stored correctly. Fixture accuracy remained diagnostic only. Credentials remained
+process-only. Next: commit the persistence unit, then normalize fixture metadata separately.
 
 ## Current work
 
@@ -25,7 +26,7 @@ never interface labels. Legacy analyses retain their existing quote/link with a 
 notice. Focused GUI/provenance tests pass. Local browser verification against the persisted
 `CVE-2020-11022` result confirmed the NVD and NVD-reference/vendor chains, node switching, full
 URL tooltip, readable warning, context/findings, no console errors, and no page overflow at
-1280-, 800-, and 500-pixel widths
+1280-, 800-, and 500-pixel widths.
 
 An evidence-provenance refactor is implemented and ready for review. A versioned, harness-owned
 ledger now links the target CVE, bounded NVD/search candidates, every fetch attempt and redirect,

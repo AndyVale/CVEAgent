@@ -16,13 +16,16 @@ from cve_agent.gui_config import (
     GlobalSettingsStore,
     GuiConfigurationError,
     apply_chat_overrides,
-    ensure_gui_config,
     public_configuration,
-    taxonomy_display_name,
     write_gui_settings,
 )
 from cve_agent.gui_paths import GuiPathError, GuiPathPolicy
-from cve_agent.gui_repository import GuiAnalysisRepository, StoredAnalysis, settings_fingerprint
+from cve_agent.gui_repository import (
+    AnalysisSummary,
+    GuiAnalysisRepository,
+    StoredAnalysis,
+    settings_fingerprint,
+)
 from cve_agent.identifiers import CVEIdentifierError, normalize_cve_id as normalize_public_cve_id
 from cve_agent.logging_config import LogTone, redact_secrets, safe_url
 from cve_agent.pipeline import persisted_taxonomy_fingerprint
@@ -45,7 +48,6 @@ class AnalysisConfiguration:
     taxonomy: Taxonomy
     taxonomy_path: Path
     taxonomy_name: str
-    config_path: Path
     taxonomy_fingerprint: str
     settings_fingerprint: str
 
@@ -171,10 +173,6 @@ class GuiService:
             stored = self._get_repository().get_analysis(stored_alias or from_analysis_id)
             if stored:
                 return self._stored_configuration(stored)
-        else:
-            latest = self._get_repository().list_analyses(limit=1)
-            if latest and latest[0].taxonomy_path and latest[0].config_path:
-                return self._stored_configuration(latest[0])
         return self._resolve_configuration(
             taxonomy_path=global_settings.default_taxonomy_path,
             values={},
@@ -235,8 +233,6 @@ class GuiService:
             settings_fingerprint_value=configuration.settings_fingerprint,
         )
         if cached and cached.status in _COMPLETE_CACHE_STATUSES:
-            if not cached.taxonomy_path:
-                self._save_configuration_snapshot(cached.analysis_id, configuration)
             return {"id": cached.analysis_id, "cached": True, "lifecycle": "completed"}
 
         analysis_id = f"pending-{uuid.uuid4().hex}"
@@ -275,7 +271,6 @@ class GuiService:
             if not isinstance(run_id, int):
                 raise RuntimeError("classification result does not identify its persisted run")
             stored_id = f"{run_id}:0"
-            self._save_configuration_snapshot(stored_id, configuration)
             running.add_event(
                 tone=_result_tone(str(result.status)),
                 component="SYSTEM",
@@ -325,8 +320,7 @@ class GuiService:
             settings=settings,
             taxonomy=taxonomy,
             taxonomy_path=resolved_taxonomy,
-            taxonomy_name=taxonomy_display_name(resolved_taxonomy),
-            config_path=resolved_config,
+            taxonomy_name=taxonomy.display_name,
             taxonomy_fingerprint=fingerprint,
             settings_fingerprint=settings_fingerprint(non_secret_settings(settings)),
         )
@@ -338,7 +332,7 @@ class GuiService:
         return {
             "id": analysis.analysis_id,
             "cve_id": analysis.cve_id,
-            "lifecycle": "completed",
+            "lifecycle": _stored_lifecycle(analysis),
             "stored_analysis_id": analysis.analysis_id,
             "events": events,
             "configuration": self._stored_configuration(analysis),
@@ -348,25 +342,15 @@ class GuiService:
 
     def _stored_configuration(self, analysis: StoredAnalysis) -> dict[str, Any]:
         name = analysis.taxonomy_name or f"Taxonomy {analysis.taxonomy_fingerprint[:12]}"
+        taxonomy = analysis.taxonomy
         return public_configuration(
             settings=analysis.settings,
             taxonomy_path=analysis.taxonomy_path,
             taxonomy_name=name,
             taxonomy_fingerprint=analysis.taxonomy_fingerprint,
             taxonomy_labels=analysis.taxonomy_labels,
-            taxonomy_hierarchical=_taxonomy_hierarchical(analysis.taxonomy_path, self.path_policy),
+            taxonomy_hierarchical=is_hierarchical(taxonomy),
             hierarchy_policy=analysis.hierarchy_policy,
-        )
-
-    def _save_configuration_snapshot(self, analysis_id: str, configuration: AnalysisConfiguration) -> None:
-        self._get_repository().save_snapshot(
-            analysis_id,
-            taxonomy_path=configuration.taxonomy_path,
-            taxonomy_name=configuration.taxonomy_name,
-            config_path=configuration.config_path,
-            settings_fingerprint_value=configuration.settings_fingerprint,
-            taxonomy_labels=len(configuration.taxonomy.labels),
-            hierarchy_policy=configuration.taxonomy.hierarchy_policy.value,
         )
 
     def _get_repository(self) -> GuiAnalysisRepository:
@@ -388,17 +372,14 @@ class GuiService:
             return any(item.lifecycle in {"queued", "running"} for item in self._running.values())
 
     @staticmethod
-    def _history_item(analysis: StoredAnalysis) -> dict[str, Any]:
-        labels = []
-        if analysis.result:
-            labels = [str(item.get("label")) for item in analysis.result.get("labels", []) if item.get("label")]
+    def _history_item(analysis: AnalysisSummary) -> dict[str, Any]:
         return {
             "id": analysis.analysis_id,
             "cve_id": analysis.cve_id,
             "status": analysis.status,
             "updated_at": analysis.updated_at,
             "taxonomy_name": analysis.taxonomy_name or f"Taxonomy {analysis.taxonomy_fingerprint[:8]}",
-            "labels": labels,
+            "labels": list(analysis.label_ids),
         }
 
 
@@ -423,15 +404,6 @@ def normalize_cve_id(value: Any) -> str:
         return normalize_public_cve_id(value)
     except CVEIdentifierError as exc:
         raise GuiConfigurationError("enter a CVE ID such as CVE-2021-44228") from exc
-
-
-def _taxonomy_hierarchical(path: str | None, path_policy: GuiPathPolicy) -> bool | None:
-    if not path:
-        return None
-    try:
-        return is_hierarchical(load_taxonomy(path_policy.taxonomy_file(path)))
-    except (OSError, ValueError, GuiPathError):
-        return None
 
 
 def _path_choices(paths: tuple[Path, ...], root: Path, prefix: str) -> list[dict[str, str]]:
@@ -470,6 +442,16 @@ def _result_tone(status: str) -> str:
     return LogTone.SUCCESS.value
 
 
+def _stored_lifecycle(analysis: StoredAnalysis) -> str:
+    if analysis.status == "interrupted" or analysis.run_status == "interrupted":
+        return "interrupted"
+    if analysis.status == "failed":
+        return "failed"
+    if analysis.status == "investigating" or analysis.run_status == "running":
+        return "running"
+    return "completed"
+
+
 def _events_from_scratchpad(analysis: StoredAnalysis) -> list[dict[str, Any]]:
     events = [
         {
@@ -479,7 +461,8 @@ def _events_from_scratchpad(analysis: StoredAnalysis) -> list[dict[str, Any]]:
             "message": f"Loaded persisted analysis for {analysis.cve_id}.",
         }
     ]
-    for item in analysis.scratchpad.get("tool_history", []):
+    scratchpad = analysis.scratchpad or {}
+    for item in scratchpad.get("tool_history", []):
         if not isinstance(item, dict):
             continue
         tool = str(item.get("tool", "agent"))

@@ -189,21 +189,18 @@ configuration and changes no file if validation fails. Numeric controls expose t
 ranges, enumerated values use fixed choices, hierarchical strategy controls are absent for flat
 taxonomies, pruning is hidden for exhaustive scans, and web-provider-specific controls are
 hidden when web research is disabled.
-Every completed chat keeps an immutable snapshot of its taxonomy path, fingerprint, hierarchy
-policy, and effective settings. A new chat inherits the most recently used GUI snapshot (or the
-currently selected chat), while edits never retroactively alter an existing result. API keys
-remain environment-only and are never stored in GUI settings or sent to the browser.
+Every analysis stores the complete canonical taxonomy JSON and non-secret effective settings,
+not only their source paths. A fresh session uses `config.gui.toml` and the global taxonomy.
+Selecting an old analysis copies its stored snapshot into the next draft; later draft edits
+never modify that analysis. Source paths are informational, so editing or deleting the original
+taxonomy file cannot change history. API keys remain environment-only and are never stored in
+GUI settings or sent to the browser.
 
 The selected SQLite database is also the history and result cache. A completed result is reused
 only when its normalized CVE ID, taxonomy fingerprint, and complete non-secret effective settings
 all match. Partial and failed runs are displayed but never treated as successful cache entries.
-Runs originally created by the CLI appear in history too; older rows can show their stored
-taxonomy fingerprint even though the CLI did not retain the original taxonomy/config file paths.
-
-GUI chat metadata and progress events use additive `gui_analysis_meta` and
-`gui_analysis_events` tables in the same database. They do not change the core schema version or
-CLI persistence contract. Machine-local GUI defaults live in the ignored
-`.data/cve-agent-gui.json` file by default.
+Runs created by the CLI and GUI use the same repository and appear in the same history.
+Machine-local GUI defaults live in the ignored `.data/cve-agent-gui.json` file by default.
 
 ## Evaluating classification performance
 
@@ -385,17 +382,21 @@ rm -r .cache/cve-agent/web
 
 ## Persistence and exit codes
 
-SQLite stores separate runs rather than overwriting by CVE ID. Each run records an incremental
-run ID, taxonomy fingerprint, model, non-secret effective settings, timestamps, status, and
-per-CVE checkpoints/results. Checkpoints are written after NVD retrieval, evidence changes,
-the structured investigation profile, completed taxonomy chunks, hierarchy-routing chunks,
-cost-based strategy switches, and finalization. Routing decisions and generic coverage live in
-the existing JSON metadata. The complete evidence-provenance ledger also lives in the
-scratchpad JSON, so this feature does not change the database schema. Existing schema-version-2
-records remain readable and simply have no provenance ledger.
+SQLite schema version 3 uses one repository for the CLI and GUI:
 
-The current schema is version 2. A legacy development database is not migrated automatically;
-remove the configured database explicitly when the CLI reports an incompatible schema.
+- `runs` stores immutable canonical taxonomy and non-secret settings snapshots with fingerprints;
+- `analyses` stores lightweight per-CVE lifecycle, labels, errors, and timestamps;
+- `analysis_payloads` contains the current checkpoint or final result;
+- `analysis_events` contains sequenced progress events;
+- `provenance_records` keeps internal and public evidence audit data separately.
+
+History queries do not load result, checkpoint, taxonomy, settings, or provenance JSON. Exact
+cache lookup uses the stored CVE and snapshot fingerprints. Completion atomically replaces the
+checkpoint payload with the result and keeps one authoritative token/coverage ledger. Stale
+running analyses are recovered as interrupted.
+
+Schema versions 1 and 2 are intentionally not migrated. Move or remove an incompatible database
+explicitly; the application never deletes or rewrites it automatically.
 
 Exit codes are:
 

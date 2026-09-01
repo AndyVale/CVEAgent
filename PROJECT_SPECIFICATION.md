@@ -57,11 +57,11 @@ parsing, JSON rendering, human-readable summaries, terminal logging, and exit-co
 interfaces may call the same application boundary without parsing CLI output.
 
 The local graphical interface is an independent presentation and HTTP layer, not a mode of the
-CLI. It calls the same application boundary, reads core run history from SQLite, and stores only
-additive GUI chat metadata and progress events. GUI analyses preserve an immutable non-secret
-configuration and taxonomy snapshot. New chats may inherit a prior snapshot, but changing draft
-options must not mutate an existing chat or its result. Cached results require an exact CVE,
-taxonomy-fingerprint, and effective-settings match.
+CLI. It calls the same application boundary and uses the same SQLite repository. Every run owns
+an immutable complete taxonomy snapshot and non-secret effective-settings snapshot. Fresh GUI
+sessions use the saved GUI configuration and global taxonomy; explicitly selecting an old
+analysis may copy its snapshot into a new draft, but draft changes must not mutate history.
+Cached results require an exact CVE, taxonomy-fingerprint, and effective-settings match.
 
 ## Taxonomy
 

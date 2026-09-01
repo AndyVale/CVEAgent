@@ -277,18 +277,16 @@ def format_settings_table(settings: Settings) -> str:
     return "\n".join(lines)
 
 
-def non_secret_settings(settings: Settings) -> dict[str, object]:
-    values = asdict(settings)
+def non_secret_settings(settings: Settings | Mapping[str, Any]) -> dict[str, object]:
+    values = asdict(settings) if isinstance(settings, Settings) else dict(settings)
     values.pop("api_key", None)
     values.pop("tavily_api_key", None)
-    return {key: str(value) if isinstance(value, Path) else value for key, value in values.items()}
+    return {
+        key: str(value) if isinstance(value, Path) else value
+        for key, value in values.items()
+        if not key.startswith("_")
+    }
 
 
 def settings_fingerprint(settings: Settings | Mapping[str, Any]) -> str:
-    values = non_secret_settings(settings) if isinstance(settings, Settings) else dict(settings)
-    effective = {
-        key: value
-        for key, value in values.items()
-        if not key.startswith("_") and key not in {"api_key", "tavily_api_key"}
-    }
-    return json_fingerprint(effective)
+    return json_fingerprint(non_secret_settings(settings))

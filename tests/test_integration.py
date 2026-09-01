@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from cve_agent.agent import InvestigationAgent
 from cve_agent.config import Settings, non_secret_settings
 from cve_agent.models import CVERecord, Document, InvestigationAspect, Reference
-from cve_agent.persistence import Database
+from cve_agent.persistence import AnalysisRepository, Database
 from cve_agent.pipeline import Pipeline
 from cve_agent.prompts import HIERARCHY_ROUTING_SYSTEM_PROMPT
 from cve_agent.strategy import ClassificationStrategy
@@ -171,9 +171,11 @@ def test_fixture_driven_pipeline_matches_expected_result(tmp_path):
     ).run([record["cve_id"]], taxonomy)[0].to_dict()
     result = json.loads(json.dumps(result))
     assert {key: result[key] for key in ("cve_id", "status", "labels")} == expected
-    with Database(configured.database) as database:
-        persisted = database.get(result["operational"]["run_id"], record["cve_id"])
-        scratchpad = json.loads(persisted["scratchpad_json"])
+    persisted = AnalysisRepository(configured.database).get_analysis(
+        f'{result["operational"]["run_id"]}:0'
+    )
+    assert persisted is not None
+    scratchpad = persisted.scratchpad
     assert scratchpad["research_information_status"] == "sufficient"
     assert scratchpad["research_summary"]
     assert scratchpad["provenance"]["target_cve_id"] == record["cve_id"]
@@ -220,13 +222,14 @@ def test_hierarchical_fixture_pipeline_persists_strategy_routing_and_exact_cover
         "routing_levels": 1,
         "complete": True,
     }
-    with Database(configured.database) as database:
-        persisted = database.get(result.operational["run_id"], record["cve_id"])
-        persisted_run = database.get_run(result.operational["run_id"])
-        persisted_result = json.loads(persisted["result_json"])
-        coverage = json.loads(persisted["coverage_json"])
-        scratchpad = json.loads(persisted["scratchpad_json"])
-        persisted_settings = json.loads(persisted_run["settings_json"])
+    persisted = AnalysisRepository(configured.database).get_analysis(
+        f'{result.operational["run_id"]}:0'
+    )
+    assert persisted is not None
+    persisted_result = persisted.result
+    coverage = persisted_result["operational"]["coverage"]
+    scratchpad = persisted.scratchpad
+    persisted_settings = persisted.settings
     assert coverage == result.operational["coverage"]
     assert persisted_result["operational"]["classification"]["effective_strategy"] == "hybrid"
     assert persisted_settings["classification_strategy"] == "hybrid"

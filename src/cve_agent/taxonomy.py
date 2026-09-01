@@ -40,6 +40,7 @@ class Taxonomy:
     hierarchy_policy: HierarchyPolicy = HierarchyPolicy.MOST_SPECIFIC
     name: str | None = None
     extra: Mapping[str, Any] = field(default_factory=dict)
+    source_path: str | None = field(default=None, compare=False)
     _by_id: Mapping[str, TaxonomyLabel] = field(init=False, repr=False, compare=False)
     _children_by_id: Mapping[str, tuple[TaxonomyLabel, ...]] = field(init=False, repr=False, compare=False)
 
@@ -85,6 +86,14 @@ class Taxonomy:
     def fingerprint(self) -> str:
         return json_fingerprint(self.to_dict())
 
+    @property
+    def display_name(self) -> str:
+        if self.name:
+            return self.name
+        if self.source_path:
+            return Path(self.source_path).stem
+        return f"Taxonomy {self.fingerprint[:12]}"
+
 
 def load_taxonomy(path: str | Path) -> Taxonomy:
     taxonomy_path = Path(path)
@@ -93,7 +102,14 @@ def load_taxonomy(path: str | Path) -> Taxonomy:
             raw = json.load(handle)
     except (OSError, json.JSONDecodeError) as exc:
         raise TaxonomyError(f"cannot read taxonomy from {taxonomy_path}: {exc}") from exc
-    return parse_taxonomy(raw)
+    taxonomy = parse_taxonomy(raw)
+    return Taxonomy(
+        taxonomy.labels,
+        taxonomy.hierarchy_policy,
+        taxonomy.name,
+        taxonomy.extra,
+        str(taxonomy_path.resolve()),
+    )
 
 
 def parse_taxonomy(raw: Any) -> Taxonomy:

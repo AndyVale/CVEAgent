@@ -32,7 +32,7 @@ class Pipeline:
             preflight(taxonomy)
         with self.database as db:
             run_id = db.start_run(
-                taxonomy_sha256=persisted_taxonomy_fingerprint(taxonomy),
+                taxonomy=taxonomy,
                 model=str(self.run_metadata.get("model", "unknown")),
                 settings=dict(self.run_metadata.get("settings", {})),
             )
