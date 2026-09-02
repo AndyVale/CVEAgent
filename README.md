@@ -16,9 +16,10 @@ export API_KEY="your-provider-key"
 ```
 
 `config.toml` and local credentials are ignored by Git. `API_KEY` is sent to the configured
-OpenAI-compatible endpoint. Tavily search uses `TAVILY_API_KEY`. The investigator is directed
-to perform web research, while the application derives information sufficiency from the
-evidence-backed mechanism findings it actually produces.
+OpenAI-compatible endpoint. Tavily search uses `TAVILY_API_KEY`. The investigator treats the NVD
+description as its strongest starting evidence, then uses relevant NVD references and targeted
+Tavily searches to corroborate, clarify, or extend the vulnerability mechanism. The application
+derives information sufficiency from the evidence-backed mechanism findings it actually produces.
 
 ## Taxonomies
 
@@ -268,8 +269,8 @@ and use subsets for prompt iteration before spending quota on all cases.
 For each CVE, the system:
 
 1. retrieves NVD first and records its English description as exact initial evidence;
-2. conducts taxonomy-independent web research focused on the affected system, root cause,
-   exploitation mechanism, preconditions, and impact;
+2. conducts taxonomy-independent supporting research, preferring relevant NVD references and
+   using targeted web search when it can add technical detail;
 3. packs fetched source text into stable, coherent passages bounded around 900 characters;
 4. builds a concise profile from any supported high-level findings; its topics are guidance,
    not mandatory fields;
@@ -285,19 +286,38 @@ structured model requests without web tools.
 
 Final model decisions reference evidence IDs rather than writing quotes or URLs. The
 application materializes the canonical resolved URL and exact stored passage into the public
-JSON result and preserves the evidence ID. A fetched passage cited at investigation finish is
-promoted automatically;
-`record_evidence` remains an optional way to preserve a passage across research turns. Full
-passage IDs and document-local forms such as `1` or `p1` are accepted when unambiguous. Search
-snippets are leads, never evidence. A finish call containing unknown, ambiguous, empty, or
+JSON result and preserves the evidence ID. The investigator records every distinct, substantive
+passage that could support a final finding immediately after fetching it and before another tool
+call or finishing. It does not record the NVD description again or duplicate an evidence ID
+already present in the research context. Independently supported attacker actions, vulnerability
+mechanisms, and security-boundary failures remain separate root-cause or exploitation-mechanism
+findings instead of being reduced to impacts. This includes an unauthenticated attacker acting as
+a trusted service. When a source reports conditional code execution, research continues far
+enough to establish the attacker-input-to-interpreter transition; a generic statement that remote
+code execution is possible is not treated as the mechanism. If an attempted reference has no
+useful passage and search budget remains, the investigator uses targeted search before omitting
+the unresolved mechanism. Finish-time promotion remains a safety fallback for a cited fetched
+passage that was not explicitly recorded. Full passage IDs and document-local forms such as `1`
+or `p1` are accepted when unambiguous. Search snippets are leads, never evidence. A finish call
+containing unknown, ambiguous, empty, or
 obviously fragmentary evidence receives one correction opportunity. If that correction is not
 usable, valid findings from the original call are retained and only unsupported findings are
 discarded; the reasons remain in operational metadata and persisted provenance.
 
+Research may continue after a source establishes the core mechanism when another targeted source
+could reveal a distinct mechanism, an important precondition, conflicting evidence, or information
+that changes classification. When the important questions are covered and another source is
+expected only to restate recorded facts, the investigator finishes rather than exhausting its
+remaining budget. This convergence guidance does not make NVD-only research the default.
+
 Fetched documents are indexed by normalized requested and resolved URL for the duration of an
 investigation. A repeated equivalent URL returns the existing document without calling the web
-adapter or consuming fetch quota; paths and query strings remain significant. The repeated model
-tool call is still recorded as a session reuse rather than being hidden.
+adapter or consuming fetch quota; paths and query strings remain significant. Search results that
+resolve to an available document are filtered before reaching the model. A direct repeat can
+redisplay the stored passages once per document when deliberately requested but cannot retrieve
+new information. Further repeats return a no-new-information error, so a different source is
+needed for additional evidence. Every repeated model tool call is still recorded as a session
+reuse rather than being hidden.
 
 Every investigation also builds a versioned, harness-owned provenance ledger. It records the
 bounded NVD and search candidates shown to the model, every search and fetch attempt, URL

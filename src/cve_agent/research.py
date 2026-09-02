@@ -16,7 +16,7 @@ from cve_agent.models import CVERecord, Document, EvidenceRecord, InvestigationF
 from cve_agent.ports import WebSource
 from cve_agent.prompts import RESEARCH_SYSTEM_PROMPT
 from cve_agent.provenance import ResearchProvenanceRecorder, normalize_url
-from cve_agent.research_context import build_research_context, select_reference_candidates
+from cve_agent.research_context import _ResearchContextSerializer, select_reference_candidates
 from cve_agent.schemas import research_tools
 
 
@@ -44,6 +44,7 @@ class ResearchSession:
     fetches: int = 0
     turns: int = 0
     seen_calls: set[tuple[str, str]] = field(default_factory=set)
+    redisplayed_documents: set[str] = field(default_factory=set)
     exchange: list[dict[str, Any]] = field(default_factory=list)
     provenance: ResearchProvenanceRecorder | None = None
     finish_corrections: int = 0
@@ -63,7 +64,13 @@ class ResearchToolExecutor:
         if name == "record_evidence" and arguments.get("document_id") not in session.documents:
             return self._record_evidence(arguments, state, session.documents)
         if key in session.seen_calls:
-            return self._duplicate_result(name, arguments, session.documents)
+            if name == "fetch" and self._existing_document_result(
+                str(arguments.get("url", "")), session.documents
+            ) is not None:
+                return self._fetch(arguments, state, session)
+            if name == "fetch":
+                return {"error": "this URL was already attempted"}
+            return {"error": "duplicate tool call"}
         session.seen_calls.add(key)
 
         if name == "search":
@@ -86,7 +93,11 @@ class ResearchToolExecutor:
                 "reused": result.get("reused") is True,
             })
         elif name == "search":
-            event.update({"query": arguments.get("query", ""), "result_count": len(result.get("results", []))})
+            event.update({
+                "query": arguments.get("query", ""),
+                "result_count": len(result.get("results", [])),
+                "available_results_omitted": result.get("available_results_omitted", 0),
+            })
         elif name == "record_evidence":
             event.update({
                 "document_id": arguments.get("document_id"),
@@ -113,13 +124,39 @@ class ResearchToolExecutor:
             results = self.web_source.search(query)
         except Exception as exc:
             return {"error": self._tool_error("search", exc)}
-        return {"results": [asdict(item) for item in results[:10]]}
+        novel_results = [
+            item for item in results
+            if self._existing_document(item.url, session.documents) is None
+        ]
+        omitted = len(results) - len(novel_results)
+        result: dict[str, Any] = {"results": [asdict(item) for item in novel_results[:10]]}
+        if omitted:
+            result["available_results_omitted"] = omitted
+            result["instruction"] = (
+                "Search results whose requested or resolved URLs are already available were omitted. "
+                "Use available_documents to redisplay one intentionally."
+            )
+        return result
 
     def _fetch(self, arguments: dict[str, Any], state: InvestigationState, session: ResearchSession) -> dict[str, Any]:
         url = arguments["url"]
         existing = self._existing_document_result(url, session.documents)
         if existing:
-            existing["instruction"] = "This URL is already available; record a passage or finish."
+            document_id = str(existing["document_id"])
+            if document_id in session.redisplayed_documents:
+                return {
+                    "error": "document already redisplayed; another fetch would return the same stored passages",
+                    "document_id": document_id,
+                    "url": existing["url"],
+                    "reused": True,
+                    "instruction": "Use recorded evidence, choose another source, or finish the investigation.",
+                }
+            session.redisplayed_documents.add(document_id)
+            existing["instruction"] = (
+                "This URL is already available, so these are the same stored passages. "
+                "Record every useful passage not already in recorded_evidence before another tool call; "
+                "use another source when you need new information."
+            )
             return existing
         if session.fetches >= self.settings.max_fetch_calls:
             return {"error": "fetch limit reached"}
@@ -131,7 +168,13 @@ class ResearchToolExecutor:
         session.documents[document.document_id or url] = document
         if document.url not in state.visited_urls:
             state.visited_urls.append(document.url)
-        return self._document_result(document, reused=False)
+        result = self._document_result(document, reused=False)
+        result["instruction"] = (
+            "Before another tool call, record every distinct, substantive passage that could support a finding. "
+            "A generic page introduction, navigation, or description of a vulnerability list is not evidence. "
+            "If no passage is useful, continue without recording it."
+        )
+        return result
 
     def _record_evidence(
         self,
@@ -164,25 +207,35 @@ class ResearchToolExecutor:
             )
         except EvidenceResolutionError as exc:
             return {"error": str(exc), "available_passage_ids": [item.passage_id for item in passages]}
-        record, _ = store_passage_evidence(
+        record, created = store_passage_evidence(
             state,
             document,
             passage,
             verification="passage_id" if arguments.get("passage_id") else "fuzzy_anchor",
         )
-        return {
+        result = {
             "recorded": True,
             "evidence_id": record.evidence_id,
-            "quote": record.quote,
             "evidence_count": len(state.evidence),
         }
+        if not created:
+            result.update({
+                "recorded": False,
+                "instruction": "This evidence is already recorded; continue without recording it again.",
+            })
+        return result
 
     def _existing_document_result(self, url: str, documents: dict[str, Document]) -> dict[str, Any] | None:
+        document = self._existing_document(url, documents)
+        return self._document_result(document, reused=True) if document is not None else None
+
+    @staticmethod
+    def _existing_document(url: str, documents: dict[str, Document]) -> Document | None:
         normalized = normalize_url(url)
         for document in documents.values():
             known_urls = (document.url, document.requested_url or document.url)
             if normalized in {normalize_url(item) for item in known_urls}:
-                return self._document_result(document, reused=True)
+                return document
         return None
 
     def _document_result(self, document: Document, *, reused: bool) -> dict[str, Any]:
@@ -199,11 +252,6 @@ class ResearchToolExecutor:
             "truncated": len(document.content) > self.settings.max_preview_chars,
             "reused": reused,
         }
-
-    def _duplicate_result(self, name: str, arguments: dict[str, Any], documents: dict[str, Document]) -> dict[str, Any]:
-        if name == "fetch":
-            return self._existing_document_result(arguments.get("url", ""), documents) or {"error": "this URL was already attempted"}
-        return {"error": "duplicate tool call"}
 
     def _tool_error(self, operation: str, exc: Exception) -> str:
         detail = redact_secrets(exc, self.settings.api_key, self.settings.tavily_api_key)
@@ -235,6 +283,7 @@ class ResearchRunner:
         )
         checkpoint()
         reference_candidates = select_reference_candidates(cve.references)
+        context_serializer = _ResearchContextSerializer(cve, reference_candidates)
         logger.info(
             "[%s] research started max_turns=%d max_searches=%d max_fetches=%d max_seconds=%.1f nvd_references=%d reference_candidates=%d omitted_references=%d",
             cve.cve_id,
@@ -273,19 +322,16 @@ class ResearchRunner:
                         {"role": "system", "content": RESEARCH_SYSTEM_PROMPT},
                         {
                             "role": "user",
-                            "content": json.dumps(
-                                build_research_context(
-                                    cve,
-                                    state,
-                                    session.documents,
-                                    turn=session.turns,
-                                    searches=session.searches,
-                                    fetches=session.fetches,
-                                    max_turns=self.settings.max_agent_turns,
-                                    max_searches=self.settings.max_search_calls,
-                                    max_fetches=self.settings.max_fetch_calls,
-                                ),
-                                ensure_ascii=False,
+                            "content": context_serializer.render(
+                                state,
+                                session.documents,
+                                session.exchange,
+                                turn=session.turns,
+                                searches=session.searches,
+                                fetches=session.fetches,
+                                max_turns=self.settings.max_agent_turns,
+                                max_searches=self.settings.max_search_calls,
+                                max_fetches=self.settings.max_fetch_calls,
                             ),
                         },
                     ] + session.exchange,
@@ -315,22 +361,12 @@ class ResearchRunner:
             if not calls:
                 logger.warning("[%s] research turn=%d returned no tool call; requesting one", cve.cve_id, session.turns)
                 if correction_turn and session.pending_finish_arguments is not None:
-                    return self._accept_finish(
-                        cve.cve_id,
-                        session.pending_finish_arguments,
-                        state,
-                        session,
-                        budget,
-                        started,
-                        checkpoint,
-                        documents=session.pending_finish_documents or {},
-                        fallback_reason="correction_not_submitted",
-                    )
-                session.exchange = [{"role": "user", "content": "Use a provided tool and finish by calling finish_investigation."}]
+                    session.exchange = [{"role": "user", "content": self._finish_correction_instruction()}]
+                else:
+                    session.exchange = [{"role": "user", "content": "Use a provided tool and finish by calling finish_investigation."}]
                 continue
 
             current_exchange = [{"role": "assistant", **message.model_dump(exclude_none=True)}]
-            correction_requested = False
             for call in calls:
                 name = call.function.name
                 try:
@@ -359,7 +395,7 @@ class ResearchRunner:
                     if can_correct:
                         result = {
                             "error": "finish_investigation contains invalid evidence citations",
-                            "instruction": "Call finish_investigation once more using substantive, unambiguous evidence IDs. Valid findings may be retained.",
+                            "instruction": self._finish_correction_instruction(),
                             "evidence_issues": [asdict(item) for item in draft.evidence_issues],
                             "retained_finding_count": len(draft.findings),
                             "discarded_findings": draft.discarded_findings,
@@ -370,7 +406,6 @@ class ResearchRunner:
                         session.finish_corrections += 1
                         session.pending_finish_arguments = arguments
                         session.pending_finish_documents = dict(session.documents)
-                        correction_requested = True
                         break
                     return self._accept_finish(
                         cve.cve_id,
@@ -389,19 +424,28 @@ class ResearchRunner:
                     result = {"error": f"invalid tool arguments: {exc}", "instruction": "Correct the arguments and try again."}
                 self._checkpoint_tool(cve.cve_id, name, arguments, result, state, session, budget, checkpoint)
                 current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)})
+            if correction_turn and session.pending_finish_arguments is not None:
+                current_exchange.append({"role": "user", "content": self._finish_correction_instruction()})
             session.exchange = current_exchange
-            if correction_turn and not correction_requested and session.pending_finish_arguments is not None:
-                return self._accept_finish(
-                    cve.cve_id,
-                    session.pending_finish_arguments,
-                    state,
-                    session,
-                    budget,
-                    started,
-                    checkpoint,
-                    documents=session.pending_finish_documents or {},
-                    fallback_reason="correction_not_submitted",
-                )
+
+    @staticmethod
+    def _finish_correction_instruction() -> str:
+        return (
+            "Correct the rejected finish_investigation submission. You may search or fetch a different source "
+            "when the available documents do not contain substantive evidence. Fetching an available document "
+            "URL once is permitted to redisplay its stored passages, but it supplies no new information and "
+            "further repeats return an error. Immediately "
+            "after a fetch, record each distinct substantive passage that supports a finding before another tool "
+            "call. Use only IDs from the fetched document; do not record nvd-description or evidence already in "
+            "recorded_evidence. Then call finish_investigation once using only substantive, unambiguous evidence "
+            "IDs; preserve each independently supported mechanism or security-boundary failure as its own finding, "
+            "including an unauthenticated attacker acting as a trusted service. A statement that code execution "
+            "is possible is not its mechanism: establish the attacker-input-to-interpreter transition or omit "
+            "that mechanism. Additional targeted research remains appropriate when it may reveal another mechanism, "
+            "an important precondition, conflicting evidence, or information that could change classification. When "
+            "another source is expected only to restate recorded facts, finish without exhausting the remaining "
+            "budget, and retain valid findings."
+        )
 
     def _accept_finish(
         self,
@@ -500,11 +544,12 @@ class ResearchRunner:
             return
         if name == "search":
             logger.info(
-                "[%s] research tool=search status=success query=%r query_chars=%d results=%d",
+                "[%s] research tool=search status=success query=%r query_chars=%d results=%d available_results_omitted=%d",
                 cve_id,
                 _bounded_text(arguments.get("query", "")),
                 len(str(arguments.get("query", ""))),
                 len(result.get("results", [])),
+                result.get("available_results_omitted", 0),
             )
         elif name == "fetch":
             fetch_trace = state.provenance.fetches[-1]

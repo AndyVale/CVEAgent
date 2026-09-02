@@ -1,12 +1,14 @@
 import json
 import logging
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
 import pytest
 
-from cve_agent.adapters import CachedWebClient, TavilySearchProvider
+import cve_agent.research_context as research_context_module
+from cve_agent.adapters import CachedWebClient, TavilySearchProvider, UnusableDocumentError
 from cve_agent.agent import InvestigationAgent
 from cve_agent.config import Settings
 from cve_agent.evidence import build_passages
@@ -15,7 +17,7 @@ from cve_agent.models import CVERecord, ClassificationStatus, Document, Evidence
 from cve_agent.prompts import CLASSIFICATION_SYSTEM_PROMPT, HIERARCHY_ROUTING_SYSTEM_PROMPT, RESEARCH_SYSTEM_PROMPT
 from cve_agent.provenance import ResearchProvenanceRecorder
 from cve_agent.research import ResearchSession, ResearchToolExecutor
-from cve_agent.research_context import MAX_NVD_REFERENCE_CANDIDATES, build_research_context, select_reference_candidates
+from cve_agent.research_context import MAX_NVD_REFERENCE_CANDIDATES, _ResearchContextSerializer, build_research_context, select_reference_candidates
 from cve_agent.schemas import AGENT_TOOLS
 from cve_agent.strategy import ClassificationStrategy, EffectiveClassificationStrategy
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel, load_taxonomy
@@ -48,6 +50,18 @@ class FailingFetchWeb(FixtureWeb):
     def fetch(self, url):
         request = httpx.Request("GET", url)
         raise httpx.HTTPStatusError("forbidden", request=request, response=httpx.Response(403, request=request))
+
+
+class MultiDocumentWeb(FixtureWeb):
+    def fetch(self, url):
+        if url.endswith("/secondary"):
+            return Document(
+                url,
+                "Technical analysis",
+                "A crafted request bypasses authentication before reaching the vulnerable handler.",
+                document_id="doc-2",
+            )
+        return super().fetch(url)
 
 
 class ToolCall:
@@ -136,6 +150,22 @@ class FullFlowClient:
         raise AssertionError("unexpected model request after taxonomy chunk classification")
 
 
+class RecordEvidenceFlowClient(FullFlowClient):
+    def create(self, **kwargs):
+        if "tools" in kwargs:
+            self.requests.append(kwargs)
+            steps = [
+                ("search", {"query": "generic vulnerability mechanism"}),
+                ("fetch", {"url": "https://fixture.test/advisory"}),
+                ("record_evidence", {"document_id": "doc-1", "passage_id": "p1", "quote_anchor": ""}),
+                ("finish_investigation", finish_arguments()),
+            ]
+            name, arguments = steps[self.research_step]
+            self.research_step += 1
+            return response(Message([ToolCall(f"call-{self.research_step}", name, arguments)]))
+        return super().create(**kwargs)
+
+
 class FinishCorrectionClient(FullFlowClient):
     def __init__(self, *, repeat_invalid=False):
         super().__init__()
@@ -158,6 +188,30 @@ class FinishCorrectionClient(FullFlowClient):
             name, arguments = self.research_steps[self.research_step]
             self.research_step += 1
             return response(Message([ToolCall(f"call-{self.research_step}", name, arguments)]))
+        return super().create(**kwargs)
+
+
+class FinishCorrectionResearchClient(FinishCorrectionClient):
+    def __init__(self):
+        super().__init__()
+        corrected = finish_arguments()
+        corrected["findings"].append({
+            "aspect": "exploitation_mechanism",
+            "statement": "A crafted request bypasses authentication before reaching the handler.",
+            "evidence_ids": ["doc-2:p1"],
+        })
+        self.research_steps[3:3] = [
+            (None, {}),
+            ("search", {"query": "specific vendor vulnerability mechanism"}),
+            ("fetch", {"url": "https://fixture.test/secondary"}),
+        ]
+        self.research_steps[-1] = ("finish_investigation", corrected)
+
+    def create(self, **kwargs):
+        if "tools" in kwargs and self.research_steps[self.research_step][0] is None:
+            self.requests.append(kwargs)
+            self.research_step += 1
+            return response(Message(content="I need another source before correcting the citations."))
         return super().create(**kwargs)
 
 
@@ -192,14 +246,36 @@ def public_url_policy():
 
 
 def test_prompts_require_mechanism_focused_evidence_without_exposing_taxonomy_to_research():
-    assert "taxonomy" not in RESEARCH_SYSTEM_PROMPT.casefold()
-    assert "conduct targeted web research" in RESEARCH_SYSTEM_PROMPT.casefold()
+    prompt = RESEARCH_SYSTEM_PROMPT.casefold()
+    assert "taxonomy" not in prompt
+    assert "strongest starting evidence" in prompt
+    assert "without performing web research" not in prompt
+    assert "search the web only" not in prompt
+    assert "never call fetch" not in prompt
+    assert "same stored passages" in prompt
+    assert "one repeat fetch per document is permitted" in prompt
+    assert "further repeats return a no-new-information error" in prompt
+    assert "search omits results" in prompt
+    assert "immediately after each successful fetch" in prompt
+    assert "before searching, fetching another source" in prompt
+    assert "never a search result or its snippet" in prompt
+    assert "must not be recorded again" in prompt
+    assert "separate root_cause or exploitation_mechanism finding" in prompt
+    assert "act as a trusted service" in prompt
+    assert "could allow remote code execution" in prompt
+    assert "do not finish on that phrase alone" in prompt
+    assert "make a targeted search" in prompt
+    assert "additional targeted research is appropriate" in prompt
+    assert "information that could change classification" in prompt
+    assert "expected only to restate recorded facts" in prompt
     assert "root cause" in RESEARCH_SYSTEM_PROMPT
     assert "record_evidence" in RESEARCH_SYSTEM_PROMPT
     assert "untrusted source data" in RESEARCH_SYSTEM_PROMPT
     assert "not a checklist" in RESEARCH_SYSTEM_PROMPT
     assert "consequence" in CLASSIFICATION_SYSTEM_PROMPT
     assert "does not by itself prove" in CLASSIFICATION_SYSTEM_PROMPT
+    assert "regardless of their organizational aspect" in CLASSIFICATION_SYSTEM_PROMPT
+    assert "acts as a trusted service through an alternate route" in CLASSIFICATION_SYSTEM_PROMPT
     assert "semantic specialization" in HIERARCHY_ROUTING_SYSTEM_PROMPT
     assert "exactly one routing decision" in HIERARCHY_ROUTING_SYSTEM_PROMPT
 
@@ -213,6 +289,17 @@ def test_finish_tool_uses_five_optional_topics_without_unknown_or_status_matrix(
     assert set(aspects) == {item.value for item in InvestigationAspect}
     assert "unknowns" not in parameters["properties"]
     assert "information_status" not in parameters["properties"]
+    fetch = next(item["function"] for item in AGENT_TOOLS if item["function"]["name"] == "fetch")
+    assert "available_documents" in fetch["description"]
+    assert "same stored passages" in fetch["description"]
+    assert "Never fetch" not in fetch["description"]
+    assert "permitted to redisplay" in fetch["description"]
+    assert "immediately record" in fetch["description"].casefold()
+    record = next(item["function"] for item in AGENT_TOOLS if item["function"]["name"] == "record_evidence")
+    assert "every distinct, substantive passage" in record["description"]
+    assert "nvd-description" in record["description"]
+    assert "already in recorded_evidence" in record["description"]
+    assert "separate root_cause or exploitation_mechanism findings" in finish["description"]
 
 
 def test_finish_investigation_promotes_fetched_passages_and_discards_only_unsupported_findings(tmp_path):
@@ -321,6 +408,32 @@ def test_failed_finish_correction_retains_valid_findings_and_reason_counts(tmp_p
     assert state.findings[0].aspect == InvestigationAspect.ROOT_CAUSE
 
 
+def test_finish_correction_allows_auxiliary_research_until_corrected_submission(tmp_path):
+    client = FinishCorrectionResearchClient()
+    state = InvestigationState()
+
+    result = InvestigationAgent(
+        replace(settings(tmp_path), max_search_calls=2, max_fetch_calls=2),
+        MultiDocumentWeb(),
+        client,
+    ).classify(CVERecord("VULN-1", "fixture"), taxonomy(), state)
+
+    assert result.status == ClassificationStatus.CLASSIFIED
+    research_events = [event for event in state.tool_history if event["tool"] != "classify_taxonomy_chunk"]
+    assert [event["tool"] for event in research_events] == [
+        "search",
+        "fetch",
+        "finish_investigation",
+        "search",
+        "fetch",
+        "finish_investigation",
+    ]
+    finish_events = [event for event in state.tool_history if event["tool"] == "finish_investigation"]
+    assert [event["status"] for event in finish_events] == ["error", "success"]
+    assert result.operational["research_profile"]["discarded_findings"] == 0
+    assert [item.evidence_id for item in state.evidence] == ["doc-1:p1", "doc-2:p1"]
+
+
 def test_agent_collects_evidence_then_classifies_complete_taxonomy(tmp_path):
     client = FullFlowClient()
     state = InvestigationState(evidence=[EvidenceRecord("unused", "https://fixture.test/unused", "Unlinked passage.", "web")])
@@ -366,6 +479,81 @@ def test_agent_collects_evidence_then_classifies_complete_taxonomy(tmp_path):
     assert result.provenance["evidence"][0]["evidence_id"] == "doc-1:p1"
 
 
+def test_record_evidence_response_uses_context_for_quote_and_history_moves_once(tmp_path):
+    client = RecordEvidenceFlowClient()
+    state = InvestigationState()
+
+    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(
+        CVERecord("VULN-1", "fixture"), taxonomy(), state,
+    )
+
+    research_requests = [item for item in client.requests if "tools" in item]
+    contexts = [json.loads(item["messages"][1]["content"]) for item in research_requests]
+    assert result.status == ClassificationStatus.CLASSIFIED
+    assert [[event["tool"] for event in context["tool_history"]] for context in contexts] == [
+        [],
+        [],
+        ["search"],
+        ["search", "fetch"],
+    ]
+    assert contexts[-1]["recorded_evidence"][0]["quote"] == state.evidence[0].quote
+    record_result = json.loads(research_requests[-1]["messages"][-1]["content"])
+    assert record_result["evidence_id"] == "doc-1:p1"
+    assert "quote" not in record_result
+
+
+def test_agent_can_finish_from_sufficient_nvd_evidence_without_web_calls(tmp_path):
+    class NoWebCalls(FixtureWeb):
+        def search(self, query):
+            raise AssertionError("search should not be called")
+
+        def fetch(self, url):
+            raise AssertionError("fetch should not be called")
+
+    class NvdOnlyClient:
+        def __init__(self):
+            self.requests = []
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        def create(self, **kwargs):
+            self.requests.append(kwargs)
+            if "tools" in kwargs:
+                return response(Message([ToolCall(
+                    "finish-nvd",
+                    "finish_investigation",
+                    finish_arguments("nvd-description"),
+                )]))
+            payload = json.loads(kwargs["messages"][1]["content"])
+            return response(Message(content=json.dumps({
+                "chunk_id": payload["taxonomy_chunk"]["chunk_id"],
+                "supported": [{
+                    "label": "MEMORY",
+                    "confidence": 0.9,
+                    "evidence": [{
+                        "evidence_id": "nvd-description",
+                        "explanation": "The NVD description directly establishes the mechanism.",
+                    }],
+                }],
+            })))
+
+    client = NvdOnlyClient()
+    state = InvestigationState(evidence=[EvidenceRecord(
+        "nvd-description",
+        "https://nvd.test/VULN-1",
+        "An unchecked length causes an out-of-bounds read of attacker-selected bytes.",
+        "nvd_description",
+    )])
+
+    result = InvestigationAgent(settings(tmp_path), NoWebCalls(), client).classify(
+        CVERecord("VULN-1", state.evidence[0].quote), taxonomy(), state,
+    )
+
+    assert result.status == ClassificationStatus.CLASSIFIED
+    assert len([request for request in client.requests if "tools" in request]) == 1
+    assert state.tool_history[0]["tool"] == "finish_investigation"
+    assert state.visited_urls == []
+
+
 def test_research_context_prioritizes_and_bounds_nvd_references():
     generic = tuple(Reference(f"https://generic.test/{index}", tags=("Third Party Advisory",)) for index in range(30))
     vendor = Reference("https://vendor.test/advisory", tags=("Vendor Advisory",))
@@ -389,7 +577,138 @@ def test_research_context_prioritizes_and_bounds_nvd_references():
     assert context["cve"]["references"][0]["url"] == vendor.url
     assert context["cve"]["reference_count"] == 31
     assert context["cve"]["omitted_reference_count"] == 31 - MAX_NVD_REFERENCE_CANDIDATES
+    assert "description" not in context["cve"]
     assert "facts" not in context
+
+
+def test_research_context_serializer_reuses_static_fragments_and_defers_exchange_history(monkeypatch):
+    description = "Unique NVD description serialized exactly once."
+    cve = CVERecord(
+        "CVE-2024-12345",
+        description,
+        (Reference("https://vendor.test/advisory", tags=("Vendor Advisory",)),),
+        {"published": "2024-01-01"},
+    )
+    state = InvestigationState(
+        evidence=[EvidenceRecord("nvd-description", "https://nvd.test/CVE-2024-12345", description, "nvd_description")],
+        tool_history=[
+            {"tool": "get_cve", "status": "success"},
+            {"tool": "fetch", "status": "success", "document_id": "doc-1"},
+        ],
+    )
+    documents = {"doc-1": Document(
+        "https://vendor.test/advisory",
+        "Vendor advisory",
+        "Technical evidence.",
+        document_id="doc-1",
+    )}
+    encoded = []
+    original_dumps = research_context_module._json_dumps
+
+    def counting_dumps(value):
+        encoded.append(value)
+        return original_dumps(value)
+
+    monkeypatch.setattr(research_context_module, "_json_dumps", counting_dumps)
+    serializer = _ResearchContextSerializer(cve)
+    current = serializer.render(
+        state,
+        documents,
+        [{"role": "tool", "content": "fetch result"}],
+        turn=1,
+        searches=0,
+        fetches=1,
+        max_turns=8,
+        max_searches=2,
+        max_fetches=3,
+    )
+    initial_encodings = len(encoded)
+    following = serializer.render(
+        state,
+        documents,
+        [],
+        turn=2,
+        searches=0,
+        fetches=1,
+        max_turns=8,
+        max_searches=2,
+        max_fetches=3,
+    )
+
+    current_context = json.loads(current)
+    following_context = json.loads(following)
+    assert "description" not in current_context["cve"]
+    assert current.count(description) == 1
+    assert [event["tool"] for event in current_context["tool_history"]] == ["get_cve"]
+    assert [event["tool"] for event in following_context["tool_history"]] == ["get_cve", "fetch"]
+    assert len(encoded) == initial_encodings + 1  # Only the changed budget counters were encoded.
+
+    state.evidence.append(EvidenceRecord("doc-1:p1", documents["doc-1"].url, "Technical evidence.", "web"))
+    state.tool_history.append({"tool": "record_evidence", "status": "success", "evidence_id": "doc-1:p1"})
+    documents["doc-2"] = Document("https://vendor.test/second", "Second", "More evidence.", document_id="doc-2")
+    before_changes = len(encoded)
+    updated = serializer.render(
+        state,
+        documents,
+        [],
+        turn=3,
+        searches=0,
+        fetches=2,
+        max_turns=8,
+        max_searches=2,
+        max_fetches=3,
+    )
+
+    assert len(encoded) == before_changes + 4  # New evidence, event, document catalog, and budget.
+    assert len(json.loads(updated)["recorded_evidence"]) == 2
+
+    state.evidence[:] = [state.evidence[-1]]
+    state.tool_history.reverse()
+    documents.pop("doc-1")
+    rebuilt = json.loads(serializer.render(
+        state,
+        documents,
+        [],
+        turn=4,
+        searches=0,
+        fetches=2,
+        max_turns=8,
+        max_searches=2,
+        max_fetches=3,
+    ))
+
+    assert [item["evidence_id"] for item in rebuilt["recorded_evidence"]] == ["doc-1:p1"]
+    assert [item["tool"] for item in rebuilt["tool_history"]] == ["record_evidence", "fetch", "get_cve"]
+    assert [item["document_id"] for item in rebuilt["available_documents"]] == ["doc-2"]
+
+
+def test_research_context_identifies_both_urls_of_fetched_documents():
+    document = Document(
+        "https://vendor.test/final",
+        "Vendor advisory",
+        "Technical vulnerability evidence.",
+        document_id="vendor-doc",
+        requested_url="https://vendor.test/start",
+    )
+
+    context = build_research_context(
+        CVERecord("VULN-1", "fixture"),
+        InvestigationState(),
+        {"vendor-doc": document},
+        turn=1,
+        searches=0,
+        fetches=1,
+        max_turns=8,
+        max_searches=2,
+        max_fetches=3,
+    )
+
+    assert context["available_documents"] == [{
+        "document_id": "vendor-doc",
+        "requested_url": "https://vendor.test/start",
+        "resolved_url": "https://vendor.test/final",
+        "title": "Vendor advisory",
+    }]
 
 
 def test_agent_emits_stage_and_tool_progress_without_logging_evidence_text(tmp_path, caplog):
@@ -721,6 +1040,8 @@ def test_record_evidence_resolves_anchor_and_reuses_fetch(tmp_path):
     session.provenance.record_tool_call("fetch", {"url": "https://fixture.test/advisory"}, first, session.documents)
     second = executor.execute("fetch", {"url": "https://fixture.test/advisory"}, state, session)
     session.provenance.record_tool_call("fetch", {"url": "https://fixture.test/advisory"}, second, session.documents)
+    third = executor.execute("fetch", {"url": "https://fixture.test/advisory"}, state, session)
+    session.provenance.record_tool_call("fetch", {"url": "https://fixture.test/advisory"}, third, session.documents)
     recorded = executor.execute(
         "record_evidence",
         {"document_id": "doc-1", "passage_id": "", "quote_anchor": "issue causes memory corruption aggregate processing"},
@@ -731,10 +1052,27 @@ def test_record_evidence_resolves_anchor_and_reuses_fetch(tmp_path):
     assert session.fetches == 1
     assert first["reused"] is False
     assert second["reused"] is True
-    assert [item.reused for item in state.provenance.fetches] == [False, True]
+    assert third["reused"] is True
+    assert "error" in third
+    assert "passages" not in third
+    assert [item.reused for item in state.provenance.fetches] == [False, True, True]
     assert second["document_id"] == first["document_id"]
     assert recorded["evidence_id"] == "doc-1:p1"
+    assert "quote" not in recorded
     assert state.evidence[0].verification == "fuzzy_anchor"
+
+    repeated = executor.execute(
+        "record_evidence",
+        {"document_id": "doc-1", "passage_id": "p1", "quote_anchor": ""},
+        state,
+        session,
+    )
+    assert repeated == {
+        "recorded": False,
+        "evidence_id": "doc-1:p1",
+        "evidence_count": 1,
+        "instruction": "This evidence is already recorded; continue without recording it again.",
+    }
 
 
 @pytest.mark.parametrize(
@@ -764,6 +1102,35 @@ def test_fetch_reuses_normalized_url_variants_without_consuming_quota(tmp_path, 
     assert reused["reused"] is True
     assert web.fetches == 1
     assert session.fetches == 1
+
+
+def test_search_omits_results_for_available_requested_and_resolved_urls(tmp_path):
+    class ExistingAndNovelWeb(FixtureWeb):
+        def search(self, query):
+            return [
+                SearchResult("Requested", "https://fixture.test/start"),
+                SearchResult("Resolved", "https://fixture.test/final#section"),
+                SearchResult("Novel", "https://fixture.test/novel"),
+            ]
+
+        def fetch(self, url):
+            return Document(
+                "https://fixture.test/final",
+                "Advisory",
+                "Substantive redirected vulnerability evidence.",
+                document_id="redirected",
+                requested_url=url,
+            )
+
+    executor = ResearchToolExecutor(settings(tmp_path), ExistingAndNovelWeb())
+    session, state = ResearchSession(), InvestigationState()
+
+    executor.execute("fetch", {"url": "https://fixture.test/start"}, state, session)
+    result = executor.execute("search", {"query": "new technical evidence"}, state, session)
+
+    assert [item["url"] for item in result["results"]] == ["https://fixture.test/novel"]
+    assert result["available_results_omitted"] == 2
+    assert "available_documents" in result["instruction"]
 
 
 def test_fetch_reuses_both_sides_of_a_redirect(tmp_path):
@@ -915,6 +1282,39 @@ def test_cached_web_client_records_raw_extraction_fallback(tmp_path, monkeypatch
     assert document.metadata["extraction_method"] == "raw_fallback"
     assert document.metadata["extraction_input_chars"] == len(raw)
     assert document.metadata["extraction_output_chars"] == len(raw)
+
+
+def test_cached_web_client_rejects_javascript_shell_without_caching(tmp_path):
+    url = "https://fixture.test/javascript-shell"
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, text="You need to enable JavaScript to run this app.")
+    )
+    client = CachedWebClient(
+        settings(tmp_path),
+        http_client=httpx.Client(transport=transport),
+        url_policy=public_url_policy(),
+    )
+
+    with pytest.raises(UnusableDocumentError, match="JavaScript placeholder"):
+        client.fetch(url)
+
+    assert not client._cache("fetch", url).exists()
+
+
+def test_cached_web_client_rejects_legacy_cached_javascript_shell(tmp_path):
+    client = CachedWebClient(settings(tmp_path), url_policy=public_url_policy())
+    url = "https://fixture.test/legacy-javascript-shell"
+    document = Document(
+        url,
+        "Application",
+        "Please enable JavaScript to continue.",
+        document_id="legacy-shell",
+        requested_url=url,
+    )
+    client._cache("fetch", url).write_text(json.dumps(document.__dict__), encoding="utf-8")
+
+    with pytest.raises(UnusableDocumentError, match="choose another source"):
+        client.fetch(url)
 
 
 def test_cached_web_client_accepts_legacy_document_metadata(tmp_path):

@@ -26,17 +26,17 @@ _FINDING_SCHEMA = {
 AGENT_TOOLS = [
     tool(
         "search",
-        "Find relevant web sources using a targeted query. Results are leads only and must be fetched before they can support a finding.",
+        "Find relevant supporting web sources using a targeted query. Results whose requested or resolved URLs are already in available_documents are omitted. Results are leads only and must be fetched before they can support a finding.",
         {"type": "object", "additionalProperties": False, "properties": {"query": {"type": "string"}}, "required": ["query"]},
     ),
     tool(
         "fetch",
-        "Retrieve a source and inspect its bounded numbered passages. Discard sources that contain only boilerplate or otherwise lack useful vulnerability information.",
+        "Retrieve a source and inspect its bounded numbered passages. One repeat fetch per requested or resolved URL in available_documents is permitted to redisplay the same stored passages, but is unlikely to add information; further repeats return an error. Use another source for new evidence. Immediately record every useful substantive passage before another tool call; discard sources containing only boilerplate or no useful vulnerability information.",
         {"type": "object", "additionalProperties": False, "properties": {"url": {"type": "string"}}, "required": ["url"]},
     ),
     tool(
         "record_evidence",
-        "Optionally preserve an important passage before using another tool. passage_id accepts the full ID or the document-local number (for example 1 or p1). Fetched passage IDs may also be cited directly in finish_investigation.",
+        "Immediately after a successful fetch, preserve every distinct, substantive passage that could support a final finding before using another tool or finishing. Use only a fetched document and do not record nvd-description or an evidence ID already in recorded_evidence. passage_id accepts the full ID or the document-local number (for example 1 or p1); quote_anchor may be empty when passage_id is sufficient.",
         {
             "type": "object",
             "additionalProperties": False,
@@ -46,7 +46,7 @@ AGENT_TOOLS = [
     ),
     tool(
         "finish_investigation",
-        "Submit the useful source-grounded findings. The aspects are high-level categories, not a checklist: omit categories that reliable sources did not establish. Fetched passages are promoted automatically when cited.",
+        "Submit the useful source-grounded findings after recording each distinct passage that supports them and performing reasonable targeted research. Additional research remains appropriate when it may reveal a distinct mechanism, important precondition, conflicting evidence, or information that could change classification. When another source is expected only to restate recorded facts, finish instead of exhausting the remaining budget on redundant corroboration. Preserve independently supported attacker actions, vulnerability mechanisms, and security-boundary failures as separate root_cause or exploitation_mechanism findings rather than only impacts. An unauthenticated attacker authenticating or acting as a trusted service is a distinct exploitation mechanism. A phrase such as 'could allow remote code execution' does not establish a code-execution mechanism: if an attempted reference has no useful passage and search budget remains, use targeted search for the attacker-input-to-interpreter transition before omitting that mechanism. The aspects are high-level categories, not a checklist: omit categories that reliable sources did not establish. Unrecorded fetched passages are promoted automatically when cited as a safety fallback.",
         {
             "type": "object",
             "additionalProperties": False,
@@ -76,7 +76,7 @@ def research_tools(document_ids: Iterable[str]) -> list[dict[str, Any]]:
 def _record_evidence_tool(document_ids: tuple[str, ...]) -> dict[str, Any]:
     return tool(
         "record_evidence",
-        "Optionally preserve an important passage from an available fetched document before using another tool.",
+        "Immediately after a successful fetch, preserve every distinct, substantive passage from an available fetched document that could support a final finding before using another tool or finishing. Do not record nvd-description or an evidence ID already in recorded_evidence.",
         {
             "type": "object",
             "additionalProperties": False,

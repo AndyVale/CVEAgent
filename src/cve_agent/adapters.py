@@ -23,6 +23,27 @@ from cve_agent.web_policy import PublicWebUrlError, PublicWebUrlPolicy
 logger = logging.getLogger(__name__)
 
 
+class UnusableDocumentError(ValueError):
+    """Raised when retrieval succeeds but yields no usable page content."""
+
+
+_JAVASCRIPT_SHELL_TEXTS = frozenset({
+    "javascript is required to view this site",
+    "please enable javascript to continue",
+    "please enable javascript to view this site",
+    "please enable javascript to view this website",
+    "you need to enable javascript to run this app",
+})
+
+
+def _ensure_usable_document_content(content: str) -> None:
+    normalized = " ".join(content.split()).casefold().strip(" .!?")
+    if normalized in _JAVASCRIPT_SHELL_TEXTS:
+        raise UnusableDocumentError(
+            "retrieved page contains only a JavaScript placeholder; choose another source"
+        )
+
+
 def _request_json(url: str, timeout: float, retries: int, headers: dict[str, str] | None = None) -> Any:
     for attempt in range(retries + 1):
         try:
@@ -167,6 +188,7 @@ class CachedWebClient:
             cached["redirect_chain"] = tuple(cached.get("redirect_chain", ()))
             document = Document(**cached)
             self._validate_document_urls(document)
+            _ensure_usable_document_content(document.content)
             logger.info("fetch cache hit url=%s document_id=%s chars=%d", safe_url(url), document.document_id, len(document.content))
             return document
         logger.info("fetch cache miss url=%s", safe_url(url))
@@ -195,6 +217,7 @@ class CachedWebClient:
         extraction_method = "trafilatura" if extracted and extracted.strip() else "raw_fallback"
         content = extracted if extraction_method == "trafilatura" else raw_content
         content = content[: self.settings.max_document_chars]
+        _ensure_usable_document_content(content)
         logger.info(
             "fetch extracted url=%s input_chars=%d output_chars=%d extraction_method=%s",
             safe_url(url),
