@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "taxonomy": "hierarchical_taxonomy.json",
   "taxonomy_sha256": "4249dfb001cf05d00bd19b935f8b7ed3ffaddce4177114fff93930e156897f64",
   "cases": [
     {

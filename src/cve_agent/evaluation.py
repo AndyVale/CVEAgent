@@ -26,7 +26,6 @@ class BenchmarkCase:
 class Benchmark:
     cases: tuple[BenchmarkCase, ...]
     taxonomy_sha256: str | None = None
-    taxonomy_name: str | None = None
 
     @property
     def cve_ids(self) -> list[str]:
@@ -43,7 +42,7 @@ class Benchmark:
         unknown = [cve_id for cve_id in requested if cve_id not in by_id]
         if unknown:
             raise BenchmarkError(f"CVE IDs missing from expected classifications: {unknown}")
-        return Benchmark(tuple(by_id[cve_id] for cve_id in requested), self.taxonomy_sha256, self.taxonomy_name)
+        return Benchmark(tuple(by_id[cve_id] for cve_id in requested), self.taxonomy_sha256)
 
 
 @dataclass(frozen=True)
@@ -153,10 +152,7 @@ def load_benchmark(path: str | Path, taxonomy: Taxonomy) -> Benchmark:
 
     if not cases:
         raise BenchmarkError("expected classifications must contain at least one case")
-    taxonomy_name = raw.get("taxonomy")
-    if taxonomy_name is not None and not isinstance(taxonomy_name, str):
-        raise BenchmarkError("expected taxonomy name must be a string")
-    return Benchmark(tuple(cases), expected_fingerprint, taxonomy_name)
+    return Benchmark(tuple(cases), expected_fingerprint)
 
 
 def evaluate_results(results: list[ClassificationResult], benchmark: Benchmark, taxonomy: Taxonomy) -> EvaluationReport:

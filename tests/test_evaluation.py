@@ -169,6 +169,7 @@ def test_fixture_taxonomy_and_benchmark_ids_are_not_hard_coded_in_production():
         taxonomy_payload = json.loads((FIXTURES / taxonomy_name).read_text(encoding="utf-8"))
         benchmark_payload = json.loads((FIXTURES / benchmark_name).read_text(encoding="utf-8"))
         assert "cves" not in benchmark_payload
+        assert "taxonomy" not in benchmark_payload
         fixture_values.update(item["id"] for item in taxonomy_payload["labels"])
         fixture_values.update(item["cve_id"] for item in benchmark_payload["cases"])
     production = "\n".join(path.read_text(encoding="utf-8") for path in (FIXTURES.parent / "src" / "cve_agent").glob("*.py"))

@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "taxonomy": "flat_taxonomy.json",
   "taxonomy_sha256": "b42687ebe02101e6b575f03530bdba7b3e63b2d009bbd2e9348a976be516f5e8",
   "cases": [
     {

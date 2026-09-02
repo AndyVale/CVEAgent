@@ -80,7 +80,6 @@ class ClassificationStatus(StrEnum):
 class InvestigationStopReason(StrEnum):
     INVESTIGATION_LIMIT = "investigation_limit"
     TOKEN_BUDGET = "token_budget"
-    NO_FINISH_TOOL = "no_finish_tool"
     CLASSIFICATION_ERROR = "classification_error"
 
 
