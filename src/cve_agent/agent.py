@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -159,6 +160,7 @@ class InvestigationAgent:
             "research_profile": {
                 "findings": len(research.findings),
                 "discarded_findings": research.discarded_findings,
+                "discarded_by_reason": dict(sorted(Counter(research.discarded_reasons).items())),
                 "promoted_evidence": research.promoted_evidence,
             },
         }

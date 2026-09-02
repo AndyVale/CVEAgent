@@ -34,7 +34,8 @@ document ID is then constrained to fetched documents. A defensive invalid call i
 duplicate-call tracking, so the same call can succeed after the document is fetched. Its 198-test
 suite and live Heartbleed sequence passed without the earlier document-not-found warning.
 
-The public-web trust unit is ready. `PublicWebUrlPolicy` permits only credential-free HTTP(S) URLs
+The public-web trust unit is committed as
+`5e9388c fix: enforce public web retrieval boundaries`. `PublicWebUrlPolicy` permits only credential-free HTTP(S) URLs
 whose DNS answers are all globally routable. Search candidates now return printable rejection
 reasons without exception-driven hostname detection; malformed cached URLs such as an escaped
 `www\\.sentinelone.com` hostname are discarded and logged. Typed fetch failures remain visible in
@@ -45,7 +46,17 @@ and package build pass. A fresh controlled debugger run classified `CVE-2020-110
 `CVE-2014-0160` through real NVD, Tavily, public DNS, fetched advisories, the model, and
 schema-version-3 persistence. Both completed successfully, the project-only first-chance tracer
 observed no exceptions, temporary state was removed, and credentials remained process-only.
-Next: commit `fix: enforce public web retrieval boundaries`.
+The coherent-evidence unit is ready. Fetched text is packed into deterministic passages around
+900 characters instead of one passage per source line. Finish submissions are validated without
+mutating state; unknown, ambiguous, empty, or mechanically fragmentary citations receive one
+correction turn. If correction is unavailable or ignored, the valid subset is materialized and
+discard reasons remain in operational metadata and provenance. The complete 225-test suite,
+compilation, whitespace and secret checks, and package build pass. A fresh debugger run of
+`CVE-2018-9206` and `CVE-2015-7547` completed successfully with accepted quotes between 463 and
+990 characters, no unusable evidence, and no project exceptions. The second case exercised the
+invalid-finish fallback after the model ignored its correction instruction. Temporary state was
+removed and credentials remained process-only. Next: commit
+`fix: require coherent investigation evidence`.
 
 ## Current work
 

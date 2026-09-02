@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
@@ -33,6 +34,7 @@ class ResearchOutcome:
     findings: tuple[InvestigationFinding, ...] = ()
     discarded_findings: int = 0
     promoted_evidence: int = 0
+    discarded_reasons: tuple[str, ...] = ()
 
 
 @dataclass
@@ -44,6 +46,9 @@ class ResearchSession:
     seen_calls: set[tuple[str, str]] = field(default_factory=set)
     exchange: list[dict[str, Any]] = field(default_factory=list)
     provenance: ResearchProvenanceRecorder | None = None
+    finish_corrections: int = 0
+    pending_finish_arguments: dict[str, Any] | None = None
+    pending_finish_documents: dict[str, Document] | None = None
 
 
 class ResearchToolExecutor:
@@ -89,7 +94,9 @@ class ResearchToolExecutor:
                 "information_status": result.get("information_status"),
                 "finding_count": result.get("finding_count", 0),
                 "discarded_findings": result.get("discarded_findings", 0),
+                "discarded_by_reason": result.get("discarded_by_reason", {}),
                 "promoted_evidence": result.get("promoted_evidence", 0),
+                "evidence_issues": result.get("evidence_issues", []),
             })
         return event
 
@@ -236,7 +243,20 @@ class ResearchRunner:
         while True:
             elapsed = time.monotonic() - started
             if session.turns >= self.settings.max_agent_turns or elapsed >= self.settings.max_investigation_seconds:
+                if session.pending_finish_arguments is not None:
+                    return self._accept_finish(
+                        cve.cve_id,
+                        session.pending_finish_arguments,
+                        state,
+                        session,
+                        budget,
+                        started,
+                        checkpoint,
+                        documents=session.pending_finish_documents or {},
+                        fallback_reason="correction_limit_reached",
+                    )
                 return self._stopped(cve.cve_id, session.turns, elapsed, InvestigationStopReason.INVESTIGATION_LIMIT)
+            correction_turn = session.pending_finish_arguments is not None
             try:
                 response = self.chat(
                     cve.cve_id,
@@ -267,6 +287,18 @@ class ResearchRunner:
                     parallel_tool_calls=False,
                 )
             except BudgetExceeded:
+                if session.pending_finish_arguments is not None:
+                    return self._accept_finish(
+                        cve.cve_id,
+                        session.pending_finish_arguments,
+                        state,
+                        session,
+                        budget,
+                        started,
+                        checkpoint,
+                        documents=session.pending_finish_documents or {},
+                        fallback_reason="correction_budget_exceeded",
+                    )
                 return self._stopped(cve.cve_id, session.turns, elapsed, InvestigationStopReason.TOKEN_BUDGET)
 
             session.turns += 1
@@ -275,10 +307,23 @@ class ResearchRunner:
             logger.info("[%s] research turn=%d model_tool_calls=%d", cve.cve_id, session.turns, len(calls))
             if not calls:
                 logger.warning("[%s] research turn=%d returned no tool call; requesting one", cve.cve_id, session.turns)
+                if correction_turn and session.pending_finish_arguments is not None:
+                    return self._accept_finish(
+                        cve.cve_id,
+                        session.pending_finish_arguments,
+                        state,
+                        session,
+                        budget,
+                        started,
+                        checkpoint,
+                        documents=session.pending_finish_documents or {},
+                        fallback_reason="correction_not_submitted",
+                    )
                 session.exchange = [{"role": "user", "content": "Use a provided tool and finish by calling finish_investigation."}]
                 continue
 
             current_exchange = [{"role": "assistant", **message.model_dump(exclude_none=True)}]
+            correction_requested = False
             for call in calls:
                 name = call.function.name
                 try:
@@ -290,42 +335,45 @@ class ResearchRunner:
                     continue
 
                 if name == "finish_investigation":
-                    profile = build_investigation_profile(
+                    draft = build_investigation_profile(
                         arguments,
                         state,
                         session.documents,
                         max_preview_chars=self.settings.max_preview_chars,
+                        promote_evidence=False,
                     )
-                    result = {
-                        "status": "accepted",
-                        "information_status": profile.information_status,
-                        "finding_count": len(profile.findings),
-                        "discarded_findings": profile.discarded_findings,
-                        "promoted_evidence": profile.promoted_evidence,
-                    }
-                    self._checkpoint_tool(cve.cve_id, name, arguments, result, state, session, budget, checkpoint)
-                    logger.info(
-                        "[%s] research finished status=%s findings=%d aspects=%s discarded=%d promoted_evidence=%d turns=%d",
+                    can_correct = (
+                        bool(draft.evidence_issues)
+                        and not correction_turn
+                        and session.finish_corrections == 0
+                        and session.turns < self.settings.max_agent_turns
+                        and time.monotonic() - started < self.settings.max_investigation_seconds
+                    )
+                    if can_correct:
+                        result = {
+                            "error": "finish_investigation contains invalid evidence citations",
+                            "instruction": "Call finish_investigation once more using substantive, unambiguous evidence IDs. Valid findings may be retained.",
+                            "evidence_issues": [asdict(item) for item in draft.evidence_issues],
+                            "retained_finding_count": len(draft.findings),
+                            "discarded_findings": draft.discarded_findings,
+                            "discarded_by_reason": _reason_counts(draft.discarded_reasons),
+                        }
+                        self._checkpoint_tool(cve.cve_id, name, arguments, result, state, session, budget, checkpoint)
+                        current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)})
+                        session.finish_corrections += 1
+                        session.pending_finish_arguments = arguments
+                        session.pending_finish_documents = dict(session.documents)
+                        correction_requested = True
+                        break
+                    return self._accept_finish(
                         cve.cve_id,
-                        profile.information_status,
-                        len(profile.findings),
-                        ",".join(dict.fromkeys(item.aspect.value for item in profile.findings)) or "none",
-                        profile.discarded_findings,
-                        profile.promoted_evidence,
-                        session.turns,
-                        extra=log_extra(
-                            LogTone.SUCCESS if profile.information_status == "sufficient" else LogTone.INCOMPLETE
-                        ),
-                    )
-                    return ResearchOutcome(
-                        profile.information_status,
-                        profile.summary,
-                        True,
-                        session.turns,
-                        time.monotonic() - started,
-                        findings=profile.findings,
-                        discarded_findings=profile.discarded_findings,
-                        promoted_evidence=profile.promoted_evidence,
+                        arguments,
+                        state,
+                        session,
+                        budget,
+                        started,
+                        checkpoint,
+                        documents=session.documents,
                     )
 
                 try:
@@ -335,6 +383,79 @@ class ResearchRunner:
                 self._checkpoint_tool(cve.cve_id, name, arguments, result, state, session, budget, checkpoint)
                 current_exchange.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)})
             session.exchange = current_exchange
+            if correction_turn and not correction_requested and session.pending_finish_arguments is not None:
+                return self._accept_finish(
+                    cve.cve_id,
+                    session.pending_finish_arguments,
+                    state,
+                    session,
+                    budget,
+                    started,
+                    checkpoint,
+                    documents=session.pending_finish_documents or {},
+                    fallback_reason="correction_not_submitted",
+                )
+
+    def _accept_finish(
+        self,
+        cve_id: str,
+        arguments: dict[str, Any],
+        state: InvestigationState,
+        session: ResearchSession,
+        budget: TokenBudget,
+        started: float,
+        checkpoint: Callable[[], None],
+        *,
+        documents: dict[str, Document],
+        fallback_reason: str | None = None,
+    ) -> ResearchOutcome:
+        profile = build_investigation_profile(
+            arguments,
+            state,
+            documents,
+            max_preview_chars=self.settings.max_preview_chars,
+            promote_evidence=True,
+        )
+        result = {
+            "status": "accepted",
+            "information_status": profile.information_status,
+            "finding_count": len(profile.findings),
+            "discarded_findings": profile.discarded_findings,
+            "discarded_by_reason": _reason_counts(profile.discarded_reasons),
+            "promoted_evidence": profile.promoted_evidence,
+            "evidence_issues": [asdict(item) for item in profile.evidence_issues],
+        }
+        if fallback_reason:
+            result["fallback_reason"] = fallback_reason
+        self._checkpoint_tool(cve_id, "finish_investigation", arguments, result, state, session, budget, checkpoint)
+        logger.info(
+            "[%s] research finished status=%s findings=%d aspects=%s discarded=%d discarded_by_reason=%s promoted_evidence=%d turns=%d fallback=%s",
+            cve_id,
+            profile.information_status,
+            len(profile.findings),
+            ",".join(dict.fromkeys(item.aspect.value for item in profile.findings)) or "none",
+            profile.discarded_findings,
+            _reason_counts(profile.discarded_reasons),
+            profile.promoted_evidence,
+            session.turns,
+            fallback_reason or "none",
+            extra=log_extra(
+                LogTone.SUCCESS if profile.information_status == "sufficient" else LogTone.INCOMPLETE
+            ),
+        )
+        session.pending_finish_arguments = None
+        session.pending_finish_documents = None
+        return ResearchOutcome(
+            profile.information_status,
+            profile.summary,
+            True,
+            session.turns,
+            time.monotonic() - started,
+            findings=profile.findings,
+            discarded_findings=profile.discarded_findings,
+            promoted_evidence=profile.promoted_evidence,
+            discarded_reasons=profile.discarded_reasons,
+        )
 
     def _checkpoint_tool(
         self,
@@ -452,3 +573,7 @@ def _decode_tool_arguments(value: str) -> dict[str, Any]:
 def _bounded_text(value: Any, limit: int = 180) -> str:
     normalized = " ".join(str(value).split())
     return normalized if len(normalized) <= limit else normalized[: limit - 1] + "…"
+
+
+def _reason_counts(reasons: tuple[str, ...]) -> dict[str, int]:
+    return dict(sorted(Counter(reasons).items()))

@@ -93,7 +93,7 @@ def test_provenance_records_complete_multi_origin_chain_and_public_label_subset(
         documents,
     )
 
-    passage = build_passages("vendor-doc", document.content, max_chars=10_000)[1]
+    passage = build_passages("vendor-doc", document.content, max_chars=10_000)[0]
     record, _ = store_passage_evidence(state, document, passage, verification="finish_reference")
     recorder.record_tool_call(
         "finish_investigation",
@@ -121,7 +121,7 @@ def test_provenance_records_complete_multi_origin_chain_and_public_label_subset(
     public = build_public_provenance(labels, state)
 
     source = next(item for item in state.provenance.sources if item.document_id == "vendor-doc")
-    assert len(source.passages) == 3
+    assert len(source.passages) == 1
     assert {candidate.kind for candidate in state.provenance.candidates if candidate.candidate_id in source.candidate_ids} == {
         "nvd_reference",
         "web_search",
@@ -131,17 +131,16 @@ def test_provenance_records_complete_multi_origin_chain_and_public_label_subset(
     assert source.association.other_cve_ids == ("CVE-2023-9999",)
     assert len(state.provenance.candidates) == 3  # NVD reference plus both search results.
     assert {item.document_id for item in state.provenance.sources} >= {"vendor-doc", "unused-doc"}
-    assert state.provenance.label_links[0].evidence[0]["evidence_id"] == "vendor-doc:p2"
+    assert state.provenance.label_links[0].evidence[0]["evidence_id"] == "vendor-doc:p1"
     assert state.provenance.label_links[0].description == taxonomy.labels[0].description
 
     assert [item["source_id"] for item in public["sources"]] == ["source:web:vendor-doc"]
     assert {item["kind"] for item in public["sources"][0]["origins"]} == {"nvd_reference", "web_search"}
     assert public["sources"][0]["fetches"][0]["fetch_id"] == "fetch-1"
     evidence = public["evidence"][0]
-    assert evidence["evidence_id"] == "vendor-doc:p2"
+    assert evidence["evidence_id"] == "vendor-doc:p1"
     assert evidence["selection_event_id"] == "event-5"
-    assert evidence["context"]["before"]["passage_id"] == "vendor-doc:p1"
-    assert evidence["context"]["after"]["passage_id"] == "vendor-doc:p3"
+    assert evidence["context"] == {"before": None, "after": None}
     assert evidence["findings"][0]["statement"] == state.findings[0].statement
     assert public["labels"][0]["label"] == "LENGTH-TRUST"
 

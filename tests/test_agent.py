@@ -9,6 +9,7 @@ import pytest
 from cve_agent.adapters import CachedWebClient, TavilySearchProvider
 from cve_agent.agent import InvestigationAgent
 from cve_agent.config import Settings
+from cve_agent.evidence import build_passages
 from cve_agent.investigation import build_investigation_profile
 from cve_agent.models import CVERecord, ClassificationStatus, Document, EvidenceRecord, InvestigationAspect, InvestigationState, Reference, SearchResult
 from cve_agent.prompts import CLASSIFICATION_SYSTEM_PROMPT, HIERARCHY_ROUTING_SYSTEM_PROMPT, RESEARCH_SYSTEM_PROMPT
@@ -134,6 +135,31 @@ class FullFlowClient:
         raise AssertionError("unexpected model request after taxonomy chunk classification")
 
 
+class FinishCorrectionClient(FullFlowClient):
+    def __init__(self, *, repeat_invalid=False):
+        super().__init__()
+        invalid = finish_arguments()
+        invalid["findings"].append({
+            "aspect": "impact",
+            "statement": "Unsupported impact claim.",
+            "evidence_ids": ["doc-1:p99"],
+        })
+        self.research_steps = [
+            ("search", {"query": "generic vulnerability mechanism"}),
+            ("fetch", {"url": "https://fixture.test/advisory"}),
+            ("finish_investigation", invalid),
+            ("finish_investigation", invalid if repeat_invalid else finish_arguments()),
+        ]
+
+    def create(self, **kwargs):
+        if "tools" in kwargs:
+            self.requests.append(kwargs)
+            name, arguments = self.research_steps[self.research_step]
+            self.research_step += 1
+            return response(Message([ToolCall(f"call-{self.research_step}", name, arguments)]))
+        return super().create(**kwargs)
+
+
 class HybridFlowClient(FullFlowClient):
     def create(self, **kwargs):
         if "tools" not in kwargs and kwargs["messages"][0]["content"] == HIERARCHY_ROUTING_SYSTEM_PROMPT:
@@ -204,6 +230,8 @@ def test_finish_investigation_promotes_fetched_passages_and_discards_only_unsupp
     assert outcome.information_status == "sufficient"
     assert [item.aspect for item in outcome.findings] == [InvestigationAspect.ROOT_CAUSE]
     assert outcome.discarded_findings == 1
+    assert outcome.discarded_reasons == ("no_usable_evidence",)
+    assert outcome.evidence_issues[0].reason == "unknown_evidence"
     assert outcome.promoted_evidence == 1
     assert state.evidence[0].evidence_id == "doc-1:p1"
     assert state.evidence[0].verification == "finish_reference"
@@ -223,9 +251,10 @@ def test_finish_investigation_derives_insufficient_without_core_mechanism_or_web
 
 
 def test_finish_investigation_auto_promotes_an_unrecorded_late_passage(tmp_path):
-    content = "\n".join(f"Passage {index} technical detail." for index in range(1, 10))
+    content = "\n".join(f"Passage {index}: " + "technical detail " * 10 for index in range(1, 20))
     document = Document("https://fixture.test/long", "Long advisory", content, document_id="doc-late")
-    arguments = finish_arguments("doc-late:p9")
+    late_passage = build_passages("doc-late", content, max_chars=settings(tmp_path).max_preview_chars)[-1]
+    arguments = finish_arguments(late_passage.passage_id)
 
     outcome = build_investigation_profile(
         arguments,
@@ -234,8 +263,61 @@ def test_finish_investigation_auto_promotes_an_unrecorded_late_passage(tmp_path)
         max_preview_chars=settings(tmp_path).max_preview_chars,
     )
 
-    assert outcome.findings[0].evidence_ids == ("doc-late:p9",)
+    assert outcome.findings[0].evidence_ids == (late_passage.passage_id,)
     assert outcome.promoted_evidence == 1
+
+
+def test_finish_validation_does_not_promote_evidence_before_acceptance(tmp_path):
+    documents = {"doc-1": FixtureWeb().fetch("https://fixture.test/advisory")}
+    state = InvestigationState()
+
+    outcome = build_investigation_profile(
+        finish_arguments(),
+        state,
+        documents,
+        max_preview_chars=settings(tmp_path).max_preview_chars,
+        promote_evidence=False,
+    )
+
+    assert outcome.findings[0].evidence_ids == ("doc-1:p1",)
+    assert outcome.promoted_evidence == 1
+    assert state.evidence == []
+
+
+def test_finish_investigation_gets_one_evidence_correction_before_materialization(tmp_path):
+    client = FinishCorrectionClient()
+    state = InvestigationState()
+    snapshots = []
+
+    def checkpoint():
+        if state.tool_history:
+            snapshots.append((state.tool_history[-1]["tool"], state.tool_history[-1]["status"], len(state.evidence)))
+
+    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(
+        CVERecord("VULN-1", "fixture"), taxonomy(), state, checkpoint=checkpoint,
+    )
+
+    finish_events = [event for event in state.tool_history if event["tool"] == "finish_investigation"]
+    assert result.status == ClassificationStatus.CLASSIFIED
+    assert [event["status"] for event in finish_events] == ["error", "success"]
+    assert ("finish_investigation", "error", 0) in snapshots
+    assert result.operational["research_profile"]["discarded_findings"] == 0
+    assert [item.evidence_id for item in state.evidence] == ["doc-1:p1"]
+
+
+def test_failed_finish_correction_retains_valid_findings_and_reason_counts(tmp_path):
+    client = FinishCorrectionClient(repeat_invalid=True)
+    state = InvestigationState()
+
+    result = InvestigationAgent(settings(tmp_path), FixtureWeb(), client).classify(
+        CVERecord("VULN-1", "fixture"), taxonomy(), state,
+    )
+
+    finish_events = [event for event in state.tool_history if event["tool"] == "finish_investigation"]
+    assert result.status == ClassificationStatus.CLASSIFIED
+    assert [event["status"] for event in finish_events] == ["error", "success"]
+    assert result.operational["research_profile"]["discarded_by_reason"] == {"no_usable_evidence": 1}
+    assert state.findings[0].aspect == InvestigationAspect.ROOT_CAUSE
 
 
 def test_agent_collects_evidence_then_classifies_complete_taxonomy(tmp_path):

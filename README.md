@@ -270,7 +270,7 @@ For each CVE, the system:
 1. retrieves NVD first and records its English description as exact initial evidence;
 2. conducts taxonomy-independent web research focused on the affected system, root cause,
    exploitation mechanism, preconditions, and impact;
-3. exposes fetched sources as stable, bounded passages;
+3. packs fetched source text into stable, coherent passages bounded around 900 characters;
 4. builds a concise profile from any supported high-level findings; its topics are guidance,
    not mandatory fields;
 5. selects exhaustive or hybrid taxonomy scanning from the taxonomy shape and operational
@@ -289,7 +289,10 @@ JSON result and preserves the evidence ID. A fetched passage cited at investigat
 promoted automatically;
 `record_evidence` remains an optional way to preserve a passage across research turns. Full
 passage IDs and document-local forms such as `1` or `p1` are accepted when unambiguous. Search
-snippets are leads, never evidence.
+snippets are leads, never evidence. A finish call containing unknown, ambiguous, empty, or
+obviously fragmentary evidence receives one correction opportunity. If that correction is not
+usable, valid findings from the original call are retained and only unsupported findings are
+discarded; the reasons remain in operational metadata and persisted provenance.
 
 Every investigation also builds a versioned, harness-owned provenance ledger. It records the
 bounded NVD and search candidates shown to the model, every search and fetch attempt, URL

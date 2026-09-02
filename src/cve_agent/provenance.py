@@ -126,7 +126,10 @@ class ResearchProvenanceRecorder:
                 "information_status": result.get("information_status"),
                 "finding_count": result.get("finding_count", 0),
                 "discarded_findings": result.get("discarded_findings", 0),
+                "discarded_by_reason": result.get("discarded_by_reason", {}),
                 "promoted_evidence": result.get("promoted_evidence", 0),
+                "evidence_issues": result.get("evidence_issues", []),
+                "fallback_reason": result.get("fallback_reason"),
                 "submitted_summary": _bounded(arguments.get("summary"), 2_000),
                 "submitted_findings": _bounded_findings(arguments.get("findings")),
             }

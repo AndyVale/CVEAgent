@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 from difflib import SequenceMatcher
 
@@ -8,6 +9,12 @@ from cve_agent.models import Document, EvidenceRecord, InvestigationState, Passa
 
 class EvidenceResolutionError(ValueError):
     """Raised when an evidence locator cannot resolve to one canonical passage."""
+
+
+_HTML_TAG_PATTERN = re.compile(r"<[^>]*>")
+_WORD_PATTERN = re.compile(r"\w+(?:[\N{RIGHT SINGLE QUOTATION MARK}'-]\w+)*", re.UNICODE)
+_MIN_FRAGMENT_WORDS = 3
+_MIN_FRAGMENT_ALNUM = 24
 
 
 def store_passage_evidence(
@@ -34,20 +41,63 @@ def store_passage_evidence(
 
 
 def build_passages(document_id: str, content: str, *, max_chars: int, passage_chars: int = 900) -> tuple[Passage, ...]:
-    """Create stable bounded passages from the exact preview shown to the model."""
-    preview = content[:max_chars]
-    blocks = [block.strip() for block in re.split(r"\n\s*\n|\n", preview) if block.strip()]
+    """Create stable, coherent passages from the exact bounded preview shown to the model."""
+    if passage_chars <= 0:
+        raise ValueError("passage_chars must be positive")
+    preview = content[:max_chars].replace("\r\n", "\n").replace("\r", "\n")
+    blocks = [line.strip() for line in preview.split("\n") if line.strip()]
+    segments = [segment for block in blocks for segment in _split_block(block, passage_chars)]
     pieces: list[str] = []
-    for block in blocks:
-        while len(block) > passage_chars:
-            split_at = block.rfind(" ", 0, passage_chars + 1)
-            if split_at < passage_chars // 2:
-                split_at = passage_chars
-            pieces.append(block[:split_at].strip())
-            block = block[split_at:].strip()
-        if block:
-            pieces.append(block)
+    current = ""
+    overflow_limit = passage_chars + 200
+    short_limit = max(1, passage_chars // 4)
+    for segment in segments:
+        candidate = f"{current}\n{segment}" if current else segment
+        if len(candidate) <= passage_chars:
+            current = candidate
+            continue
+        if current and len(current) < short_limit and len(candidate) <= overflow_limit:
+            pieces.append(candidate)
+            current = ""
+            continue
+        if current:
+            pieces.append(current)
+        current = segment
+    if current:
+        if pieces and len(current) < short_limit and len(pieces[-1]) + 1 + len(current) <= overflow_limit:
+            pieces[-1] = f"{pieces[-1]}\n{current}"
+        else:
+            pieces.append(current)
     return tuple(Passage(f"{document_id}:p{index}", text) for index, text in enumerate(pieces, start=1))
+
+
+def unusable_evidence_reason(text: str, *, complete_source: bool = False) -> str | None:
+    """Return a narrow mechanical rejection reason without judging semantic support."""
+    visible = html.unescape(_HTML_TAG_PATTERN.sub(" ", text))
+    normalized = " ".join(visible.split())
+    alphanumeric = sum(character.isalnum() for character in normalized)
+    if not normalized or alphanumeric == 0:
+        return "empty_or_markup_only"
+    if not complete_source and len(_WORD_PATTERN.findall(normalized)) < _MIN_FRAGMENT_WORDS and alphanumeric < _MIN_FRAGMENT_ALNUM:
+        return "fragment_too_short"
+    return None
+
+
+def _split_block(block: str, passage_chars: int) -> tuple[str, ...]:
+    pieces: list[str] = []
+    remainder = block
+    while len(remainder) > passage_chars:
+        split_at = remainder.rfind(" ", 0, passage_chars + 1)
+        if split_at < passage_chars // 2:
+            split_at = passage_chars
+        pieces.append(remainder[:split_at].strip())
+        remainder = remainder[split_at:].strip()
+    if remainder:
+        if pieces and len(pieces[-1]) + 1 + len(remainder) <= passage_chars + 200:
+            pieces[-1] = f"{pieces[-1]} {remainder}"
+        else:
+            pieces.append(remainder)
+    return tuple(piece for piece in pieces if piece)
 
 
 def resolve_passage(passages: tuple[Passage, ...], *, passage_id: str = "", quote_anchor: str = "") -> Passage:
