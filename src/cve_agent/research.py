@@ -16,7 +16,7 @@ from cve_agent.ports import WebSource
 from cve_agent.prompts import RESEARCH_SYSTEM_PROMPT
 from cve_agent.provenance import ResearchProvenanceRecorder
 from cve_agent.research_context import build_research_context, select_reference_candidates
-from cve_agent.schemas import AGENT_TOOLS
+from cve_agent.schemas import research_tools
 
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,8 @@ class ResearchToolExecutor:
 
     def execute(self, name: str, arguments: dict[str, Any], state: InvestigationState, session: ResearchSession) -> dict[str, Any]:
         key = (name, json.dumps(arguments, sort_keys=True))
+        if name == "record_evidence" and arguments.get("document_id") not in session.documents:
+            return self._record_evidence(arguments, state, session.documents)
         if key in session.seen_calls:
             return self._duplicate_result(name, arguments, session.documents)
         session.seen_calls.add(key)
@@ -126,9 +128,18 @@ class ResearchToolExecutor:
         state: InvestigationState,
         documents: dict[str, Document],
     ) -> dict[str, Any]:
-        document = documents.get(arguments["document_id"])
+        document = documents.get(arguments.get("document_id", ""))
         if document is None:
-            return {"error": "document not found"}
+            available_ids = list(documents)
+            return {
+                "error": "document not found",
+                "instruction": (
+                    "Use one of the available document IDs."
+                    if available_ids
+                    else "Fetch a search result before recording evidence."
+                ),
+                "available_document_ids": available_ids,
+            }
         passages = build_passages(
             document.document_id or document.url,
             document.content,
@@ -251,7 +262,7 @@ class ResearchRunner:
                             ),
                         },
                     ] + session.exchange,
-                    tools=AGENT_TOOLS,
+                    tools=research_tools(session.documents),
                     tool_choice="auto",
                     parallel_tool_calls=False,
                 )

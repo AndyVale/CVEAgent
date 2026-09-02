@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from cve_agent.models import MAX_INVESTIGATION_FINDINGS, InvestigationAspect
@@ -57,6 +58,36 @@ AGENT_TOOLS = [
         },
     ),
 ]
+
+
+def research_tools(document_ids: Iterable[str]) -> list[dict[str, Any]]:
+    """Expose evidence recording only for documents available in the current session."""
+    available_ids = tuple(dict.fromkeys(document_ids))
+    selected: list[dict[str, Any]] = []
+    for configured_tool in AGENT_TOOLS:
+        function = configured_tool["function"]
+        if function["name"] != "record_evidence":
+            selected.append(configured_tool)
+        elif available_ids:
+            selected.append(_record_evidence_tool(available_ids))
+    return selected
+
+
+def _record_evidence_tool(document_ids: tuple[str, ...]) -> dict[str, Any]:
+    return tool(
+        "record_evidence",
+        "Optionally preserve an important passage from an available fetched document before using another tool.",
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "document_id": {"type": "string", "enum": list(document_ids)},
+                "passage_id": {"type": "string"},
+                "quote_anchor": {"type": "string"},
+            },
+            "required": ["document_id", "passage_id", "quote_anchor"],
+        },
+    )
 
 
 def classification_response_format() -> dict[str, Any]:

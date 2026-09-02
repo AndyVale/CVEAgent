@@ -250,9 +250,19 @@ def test_agent_collects_evidence_then_classifies_complete_taxonomy(tmp_path):
         "complete": True,
     }
     research_contexts = [json.loads(item["messages"][1]["content"]) for item in client.requests if "tools" in item]
+    research_requests = [item for item in client.requests if "tools" in item]
     assert len(research_contexts) == 3
     assert all("taxonomy" not in context for context in research_contexts)
     assert all("provenance" not in context for context in research_contexts)
+    record_tools = [
+        next(
+            (tool["function"] for tool in request["tools"] if tool["function"]["name"] == "record_evidence"),
+            None,
+        )
+        for request in research_requests
+    ]
+    assert record_tools[:2] == [None, None]
+    assert record_tools[2]["parameters"]["properties"]["document_id"]["enum"] == ["doc-1"]
     classification_request = next(item for item in client.requests if "tools" not in item)
     classification_payload = json.loads(classification_request["messages"][1]["content"])
     assert classification_request["response_format"]["type"] == "json_schema"
@@ -625,6 +635,24 @@ def test_record_evidence_resolves_anchor_and_reuses_fetch(tmp_path):
     assert second["document_id"] == first["document_id"]
     assert recorded["evidence_id"] == "doc-1:p1"
     assert state.evidence[0].verification == "fuzzy_anchor"
+
+
+def test_unavailable_document_does_not_poison_later_evidence_retry(tmp_path):
+    executor = ResearchToolExecutor(settings(tmp_path), FixtureWeb())
+    session, state = ResearchSession(), InvestigationState()
+    arguments = {
+        "document_id": "doc-1",
+        "passage_id": "p1",
+        "quote_anchor": "",
+    }
+
+    unavailable = executor.execute("record_evidence", arguments, state, session)
+    executor.execute("fetch", {"url": "https://fixture.test/advisory"}, state, session)
+    recorded = executor.execute("record_evidence", arguments, state, session)
+
+    assert unavailable["instruction"] == "Fetch a search result before recording evidence."
+    assert unavailable["available_document_ids"] == []
+    assert recorded["evidence_id"] == "doc-1:p1"
 
 
 def test_fetch_failure_is_recoverable(tmp_path):

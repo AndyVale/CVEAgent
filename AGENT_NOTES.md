@@ -12,11 +12,29 @@ recovery, immutable taxonomy history, saved fresh-session defaults, and copied o
 defaults are covered. The complete suite passes 196 tests plus compilation and whitespace
 checks. Fresh-schema online tests exercised flat and hierarchical CVEs, successful, partial,
 failed, rate-limited, retried, and unavailable-document paths; every terminal state and immutable
-snapshot was stored correctly. Fixture accuracy remained diagnostic only. The third unit adds
-stable taxonomy names, updates their benchmark fingerprints, and removes duplicated top-level CVE
-lists from expected results. A renamed flat fixture produced a real cache miss, recovered from a
-transient model error, and completed. Credentials remained process-only. Next: commit the fixture
-unit as `test: normalize benchmark fixture metadata`, then isolate web retrieval and trust policy.
+snapshot was stored correctly. Fixture accuracy remained diagnostic only. The third unit is
+committed as `306d300 test: normalize benchmark fixture metadata`; it adds stable taxonomy names,
+updates their benchmark fingerprints, and removes duplicated top-level CVE lists from expected
+results. A renamed flat fixture produced a real cache miss, recovered from a transient model error,
+and completed. Credentials remained process-only.
+
+The safe-cleanup unit is committed as `1d8d12e refactor: remove redundant metadata`. It derives
+`cve_agent.__version__` from project metadata, removes the unused `NO_FINISH_TOOL` value, and
+removes the unused taxonomy filename from the benchmark model and expected-result fixtures. Its
+197 offline tests, compilation, and whitespace checks passed. A live Heartbleed validation used
+real NVD, Tavily, fetched documents, and the model; it stopped at the deliberately small
+investigation budget, classified `OutOfBoundsRead` as a valid partial result, and persisted schema
+version 3 correctly. Credentials remained process-only; the temporary configuration contained no
+secrets.
+
+The evidence-tool precondition fix is also ready. Research tool definitions are now generated
+from session state: `record_evidence` is hidden before a successful fetch and its document ID is
+then constrained to fetched documents. A defensive invalid call is not added to duplicate-call
+tracking, so the same call can succeed after the document is fetched. The full suite passes 198
+tests plus compilation and whitespace checks. A fresh live Heartbleed run completed with the
+sequence search, fetch, record evidence, finish, and classification; no document-not-found warning
+occurred, and schema-version-3 persistence contained a complete classified result. Accuracy was
+diagnostic only. Next: commit as `fix: gate evidence recording on fetched documents`.
 
 ## Current work
 
