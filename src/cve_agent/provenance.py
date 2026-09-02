@@ -15,6 +15,7 @@ from cve_agent.models import (
     Passage,
     ProvenanceEvent,
     ProvenanceSearch,
+    RetrievalTrace,
     SourceAssociation,
     SourceCandidate,
     SourceTrace,
@@ -87,7 +88,7 @@ class ResearchProvenanceRecorder:
                 candidate_ids = (direct_id,)
 
             document = self._result_document(result, documents)
-            reused = bool(result.get("instruction")) and document is not None
+            reused = result.get("reused") is True and document is not None
             document_id = (document.document_id or requested_url) if document else None
             trace = FetchTrace(
                 fetch_id=fetch_id,
@@ -311,6 +312,7 @@ class ResearchProvenanceRecorder:
             candidate_ids=candidate_ids,
             association=source_association(self.cve.cve_id, document, candidates),
             passages=passages,
+            retrieval=_retrieval_trace(document),
         ))
 
 
@@ -365,6 +367,25 @@ def source_association(
     if other_ids and not locations:
         warnings.append("other_cves_mentioned_without_target")
     return SourceAssociation(status, target, locations, other_ids, tuple(warnings))
+
+
+def _retrieval_trace(document: Document) -> RetrievalTrace:
+    metadata = document.metadata if isinstance(document.metadata, dict) else {}
+    method = metadata.get("extraction_method")
+    if method not in {"trafilatura", "raw_fallback"}:
+        method = "unknown"
+    return RetrievalTrace(
+        extraction_method=method,
+        extraction_input_chars=_optional_nonnegative_int(metadata.get("extraction_input_chars")),
+        extraction_output_chars=_optional_nonnegative_int(metadata.get("extraction_output_chars")),
+        truncated=metadata.get("truncated") if isinstance(metadata.get("truncated"), bool) else None,
+        download_bytes=_optional_nonnegative_int(metadata.get("download_bytes")),
+        content_type=metadata.get("content_type") if isinstance(metadata.get("content_type"), str) else None,
+    )
+
+
+def _optional_nonnegative_int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 def normalize_url(value: str) -> str:

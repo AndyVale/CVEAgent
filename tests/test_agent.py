@@ -13,6 +13,7 @@ from cve_agent.evidence import build_passages
 from cve_agent.investigation import build_investigation_profile
 from cve_agent.models import CVERecord, ClassificationStatus, Document, EvidenceRecord, InvestigationAspect, InvestigationState, Reference, SearchResult
 from cve_agent.prompts import CLASSIFICATION_SYSTEM_PROMPT, HIERARCHY_ROUTING_SYSTEM_PROMPT, RESEARCH_SYSTEM_PROMPT
+from cve_agent.provenance import ResearchProvenanceRecorder
 from cve_agent.research import ResearchSession, ResearchToolExecutor
 from cve_agent.research_context import MAX_NVD_REFERENCE_CANDIDATES, build_research_context, select_reference_candidates
 from cve_agent.schemas import AGENT_TOOLS
@@ -710,9 +711,16 @@ def test_record_evidence_resolves_anchor_and_reuses_fetch(tmp_path):
 
     web = CountingWeb()
     executor = ResearchToolExecutor(settings(tmp_path), web)
-    session, state = ResearchSession(), InvestigationState()
+    state = InvestigationState()
+    session = ResearchSession(provenance=ResearchProvenanceRecorder(
+        CVERecord("CVE-2024-12345", "Fixture vulnerability."),
+        state,
+        max_preview_chars=settings(tmp_path).max_preview_chars,
+    ))
     first = executor.execute("fetch", {"url": "https://fixture.test/advisory"}, state, session)
+    session.provenance.record_tool_call("fetch", {"url": "https://fixture.test/advisory"}, first, session.documents)
     second = executor.execute("fetch", {"url": "https://fixture.test/advisory"}, state, session)
+    session.provenance.record_tool_call("fetch", {"url": "https://fixture.test/advisory"}, second, session.documents)
     recorded = executor.execute(
         "record_evidence",
         {"document_id": "doc-1", "passage_id": "", "quote_anchor": "issue causes memory corruption aggregate processing"},
@@ -720,9 +728,113 @@ def test_record_evidence_resolves_anchor_and_reuses_fetch(tmp_path):
         session,
     )
     assert web.fetches == 1
+    assert session.fetches == 1
+    assert first["reused"] is False
+    assert second["reused"] is True
+    assert [item.reused for item in state.provenance.fetches] == [False, True]
     assert second["document_id"] == first["document_id"]
     assert recorded["evidence_id"] == "doc-1:p1"
     assert state.evidence[0].verification == "fuzzy_anchor"
+
+
+@pytest.mark.parametrize(
+    "equivalent_url",
+    [
+        "HTTPS://FIXTURE.TEST:443/advisory#section",
+        "https://fixture.test:443/advisory",
+        "https://fixture.test/advisory#other",
+    ],
+)
+def test_fetch_reuses_normalized_url_variants_without_consuming_quota(tmp_path, equivalent_url):
+    class CountingWeb(FixtureWeb):
+        def __init__(self):
+            self.fetches = 0
+
+        def fetch(self, url):
+            self.fetches += 1
+            return super().fetch(url)
+
+    web = CountingWeb()
+    executor = ResearchToolExecutor(settings(tmp_path), web)
+    session, state = ResearchSession(), InvestigationState()
+
+    executor.execute("fetch", {"url": "https://fixture.test/advisory"}, state, session)
+    reused = executor.execute("fetch", {"url": equivalent_url}, state, session)
+
+    assert reused["reused"] is True
+    assert web.fetches == 1
+    assert session.fetches == 1
+
+
+def test_fetch_reuses_both_sides_of_a_redirect(tmp_path):
+    class RedirectWeb(FixtureWeb):
+        def __init__(self):
+            self.fetches = 0
+
+        def fetch(self, url):
+            self.fetches += 1
+            return Document(
+                "https://fixture.test/final",
+                "Advisory",
+                "Substantive redirected vulnerability evidence.",
+                document_id="redirected",
+                requested_url=url,
+                redirect_chain=(url, "https://fixture.test/final"),
+            )
+
+    web = RedirectWeb()
+    executor = ResearchToolExecutor(settings(tmp_path), web)
+    session, state = ResearchSession(), InvestigationState()
+
+    first = executor.execute("fetch", {"url": "https://fixture.test/start"}, state, session)
+    resolved = executor.execute("fetch", {"url": "https://fixture.test/final#details"}, state, session)
+
+    assert first["reused"] is False
+    assert resolved["reused"] is True
+    assert web.fetches == 1
+
+
+def test_fetch_normalizes_an_implicit_root_path(tmp_path):
+    class CountingWeb(FixtureWeb):
+        def __init__(self):
+            self.fetches = 0
+
+        def fetch(self, url):
+            self.fetches += 1
+            return Document(url, content="Substantive vulnerability evidence.", document_id="root-doc")
+
+    web = CountingWeb()
+    executor = ResearchToolExecutor(settings(tmp_path), web)
+    session, state = ResearchSession(), InvestigationState()
+
+    executor.execute("fetch", {"url": "https://fixture.test"}, state, session)
+    reused = executor.execute("fetch", {"url": "https://fixture.test/#details"}, state, session)
+
+    assert reused["reused"] is True
+    assert web.fetches == 1
+
+
+def test_fetch_keeps_distinct_query_strings_separate(tmp_path):
+    class CountingWeb(FixtureWeb):
+        def __init__(self):
+            self.fetches = 0
+
+        def fetch(self, url):
+            self.fetches += 1
+            return Document(url, content="Substantive vulnerability evidence.", document_id=f"doc-{self.fetches}")
+
+    configured = settings(tmp_path).__class__(**{**settings(tmp_path).__dict__, "max_fetch_calls": 2})
+    web = CountingWeb()
+    executor = ResearchToolExecutor(configured, web)
+    session, state = ResearchSession(), InvestigationState()
+
+    first = executor.execute("fetch", {"url": "https://fixture.test/advisory?version=1"}, state, session)
+    second = executor.execute("fetch", {"url": "https://fixture.test/advisory?version=2"}, state, session)
+
+    assert first["reused"] is False
+    assert second["reused"] is False
+    assert web.fetches == 2
+    assert session.fetches == 2
 
 
 def test_unavailable_document_does_not_poison_later_evidence_retry(tmp_path):
@@ -784,6 +896,45 @@ def test_cached_web_client_extracts_html(tmp_path):
     ).fetch("https://fixture.test/page")
     assert "Important vulnerability evidence" in document.content
     assert "<main>" not in document.content
+    assert document.metadata["extraction_method"] == "trafilatura"
+    assert document.metadata["extraction_input_chars"] > document.metadata["extraction_output_chars"]
+
+
+def test_cached_web_client_records_raw_extraction_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr("cve_agent.adapters.trafilatura.extract", lambda *_args, **_kwargs: None)
+    raw = "<html><body>Fallback vulnerability evidence.</body></html>"
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, text=raw))
+
+    document = CachedWebClient(
+        settings(tmp_path),
+        http_client=httpx.Client(transport=transport),
+        url_policy=public_url_policy(),
+    ).fetch("https://fixture.test/fallback")
+
+    assert document.content == raw
+    assert document.metadata["extraction_method"] == "raw_fallback"
+    assert document.metadata["extraction_input_chars"] == len(raw)
+    assert document.metadata["extraction_output_chars"] == len(raw)
+
+
+def test_cached_web_client_accepts_legacy_document_metadata(tmp_path):
+    client = CachedWebClient(settings(tmp_path), url_policy=public_url_policy())
+    url = "https://fixture.test/legacy"
+    legacy = Document(
+        url,
+        "Legacy advisory",
+        "Legacy cached vulnerability evidence.",
+        {"truncated": False, "download_bytes": 42, "content_type": "text/plain"},
+        "legacy-doc",
+        url,
+    )
+    client._cache("fetch", url).write_text(json.dumps(legacy.__dict__), encoding="utf-8")
+
+    document = client.fetch(url)
+
+    assert document.document_id == "legacy-doc"
+    assert document.metadata["download_bytes"] == 42
+    assert "extraction_method" not in document.metadata
 
 
 def test_cached_web_client_records_redirect_provenance(tmp_path):

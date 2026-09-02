@@ -46,7 +46,8 @@ and package build pass. A fresh controlled debugger run classified `CVE-2020-110
 `CVE-2014-0160` through real NVD, Tavily, public DNS, fetched advisories, the model, and
 schema-version-3 persistence. Both completed successfully, the project-only first-chance tracer
 observed no exceptions, temporary state was removed, and credentials remained process-only.
-The coherent-evidence unit is ready. Fetched text is packed into deterministic passages around
+The coherent-evidence unit is committed as
+`dcd9713 fix: require coherent investigation evidence`. Fetched text is packed into deterministic passages around
 900 characters instead of one passage per source line. Finish submissions are validated without
 mutating state; unknown, ambiguous, empty, or mechanically fragmentary citations receive one
 correction turn. If correction is unavailable or ignored, the valid subset is materialized and
@@ -55,8 +56,21 @@ compilation, whitespace and secret checks, and package build pass. A fresh debug
 `CVE-2018-9206` and `CVE-2015-7547` completed successfully with accepted quotes between 463 and
 990 characters, no unusable evidence, and no project exceptions. The second case exercised the
 invalid-finish fallback after the model ignored its correction instruction. Temporary state was
-removed and credentials remained process-only. Next: commit
-`fix: require coherent investigation evidence`.
+removed and credentials remained process-only.
+
+The retrieval-integrity unit is ready. Fetch calls compare normalized requested and resolved URLs
+before the adapter, preserving paths and queries while normalizing scheme/host case, default
+ports, fragments, and implicit root paths. Session reuse consumes no fetch quota or network/cache
+adapter call but remains explicit in logs, tool history, and provenance. New documents record
+Trafilatura versus bounded raw fallback plus extraction sizes and existing download metadata.
+Internal and public provenance are additive format version 2; legacy cache records remain valid
+with unknown extraction fields. The complete 233-test suite, compilation, whitespace and secret
+checks, and package build pass. A corrected fresh debugger run of `CVE-2023-22518` and
+`CVE-2020-11022` completed successfully, persisted version-2 retrieval metadata, and observed no
+project exceptions. The first diagnostic wrapper had incorrectly reused the pipeline-closed
+database handle after both classifications completed; rerunning with a new audit handle fixed the
+harness without a repository change. Temporary state was removed and credentials remained
+process-only. Next: commit `fix: prevent redundant web retrieval`.
 
 ## Current work
 

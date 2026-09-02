@@ -294,6 +294,11 @@ obviously fragmentary evidence receives one correction opportunity. If that corr
 usable, valid findings from the original call are retained and only unsupported findings are
 discarded; the reasons remain in operational metadata and persisted provenance.
 
+Fetched documents are indexed by normalized requested and resolved URL for the duration of an
+investigation. A repeated equivalent URL returns the existing document without calling the web
+adapter or consuming fetch quota; paths and query strings remain significant. The repeated model
+tool call is still recorded as a session reuse rather than being hidden.
+
 Every investigation also builds a versioned, harness-owned provenance ledger. It records the
 bounded NVD and search candidates shown to the model, every search and fetch attempt, URL
 normalization and redirects, the complete bounded passages shown for each fetched document,
@@ -303,7 +308,11 @@ checkpointed in SQLite but is deliberately excluded from research and classifica
 prompts, so retaining it does not consume model tokens. It is intended as cold context that a
 future clarification or deep-dive feature can hydrate selectively for one label.
 
-Normal JSON does not dump the complete audit. Its top-level `provenance` catalog contains only
+Normal JSON does not dump the complete audit. Provenance format version 2 additionally records
+whether a fetch reused a session document and whether extraction used Trafilatura or bounded raw
+content, together with input/output lengths, truncation, content type, and download size. Legacy
+cache entries expose unknown extraction fields instead of being invalidated. The top-level
+`provenance` catalog contains only
 sources and evidence reachable from returned labels, including discovery origins, fetch
 details, deterministic CVE-association signals, adjacent passage context, and the investigation
 claims supported by each quotation. Failed calls and unused sources remain available only in

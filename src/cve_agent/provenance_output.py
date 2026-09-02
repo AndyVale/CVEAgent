@@ -67,7 +67,7 @@ def build_public_provenance(
     }
     if not relevant_ids:
         return {
-            "format_version": 1,
+            "format_version": 2,
             "labels": [asdict(item) for item in state.provenance.label_links],
             "sources": [],
             "evidence": [],
@@ -136,10 +136,11 @@ def build_public_provenance(
                 if candidate_id in candidates
             ],
             "fetches": [asdict(item) for item in fetches_by_source.get(source.source_id, [])],
+            "retrieval": asdict(source.retrieval) if source.retrieval else None,
             "cve_association": asdict(source.association),
         })
     return {
-        "format_version": 1,
+        "format_version": 2,
         "labels": [asdict(item) for item in state.provenance.label_links],
         "sources": public_sources,
         "evidence": public_evidence,

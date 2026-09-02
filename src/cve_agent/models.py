@@ -157,6 +157,16 @@ class SourceAssociation:
 
 
 @dataclass(frozen=True)
+class RetrievalTrace:
+    extraction_method: str = "unknown"
+    extraction_input_chars: int | None = None
+    extraction_output_chars: int | None = None
+    truncated: bool | None = None
+    download_bytes: int | None = None
+    content_type: str | None = None
+
+
+@dataclass(frozen=True)
 class SourceTrace:
     source_id: str
     document_id: str
@@ -167,6 +177,7 @@ class SourceTrace:
     candidate_ids: tuple[str, ...]
     association: SourceAssociation
     passages: tuple[Passage, ...] = ()
+    retrieval: RetrievalTrace | None = None
 
 
 @dataclass(frozen=True)
@@ -192,7 +203,7 @@ class LabelEvidenceTrace:
 
 @dataclass
 class ResearchProvenance:
-    format_version: int = 1
+    format_version: int = 2
     target_cve_id: str = ""
     nvd_metadata: dict[str, Any] = field(default_factory=dict)
     nvd_reference_count: int = 0

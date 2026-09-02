@@ -62,6 +62,14 @@ def test_provenance_records_complete_multi_origin_chain_and_public_label_subset(
             f"The parser for {cve_id} trusts an attacker-controlled length.\n"
             "Successful exploitation discloses memory. A comparison mentions CVE-2023-9999."
         ),
+        metadata={
+            "extraction_method": "trafilatura",
+            "extraction_input_chars": 1_200,
+            "extraction_output_chars": 180,
+            "truncated": False,
+            "download_bytes": 1_500,
+            "content_type": "text/html",
+        },
         document_id="vendor-doc",
         requested_url=requested_url,
         redirect_chain=(requested_url, "https://vendor.test/final-advisory"),
@@ -129,14 +137,25 @@ def test_provenance_records_complete_multi_origin_chain_and_public_label_subset(
     assert source.association.status == "direct"
     assert source.association.target_mentions == ("title", "content")
     assert source.association.other_cve_ids == ("CVE-2023-9999",)
+    assert source.retrieval.extraction_method == "trafilatura"
+    assert source.retrieval.extraction_input_chars == 1_200
     assert len(state.provenance.candidates) == 3  # NVD reference plus both search results.
     assert {item.document_id for item in state.provenance.sources} >= {"vendor-doc", "unused-doc"}
     assert state.provenance.label_links[0].evidence[0]["evidence_id"] == "vendor-doc:p1"
     assert state.provenance.label_links[0].description == taxonomy.labels[0].description
 
     assert [item["source_id"] for item in public["sources"]] == ["source:web:vendor-doc"]
+    assert public["format_version"] == 2
     assert {item["kind"] for item in public["sources"][0]["origins"]} == {"nvd_reference", "web_search"}
     assert public["sources"][0]["fetches"][0]["fetch_id"] == "fetch-1"
+    assert public["sources"][0]["retrieval"] == {
+        "extraction_method": "trafilatura",
+        "extraction_input_chars": 1_200,
+        "extraction_output_chars": 180,
+        "truncated": False,
+        "download_bytes": 1_500,
+        "content_type": "text/html",
+    }
     evidence = public["evidence"][0]
     assert evidence["evidence_id"] == "vendor-doc:p1"
     assert evidence["selection_event_id"] == "event-5"
@@ -180,6 +199,8 @@ def test_provenance_warns_but_retains_an_unverified_direct_source():
         "weak_target_association",
         "other_cves_mentioned_without_target",
     )
+    assert source.retrieval.extraction_method == "unknown"
+    assert source.retrieval.extraction_input_chars is None
     assert source.candidate_ids  # The unmatched URL is retained as a direct-fetch candidate.
 
 

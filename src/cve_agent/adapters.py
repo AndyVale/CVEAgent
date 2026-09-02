@@ -191,16 +191,31 @@ class CachedWebClient:
                 time.sleep(0.2 * (2**attempt))
         raw_content = raw_response[: self.settings.max_document_chars]
         extraction_url = safe_url(response_url)
-        content = trafilatura.extract(raw_content, url=extraction_url, include_comments=False, include_tables=True) or raw_content
+        extracted = trafilatura.extract(raw_content, url=extraction_url, include_comments=False, include_tables=True)
+        extraction_method = "trafilatura" if extracted and extracted.strip() else "raw_fallback"
+        content = extracted if extraction_method == "trafilatura" else raw_content
         content = content[: self.settings.max_document_chars]
-        logger.info("fetch extracted url=%s raw_chars=%d extracted_chars=%d extraction_used_fallback=%s", safe_url(url), len(raw_response), len(content), content == raw_content)
+        logger.info(
+            "fetch extracted url=%s input_chars=%d output_chars=%d extraction_method=%s",
+            safe_url(url),
+            len(raw_content),
+            len(content),
+            extraction_method,
+        )
         metadata = trafilatura.extract_metadata(raw_content, default_url=extraction_url) if raw_content else None
         title = (metadata.title or "") if metadata else ""
         document = Document(
             url=response_url,
             title=title,
             content=content,
-            metadata={"truncated": len(raw_response) > len(raw_content), "download_bytes": len(raw_bytes), "content_type": content_type},
+            metadata={
+                "truncated": len(raw_response) > len(raw_content),
+                "download_bytes": len(raw_bytes),
+                "content_type": content_type,
+                "extraction_method": extraction_method,
+                "extraction_input_chars": len(raw_content),
+                "extraction_output_chars": len(content),
+            },
             document_id=hashlib.sha256(url.encode()).hexdigest()[:16],
             requested_url=url,
             redirect_chain=redirect_chain,

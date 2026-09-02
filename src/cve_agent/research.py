@@ -15,7 +15,7 @@ from cve_agent.logging_config import LogTone, log_extra, redact_secrets, safe_ur
 from cve_agent.models import CVERecord, Document, EvidenceRecord, InvestigationFinding, InvestigationState, InvestigationStopReason
 from cve_agent.ports import WebSource
 from cve_agent.prompts import RESEARCH_SYSTEM_PROMPT
-from cve_agent.provenance import ResearchProvenanceRecorder
+from cve_agent.provenance import ResearchProvenanceRecorder, normalize_url
 from cve_agent.research_context import build_research_context, select_reference_candidates
 from cve_agent.schemas import research_tools
 
@@ -80,7 +80,11 @@ class ResearchToolExecutor:
         if "error" in result:
             event["error"] = str(result["error"])[:500]
         if name == "fetch":
-            event.update({"url": arguments.get("url", ""), "document_id": result.get("document_id")})
+            event.update({
+                "url": arguments.get("url", ""),
+                "document_id": result.get("document_id"),
+                "reused": result.get("reused") is True,
+            })
         elif name == "search":
             event.update({"query": arguments.get("query", ""), "result_count": len(result.get("results", []))})
         elif name == "record_evidence":
@@ -127,7 +131,7 @@ class ResearchToolExecutor:
         session.documents[document.document_id or url] = document
         if document.url not in state.visited_urls:
             state.visited_urls.append(document.url)
-        return self._document_result(document)
+        return self._document_result(document, reused=False)
 
     def _record_evidence(
         self,
@@ -174,12 +178,14 @@ class ResearchToolExecutor:
         }
 
     def _existing_document_result(self, url: str, documents: dict[str, Document]) -> dict[str, Any] | None:
+        normalized = normalize_url(url)
         for document in documents.values():
-            if document.url == url or document.requested_url == url:
-                return self._document_result(document)
+            known_urls = (document.url, document.requested_url or document.url)
+            if normalized in {normalize_url(item) for item in known_urls}:
+                return self._document_result(document, reused=True)
         return None
 
-    def _document_result(self, document: Document) -> dict[str, Any]:
+    def _document_result(self, document: Document, *, reused: bool) -> dict[str, Any]:
         passages = build_passages(
             document.document_id or document.url,
             document.content,
@@ -191,6 +197,7 @@ class ResearchToolExecutor:
             "title": document.title,
             "passages": [asdict(item) for item in passages],
             "truncated": len(document.content) > self.settings.max_preview_chars,
+            "reused": reused,
         }
 
     def _duplicate_result(self, name: str, arguments: dict[str, Any], documents: dict[str, Document]) -> dict[str, Any]:
@@ -515,12 +522,13 @@ class ResearchRunner:
                 if candidate_id in candidate_by_id
             )) or "unknown"
             logger.info(
-                "[%s] research tool=fetch status=success url=%s document_id=%s passages=%d truncated=%s origins=%s cve_association=%s",
+                "[%s] research tool=fetch status=success url=%s document_id=%s passages=%d truncated=%s reused=%s origins=%s cve_association=%s",
                 cve_id,
                 safe_url(str(result.get("url", arguments.get("url", "")))),
                 result.get("document_id"),
                 len(result.get("passages", [])),
                 result.get("truncated", False),
+                result.get("reused") is True,
                 origin_kinds,
                 source_trace.association.status if source_trace else "unavailable",
             )
