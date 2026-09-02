@@ -372,7 +372,12 @@ retaining direct fetching of NVD references. NVD and web retries are configured 
 
 Downloads are streamed, limited by `max_download_bytes`, restricted to textual content types,
 and then extracted and bounded by `max_document_chars` and `max_preview_chars`. Evidence uses
-the final response URL while retaining the requested URL and redirect chain.
+the final response URL while retaining the requested URL and redirect chain. Fetching accepts
+only HTTP(S) hosts that resolve exclusively to public IP addresses. Search results, cached
+documents, and every redirect hop are checked before use; localhost, private/link-local targets,
+URL credentials, and non-web schemes are rejected. External text is always treated as untrusted
+source data rather than agent instructions. Verbose logs include a safe URL and concrete reason
+when a search candidate or fetch is rejected.
 
 Searches and fetched documents are cached under `[web].cache_dir`. The cache has no automatic
 expiry. To reset it, delete only the configured cache directory; with the example configuration:

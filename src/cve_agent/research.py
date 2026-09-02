@@ -355,11 +355,18 @@ class ResearchRunner:
         state.token_usage = budget.to_dict()
         checkpoint()
         if "error" in result:
+            context = (
+                f" query={_bounded_text(arguments.get('query', ''))!r}"
+                if name == "search"
+                else f" url={safe_url(str(arguments.get('url', '')))}"
+                if name == "fetch"
+                else ""
+            )
             logger.warning(
                 "[%s] research tool=%s status=error%s detail=%s",
                 cve_id,
                 name,
-                f" query={_bounded_text(arguments.get('query', ''))!r}" if name == "search" else "",
+                context,
                 str(result["error"])[:240],
             )
             return

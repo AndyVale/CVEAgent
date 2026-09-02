@@ -17,6 +17,7 @@ from cve_agent.config import Settings
 from cve_agent.identifiers import normalize_cve_id
 from cve_agent.logging_config import safe_url
 from cve_agent.models import CVERecord, Document, Reference, SearchResult
+from cve_agent.web_policy import PublicWebUrlError, PublicWebUrlPolicy
 
 
 logger = logging.getLogger(__name__)
@@ -127,10 +128,17 @@ class TavilySearchProvider:
 
 
 class CachedWebClient:
-    def __init__(self, settings: Settings, searcher: Callable[[str], list[SearchResult]] | None = None, http_client: httpx.Client | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        searcher: Callable[[str], list[SearchResult]] | None = None,
+        http_client: httpx.Client | None = None,
+        url_policy: PublicWebUrlPolicy | None = None,
+    ):
         self.settings = settings
         self.searcher = searcher
         self.http_client = http_client
+        self.url_policy = url_policy or PublicWebUrlPolicy()
         self.settings.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _cache(self, prefix: str, key: str) -> Path:
@@ -141,21 +149,24 @@ class CachedWebClient:
         path = self._cache("search", query)
         if path.exists():
             logger.info("search cache hit query_chars=%d", len(query))
-            return [SearchResult(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
+            cached = [SearchResult(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
+            return self._public_search_results(cached)
         if self.searcher is None:
             raise RuntimeError("no web search provider configured")
         logger.info("search cache miss query_chars=%d", len(query))
-        results = self.searcher(query)
+        results = self._public_search_results(self.searcher(query))
         path.write_text(json.dumps([x.__dict__ for x in results]), encoding="utf-8")
         logger.info("search cached query_chars=%d results=%d", len(query), len(results))
         return results
 
     def fetch(self, url: str) -> Document:
+        self.url_policy.validate(url)
         path = self._cache("fetch", url)
         if path.exists():
             cached = json.loads(path.read_text(encoding="utf-8"))
             cached["redirect_chain"] = tuple(cached.get("redirect_chain", ()))
             document = Document(**cached)
+            self._validate_document_urls(document)
             logger.info("fetch cache hit url=%s document_id=%s chars=%d", safe_url(url), document.document_id, len(document.content))
             return document
         logger.info("fetch cache miss url=%s", safe_url(url))
@@ -197,24 +208,63 @@ class CachedWebClient:
         path.write_text(json.dumps(document.__dict__), encoding="utf-8")
         return document
 
+    def _public_search_results(self, results: list[SearchResult]) -> list[SearchResult]:
+        accepted: list[SearchResult] = []
+        for result in results:
+            rejection = self.url_policy.rejection_reason(result.url)
+            if rejection:
+                logger.warning(
+                    "discarding non-public search result url=%s detail=%s",
+                    safe_url(str(result.url)),
+                    rejection,
+                )
+            else:
+                accepted.append(result)
+        return accepted
+
+    def _validate_document_urls(self, document: Document) -> None:
+        urls = (
+            document.requested_url or document.url,
+            *document.redirect_chain,
+            document.url,
+        )
+        for item in dict.fromkeys(urls):
+            self.url_policy.validate(item)
+
     def _download(self, url: str) -> tuple[bytes, str, tuple[str, ...], str, str | None]:
         client = self.http_client or httpx.Client(timeout=self.settings.web_timeout, headers={"User-Agent": "cve-agent/0.1"})
         close_client = self.http_client is None
         try:
-            with client.stream("GET", url, follow_redirects=True) as response:
-                response.raise_for_status()
-                content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-                if content_type and not _is_text_content_type(content_type):
-                    raise ValueError(f"unsupported content type: {content_type}")
-                chunks: list[bytes] = []
-                size = 0
-                for chunk in response.iter_bytes():
-                    size += len(chunk)
-                    if size > self.settings.max_download_bytes:
-                        raise ValueError(f"response exceeds max_download_bytes={self.settings.max_download_bytes}")
-                    chunks.append(chunk)
-                chain = tuple(str(item.url) for item in response.history) + (str(response.url),)
-                return b"".join(chunks), str(response.url), chain, content_type, response.encoding
+            current_url = url
+            redirect_chain: list[str] = []
+            for _ in range(11):
+                self.url_policy.validate(current_url)
+                with client.stream("GET", current_url, follow_redirects=False) as response:
+                    response_url = str(response.url)
+                    self.url_policy.validate(response_url)
+                    if response.has_redirect_location:
+                        redirect_chain.append(response_url)
+                        current_url = str(response.url.join(response.headers["location"]))
+                        continue
+                    response.raise_for_status()
+                    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                    if content_type and not _is_text_content_type(content_type):
+                        raise ValueError(f"unsupported content type: {content_type}")
+                    chunks: list[bytes] = []
+                    size = 0
+                    for chunk in response.iter_bytes():
+                        size += len(chunk)
+                        if size > self.settings.max_download_bytes:
+                            raise ValueError(f"response exceeds max_download_bytes={self.settings.max_download_bytes}")
+                        chunks.append(chunk)
+                    return (
+                        b"".join(chunks),
+                        response_url,
+                        tuple((*redirect_chain, response_url)),
+                        content_type,
+                        response.encoding,
+                    )
+            raise PublicWebUrlError("public-web fetch exceeded 10 redirects")
         finally:
             if close_client:
                 client.close()

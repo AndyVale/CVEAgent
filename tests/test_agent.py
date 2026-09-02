@@ -17,6 +17,7 @@ from cve_agent.research_context import MAX_NVD_REFERENCE_CANDIDATES, build_resea
 from cve_agent.schemas import AGENT_TOOLS
 from cve_agent.strategy import ClassificationStrategy, EffectiveClassificationStrategy
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel, load_taxonomy
+from cve_agent.web_policy import PublicWebUrlError, PublicWebUrlPolicy
 
 
 def settings(tmp_path):
@@ -159,11 +160,16 @@ def taxonomy():
     return Taxonomy((TaxonomyLabel("MEMORY", "Memory Safety Error", "Invalid memory access or corruption."),))
 
 
+def public_url_policy():
+    return PublicWebUrlPolicy(lambda _hostname, _port: ("93.184.216.34",))
+
+
 def test_prompts_require_mechanism_focused_evidence_without_exposing_taxonomy_to_research():
     assert "taxonomy" not in RESEARCH_SYSTEM_PROMPT.casefold()
     assert "conduct targeted web research" in RESEARCH_SYSTEM_PROMPT.casefold()
     assert "root cause" in RESEARCH_SYSTEM_PROMPT
     assert "record_evidence" in RESEARCH_SYSTEM_PROMPT
+    assert "untrusted source data" in RESEARCH_SYSTEM_PROMPT
     assert "not a checklist" in RESEARCH_SYSTEM_PROMPT
     assert "consequence" in CLASSIFICATION_SYSTEM_PROMPT
     assert "does not by itself prove" in CLASSIFICATION_SYSTEM_PROMPT
@@ -689,7 +695,11 @@ def test_tool_errors_redact_configured_credentials(tmp_path):
 
 def test_cached_web_client_extracts_html(tmp_path):
     transport = httpx.MockTransport(lambda request: httpx.Response(200, text="<html><body><main><p>Important vulnerability evidence with enough context for reliable extraction.</p></main></body></html>"))
-    document = CachedWebClient(settings(tmp_path), http_client=httpx.Client(transport=transport)).fetch("https://fixture.test/page")
+    document = CachedWebClient(
+        settings(tmp_path),
+        http_client=httpx.Client(transport=transport),
+        url_policy=public_url_policy(),
+    ).fetch("https://fixture.test/page")
     assert "Important vulnerability evidence" in document.content
     assert "<main>" not in document.content
 
@@ -700,11 +710,96 @@ def test_cached_web_client_records_redirect_provenance(tmp_path):
             return httpx.Response(302, headers={"location": "/final"})
         return httpx.Response(200, headers={"content-type": "text/plain"}, text="Resolved vulnerability evidence.")
 
-    client = CachedWebClient(settings(tmp_path), http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    client = CachedWebClient(
+        settings(tmp_path),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        url_policy=public_url_policy(),
+    )
     document = client.fetch("https://fixture.test/start")
     assert document.requested_url == "https://fixture.test/start"
     assert document.url == "https://fixture.test/final"
     assert document.redirect_chain == ("https://fixture.test/start", "https://fixture.test/final")
+
+
+def test_cached_web_client_blocks_private_redirect_before_request(tmp_path):
+    requested = []
+
+    def handler(request):
+        requested.append(str(request.url))
+        return httpx.Response(302, headers={"location": "http://127.0.0.1/private"})
+
+    client = CachedWebClient(
+        settings(tmp_path),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        url_policy=public_url_policy(),
+    )
+
+    with pytest.raises(PublicWebUrlError, match="non-public address"):
+        client.fetch("https://fixture.test/start")
+    assert requested == ["https://fixture.test/start"]
+
+
+def test_cached_web_client_bounds_redirects_without_retrying_chain(tmp_path):
+    requested = []
+
+    def handler(request):
+        requested.append(str(request.url))
+        return httpx.Response(302, headers={"location": "/next"})
+
+    client = CachedWebClient(
+        settings(tmp_path),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        url_policy=public_url_policy(),
+    )
+
+    with pytest.raises(PublicWebUrlError, match="exceeded 10 redirects"):
+        client.fetch("https://fixture.test/start")
+    assert len(requested) == 11
+
+
+def test_cached_web_client_discards_non_public_search_results(tmp_path):
+    client = CachedWebClient(
+        settings(tmp_path),
+        searcher=lambda _query: [
+            SearchResult("Public", "https://fixture.test/advisory"),
+            SearchResult("Private", "http://127.0.0.1/internal"),
+        ],
+        url_policy=public_url_policy(),
+    )
+
+    assert [item.title for item in client.search("VULN-1")] == ["Public"]
+
+
+def test_cached_web_client_discards_malformed_cached_search_result_with_reason(tmp_path, caplog):
+    client = CachedWebClient(settings(tmp_path), url_policy=public_url_policy())
+    query = "VULN-1 advisory"
+    client._cache("search", query).write_text(
+        json.dumps([
+            {
+                "title": "Malformed",
+                "url": r"https://www\.sentinelone.com/blog",
+                "snippet": "cached result",
+            }
+        ]),
+        encoding="utf-8",
+    )
+    caplog.set_level(logging.WARNING, logger="cve_agent.adapters")
+
+    assert client.search(query) == []
+    assert "detail=public-web URL has an invalid hostname" in caplog.text
+
+
+def test_public_web_fetch_failure_has_traceable_tool_error(tmp_path):
+    client = CachedWebClient(settings(tmp_path), url_policy=public_url_policy())
+    result = ResearchToolExecutor(settings(tmp_path), client).execute(
+        "fetch",
+        {"url": "http://127.0.0.1/private"},
+        InvestigationState(),
+        ResearchSession(),
+    )
+
+    assert "fetch failed (PublicWebUrlError)" in result["error"]
+    assert "non-public address: 127.0.0.1" in result["error"]
 
 
 def test_fetch_logs_strip_query_strings_and_fragments(tmp_path, caplog):
@@ -712,7 +807,11 @@ def test_fetch_logs_strip_query_strings_and_fragments(tmp_path, caplog):
     transport = httpx.MockTransport(lambda request: httpx.Response(200, text="Useful vulnerability evidence."))
     url = "https://fixture.test/advisory?temporary-secret=value#private"
 
-    CachedWebClient(settings(tmp_path), http_client=httpx.Client(transport=transport)).fetch(url)
+    CachedWebClient(
+        settings(tmp_path),
+        http_client=httpx.Client(transport=transport),
+        url_policy=public_url_policy(),
+    ).fetch(url)
 
     assert "https://fixture.test/advisory" in caplog.text
     assert "temporary-secret" not in caplog.text
@@ -723,7 +822,11 @@ def test_cached_web_client_rejects_large_or_non_text_responses(tmp_path):
     small_limit = settings(tmp_path).__class__(**{**settings(tmp_path).__dict__, "max_download_bytes": 5})
     large_transport = httpx.MockTransport(lambda request: httpx.Response(200, headers={"content-type": "text/plain"}, content=b"too large"))
     try:
-        CachedWebClient(small_limit, http_client=httpx.Client(transport=large_transport)).fetch("https://fixture.test/large")
+        CachedWebClient(
+            small_limit,
+            http_client=httpx.Client(transport=large_transport),
+            url_policy=public_url_policy(),
+        ).fetch("https://fixture.test/large")
     except ValueError as exc:
         assert "max_download_bytes" in str(exc)
     else:
@@ -731,7 +834,11 @@ def test_cached_web_client_rejects_large_or_non_text_responses(tmp_path):
 
     binary_transport = httpx.MockTransport(lambda request: httpx.Response(200, headers={"content-type": "application/octet-stream"}, content=b"binary"))
     try:
-        CachedWebClient(settings(tmp_path), http_client=httpx.Client(transport=binary_transport)).fetch("https://fixture.test/binary")
+        CachedWebClient(
+            settings(tmp_path),
+            http_client=httpx.Client(transport=binary_transport),
+            url_policy=public_url_policy(),
+        ).fetch("https://fixture.test/binary")
     except ValueError as exc:
         assert "unsupported content type" in str(exc)
     else:

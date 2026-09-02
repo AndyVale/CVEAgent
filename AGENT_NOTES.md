@@ -27,14 +27,25 @@ investigation budget, classified `OutOfBoundsRead` as a valid partial result, an
 version 3 correctly. Credentials remained process-only; the temporary configuration contained no
 secrets.
 
-The evidence-tool precondition fix is also ready. Research tool definitions are now generated
-from session state: `record_evidence` is hidden before a successful fetch and its document ID is
-then constrained to fetched documents. A defensive invalid call is not added to duplicate-call
-tracking, so the same call can succeed after the document is fetched. The full suite passes 198
-tests plus compilation and whitespace checks. A fresh live Heartbleed run completed with the
-sequence search, fetch, record evidence, finish, and classification; no document-not-found warning
-occurred, and schema-version-3 persistence contained a complete classified result. Accuracy was
-diagnostic only. Next: commit as `fix: gate evidence recording on fetched documents`.
+The evidence-tool precondition fix is committed as
+`c6b09e8 fix: gate evidence recording on fetched documents`. Research tool definitions are now
+generated from session state: `record_evidence` is hidden before a successful fetch and its
+document ID is then constrained to fetched documents. A defensive invalid call is not added to
+duplicate-call tracking, so the same call can succeed after the document is fetched. Its 198-test
+suite and live Heartbleed sequence passed without the earlier document-not-found warning.
+
+The public-web trust unit is ready. `PublicWebUrlPolicy` permits only credential-free HTTP(S) URLs
+whose DNS answers are all globally routable. Search candidates now return printable rejection
+reasons without exception-driven hostname detection; malformed cached URLs such as an escaped
+`www\\.sentinelone.com` hostname are discarded and logged. Typed fetch failures remain visible in
+the research trace. The cache revalidates search results and stored documents, and the downloader
+validates every redirect before requesting it. Research instructions explicitly treat external
+text as untrusted data. The complete 216-test suite, compilation, whitespace checks, secret scan,
+and package build pass. A fresh controlled debugger run classified `CVE-2020-11022` and
+`CVE-2014-0160` through real NVD, Tavily, public DNS, fetched advisories, the model, and
+schema-version-3 persistence. Both completed successfully, the project-only first-chance tracer
+observed no exceptions, temporary state was removed, and credentials remained process-only.
+Next: commit `fix: enforce public web retrieval boundaries`.
 
 ## Current work
 
