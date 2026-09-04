@@ -24,15 +24,17 @@ from cve_agent.config import (
     parse_integer,
     validate_settings,
 )
-from cve_agent.gui_paths import GuiPathError, GuiPathPolicy
+from cve_agent.gui.paths import GuiPathError, GuiPathPolicy
 from cve_agent.strategy import ClassificationStrategy
-
-
-GUI_CONFIG_FILENAME = "config.gui.toml"
 
 
 class GuiConfigurationError(GuiPathError):
     """Raised when GUI-owned configuration is invalid."""
+
+
+def load_gui_settings(path: str | Path, path_policy: GuiPathPolicy) -> Settings:
+    """Load GUI TOML paths relative to the project rather than the package directory."""
+    return load_settings(path, relative_to=path_policy.project_root)
 
 
 @dataclass(frozen=True)
@@ -202,7 +204,7 @@ class GlobalSettingsStore:
         except GuiPathError as exc:
             raise GuiConfigurationError(str(exc)) from exc
         try:
-            loaded = load_settings(candidate.default_config_path)
+            loaded = load_gui_settings(candidate.default_config_path, self.path_policy)
             self.path_policy.database_file(loaded.database)
             self.path_policy.cache_directory(loaded.cache_dir)
         except (OSError, ValueError, GuiPathError) as exc:
@@ -220,15 +222,14 @@ class GlobalSettingsStore:
 
 
 def ensure_gui_config(source: str | Path, path_policy: GuiPathPolicy) -> Path:
-    """Create the GUI-owned TOML beside a source configuration without changing the source."""
-    source_path = path_policy.configuration_file(source, must_exist=False)
-    target_path = path_policy.configuration_file(
-        source_path if source_path.name == GUI_CONFIG_FILENAME else source_path.with_name(GUI_CONFIG_FILENAME),
+    """Create the fixed GUI-owned TOML without changing its initialization source."""
+    target_path = path_policy.gui_configuration_file(
+        path_policy.gui_configuration_path,
         must_exist=False,
     )
     if target_path.is_file():
         return target_path
-    path_policy.configuration_file(source_path)
+    source_path = path_policy.configuration_file(source)
     try:
         shutil.copy2(source_path, target_path)
     except OSError as exc:

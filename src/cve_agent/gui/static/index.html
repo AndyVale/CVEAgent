@@ -102,14 +102,14 @@
         <div><p class="eyebrow">Application</p><h2>Global settings</h2></div>
         <button class="dialog-close" data-dialog-close aria-label="Close" type="button">×</button>
       </div>
-      <p class="dialog-intro">These paths apply to the whole GUI. Configuration stays in the project root, taxonomies in fixtures/, and SQLite data in .data/.</p>
+      <p class="dialog-intro">These paths apply to the whole GUI. Configuration stays with the GUI package, taxonomies in fixtures/, and SQLite data in .data/.</p>
       <label>SQLite database
         <span class="scoped-picker"><span class="path-prefix">.data/</span><select id="globalDatabaseSelect" name="database_path" required></select></span>
       </label>
       <label id="newDatabaseField" class="hidden">New SQLite filename
         <span class="scoped-picker"><span class="path-prefix">.data/</span><input id="newDatabaseName" autocomplete="off" pattern="[A-Za-z0-9][A-Za-z0-9._-]*\.(db|sqlite|sqlite3)" title="Use a filename ending in .db, .sqlite, or .sqlite3"></span>
       </label>
-      <div class="fixed-path-field"><span>GUI TOML configuration</span><span class="scoped-picker readonly"><span class="path-prefix">./</span><code id="guiConfigName">config.gui.toml</code></span></div>
+      <div class="fixed-path-field"><span>GUI TOML configuration</span><span class="scoped-picker readonly"><span class="path-prefix">src/cve_agent/gui/</span><code id="guiConfigName">config.gui.toml</code></span></div>
       <label>Default taxonomy JSON
         <span class="scoped-picker"><span class="path-prefix">fixtures/</span><select id="globalTaxonomySelect" name="default_taxonomy_path" required></select></span>
       </label>

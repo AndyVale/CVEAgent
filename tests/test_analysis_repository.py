@@ -2,9 +2,9 @@ import sqlite3
 
 import pytest
 
-from cve_agent.gui_repository import GuiAnalysisRepository, parse_analysis_id, settings_fingerprint
+from cve_agent.config import settings_fingerprint
 from cve_agent.models import ClassificationResult, InvestigationState, LabelClassification
-from cve_agent.persistence import Database
+from cve_agent.persistence import AnalysisRepository, Database, parse_analysis_id
 from cve_agent.taxonomy import HierarchyPolicy, Taxonomy, TaxonomyLabel
 
 
@@ -39,7 +39,7 @@ def test_repository_reads_shared_snapshot_events_and_exact_cache(tmp_path):
     source_path = tmp_path / "taxonomy.json"
     source_path.write_text('{"labels": []}', encoding="utf-8")
     analysis_id, settings, taxonomy = persisted_analysis(path, source_path=source_path)
-    repository = GuiAnalysisRepository(path)
+    repository = AnalysisRepository(path)
     repository.initialize()
     repository.save_events(analysis_id, [{
         "created_at": "2026-01-01T00:00:00+00:00",
@@ -76,7 +76,7 @@ def test_taxonomy_snapshot_survives_source_file_changes(tmp_path):
     analysis_id, _, _ = persisted_analysis(path, source_path=source_path)
     source_path.write_text("changed", encoding="utf-8")
 
-    stored = GuiAnalysisRepository(path).get_analysis(analysis_id)
+    stored = AnalysisRepository(path).get_analysis(analysis_id)
 
     assert stored is not None and stored.taxonomy is not None
     assert stored.taxonomy.by_id["GENERIC"].description == "Original definition"
@@ -85,7 +85,7 @@ def test_taxonomy_snapshot_survives_source_file_changes(tmp_path):
 def test_partial_results_are_not_used_as_complete_cache_entries(tmp_path):
     path = tmp_path / "history.sqlite3"
     _, settings, taxonomy = persisted_analysis(path, status="partial")
-    repository = GuiAnalysisRepository(path)
+    repository = AnalysisRepository(path)
     repository.initialize()
 
     assert repository.find_cached(
@@ -112,7 +112,7 @@ def test_repository_recovers_stale_investigations_as_interrupted(tmp_path):
             "UPDATE analyses SET updated_at='2020-01-01T00:00:00+00:00'"
         )
 
-    repository = GuiAnalysisRepository(path)
+    repository = AnalysisRepository(path)
     assert repository.recover_stale(before="2021-01-01T00:00:00+00:00") == 1
     stored = repository.get_analysis(f"{run_id}:0")
 
@@ -145,7 +145,7 @@ def test_repository_recovers_stale_terminal_and_empty_runs(tmp_path):
             "UPDATE runs SET started_at='2020-01-01T00:00:00+00:00'"
         )
 
-    repository = GuiAnalysisRepository(path)
+    repository = AnalysisRepository(path)
     repository.recover_stale(before="2021-01-01T00:00:00+00:00")
 
     with Database(path) as database:
@@ -156,7 +156,7 @@ def test_repository_recovers_stale_terminal_and_empty_runs(tmp_path):
 def test_event_queries_support_sequence_deltas(tmp_path):
     path = tmp_path / "history.sqlite3"
     analysis_id, _, _ = persisted_analysis(path)
-    repository = GuiAnalysisRepository(path)
+    repository = AnalysisRepository(path)
     repository.save_events(analysis_id, [
         {"created_at": "one", "message": "first"},
         {"created_at": "two", "message": "second"},

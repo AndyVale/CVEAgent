@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from cve_agent.gui import create_gui_app
-from cve_agent.gui_config import ensure_gui_config
-from cve_agent.gui_paths import GuiPathPolicy
+from cve_agent.gui.app import create_gui_app
+from cve_agent.gui.config import ensure_gui_config
+from cve_agent.gui.paths import GuiPathPolicy
 
 
 class FakeService:
@@ -14,7 +14,7 @@ class FakeService:
 
     def path_options(self):
         return {
-            "configuration": {"prefix": "./", "name": "config.gui.toml"},
+            "configuration": {"prefix": "src/cve_agent/gui/", "name": "config.gui.toml"},
             "taxonomies": [],
             "databases": [],
         }
@@ -73,6 +73,7 @@ def test_gui_home_starts_analysis_without_a_separate_new_analysis_button():
     assert 'name="config_path"' not in markup
     assert '<span class="path-prefix">fixtures/</span>' in markup
     assert '<span class="path-prefix">.data/</span>' in markup
+    assert '<span class="path-prefix">src/cve_agent/gui/</span>' in markup
     assert 'id="analysisTaxonomySelect"' in markup
     assert 'id="globalDatabaseSelect"' in markup
     assert 'id="globalTaxonomySelect"' in markup
@@ -184,6 +185,8 @@ def test_gui_rejects_non_json_cross_origin_and_oversized_mutations():
 
 def test_gui_configuration_is_initialized_separately_from_cli_configuration(tmp_path):
     (tmp_path / "fixtures").mkdir()
+    gui_root = tmp_path / "src" / "cve_agent" / "gui"
+    gui_root.mkdir(parents=True)
     policy = GuiPathPolicy(tmp_path)
     policy.prepare_runtime_directories()
     source = tmp_path / "config.toml"
@@ -192,7 +195,7 @@ def test_gui_configuration_is_initialized_separately_from_cli_configuration(tmp_
     gui_config = ensure_gui_config(source, policy)
     gui_config.write_text("# GUI configuration\n[runtime]\ntemperature = 0.5\n", encoding="utf-8")
 
-    assert gui_config == tmp_path / "config.gui.toml"
+    assert gui_config == gui_root / "config.gui.toml"
     assert source.read_text(encoding="utf-8").startswith("# CLI configuration")
     assert ensure_gui_config(source, policy).read_text(encoding="utf-8").startswith("# GUI configuration")
 

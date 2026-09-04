@@ -1,0 +1,1 @@
+"""Local graphical interface package."""

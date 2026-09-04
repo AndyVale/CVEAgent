@@ -11,16 +11,22 @@ from urllib.parse import urlsplit
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from cve_agent.gui_config import GlobalGuiSettings, GlobalSettingsStore, GuiConfigurationError, ensure_gui_config
-from cve_agent.gui_paths import GuiPathPolicy
-from cve_agent.gui_service import GuiService
+from cve_agent.gui.config import (
+    GlobalGuiSettings,
+    GlobalSettingsStore,
+    GuiConfigurationError,
+    ensure_gui_config,
+    load_gui_settings,
+)
+from cve_agent.gui.paths import GuiPathPolicy
+from cve_agent.gui.service import GuiService
 from cve_agent.persistence import IncompatibleDatabaseError, PersistenceError
 from cve_agent.taxonomy import TaxonomyError
 
 
 def create_gui_app(service: GuiService) -> Flask:
     """Create the GUI HTTP adapter; the CLI remains an independent presentation layer."""
-    static_directory = Path(__file__).with_name("gui_static")
+    static_directory = Path(__file__).with_name("static")
     app = Flask(__name__, static_folder=None)
     app.config["JSON_SORT_KEYS"] = False
     app.config["MAX_CONTENT_LENGTH"] = 1_000_000
@@ -141,15 +147,12 @@ def main(argv: list[str] | None = None) -> None:
     if not 1 <= args.port <= 65535:
         raise SystemExit("port must be in [1, 65535]")
     try:
-        # The configured database is resolved by load_settings when defaults are read.
-        from cve_agent.config import load_settings
-
         path_policy = GuiPathPolicy(Path.cwd())
         path_policy.prepare_runtime_directories()
         source_config_path = path_policy.configuration_file(args.config, must_exist=False)
         taxonomy_path = path_policy.taxonomy_file(args.taxonomy)
         config_path = ensure_gui_config(source_config_path, path_policy)
-        initial_settings = load_settings(config_path)
+        initial_settings = load_gui_settings(config_path, path_policy)
         database_path = path_policy.database_file(initial_settings.database)
         path_policy.cache_directory(initial_settings.cache_dir)
         store = GlobalSettingsStore(

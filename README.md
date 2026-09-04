@@ -151,8 +151,9 @@ uv run cve-agent-gui \
 ```
 
 Run the GUI from the project root. On first use, `--config` is only the initialization source:
-the GUI copies it to the ignored root-level `config.gui.toml`. Subsequent GUI edits are validated
-and written atomically only to that dedicated file; the CLI's `config.toml` is never modified.
+the GUI copies it to the ignored `src/cve_agent/gui/config.gui.toml`. Subsequent GUI edits are
+validated and written atomically only to that dedicated file; the CLI's `config.toml` is never
+modified.
 Comments and unsupported provider-specific keys are preserved. Existing GUI state that still
 points at the initialization source is moved to the GUI-owned file automatically.
 
@@ -179,9 +180,9 @@ report that the source chain is unavailable.
 Global settings use project-scoped file selectors rather than arbitrary paths. The interface
 shows only the fixed relative prefixes: taxonomies are selected below `fixtures/`, SQLite
 databases below `.data/`, the GUI state stays below `.data/`, the web cache stays below
-`.cache/`, and the configuration is fixed at `./config.gui.toml`. A new SQLite filename may be
-created from the selector. Canonical-path checks reject parent traversal, wrong extensions,
-missing parents, and symbolic-link escapes before any file is read or written.
+`.cache/`, and the configuration is fixed at `src/cve_agent/gui/config.gui.toml`. A new SQLite
+filename may be created from the selector. Canonical-path checks reject parent traversal, wrong
+extensions, missing parents, and symbolic-link escapes before any file is read or written.
 
 Pressing Enter saves global settings just like the Save button, and validation errors remain
 visible without resizing the open dialog. Analysis options are opened from the Active snapshot
@@ -191,7 +192,8 @@ ranges, enumerated values use fixed choices, hierarchical strategy controls are 
 taxonomies, pruning is hidden for exhaustive scans, and web-provider-specific controls are
 hidden when web research is disabled.
 Every analysis stores the complete canonical taxonomy JSON and non-secret effective settings,
-not only their source paths. A fresh session uses `config.gui.toml` and the global taxonomy.
+not only their source paths. A fresh session uses the GUI package's `config.gui.toml` and the
+global taxonomy.
 Selecting an old analysis copies its stored snapshot into the next draft; later draft edits
 never modify that analysis. Source paths are informational, so editing or deleting the original
 taxonomy file cannot change history. API keys remain environment-only and are never stored in

@@ -7,15 +7,10 @@ from cve_agent.models import ClassificationResult, ClassificationStatus, Evidenc
 from cve_agent.logging_config import LogTone, log_extra
 from cve_agent.persistence import Database, PersistenceError
 from cve_agent.ports import CVESource, Classifier
-from cve_agent.taxonomy import Taxonomy, taxonomy_fingerprint
+from cve_agent.taxonomy import Taxonomy
 
 
 logger = logging.getLogger(__name__)
-
-
-def persisted_taxonomy_fingerprint(taxonomy: Taxonomy) -> str:
-    """Compatibility alias for the canonical taxonomy fingerprint."""
-    return taxonomy_fingerprint(taxonomy)
 
 
 class Pipeline:

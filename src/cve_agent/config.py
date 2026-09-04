@@ -55,8 +55,13 @@ class Settings:
     pruning_confidence_threshold: float = 0.8
 
 
-def load_settings(path: str | Path = "config.toml") -> Settings:
+def load_settings(
+    path: str | Path = "config.toml",
+    *,
+    relative_to: str | Path | None = None,
+) -> Settings:
     config_path = Path(path).resolve()
+    relative_path_base = Path(relative_to).resolve() if relative_to is not None else config_path.parent
     with config_path.open("rb") as handle:
         raw = tomllib.load(handle)
     runtime, nvd, web, storage, limits, classification = (
@@ -88,11 +93,11 @@ def load_settings(path: str | Path = "config.toml") -> Settings:
         tavily_max_results=parse_integer(web.get("tavily_max_results", 5), "web.tavily_max_results"),
         tavily_search_depth=_text(web.get("tavily_search_depth", "basic"), "web.tavily_search_depth"),
         tavily_api_key=os.getenv("TAVILY_API_KEY"),
-        cache_dir=_resolve_path(config_path.parent, web.get("cache_dir", ".cache/cve-agent/web")),
+        cache_dir=_resolve_path(relative_path_base, web.get("cache_dir", ".cache/cve-agent/web")),
         max_document_chars=parse_integer(web.get("max_document_chars", 100000), "web.max_document_chars"),
         max_preview_chars=parse_integer(web.get("max_preview_chars", 12000), "web.max_preview_chars"),
         max_download_bytes=parse_integer(web.get("max_download_bytes", 2_000_000), "web.max_download_bytes"),
-        database=_resolve_path(config_path.parent, storage.get("database", ".data/cve-agent.sqlite3")),
+        database=_resolve_path(relative_path_base, storage.get("database", ".data/cve-agent.sqlite3")),
         token_budget=parse_integer(limits.get("token_budget", 12000), "limits.token_budget"),
         max_agent_turns=parse_integer(limits.get("max_agent_turns", 20), "limits.max_agent_turns"),
         max_search_calls=parse_integer(limits.get("max_search_calls", 5), "limits.max_search_calls"),

@@ -2,16 +2,18 @@ from pathlib import Path
 
 import pytest
 
-from cve_agent.gui_paths import GuiPathError, GuiPathPolicy
+from cve_agent.gui.paths import GuiPathError, GuiPathPolicy
 
 
 def project_layout(tmp_path):
     root = tmp_path / "project"
     root.mkdir()
     (root / "fixtures").mkdir()
+    gui_root = root / "src" / "cve_agent" / "gui"
+    gui_root.mkdir(parents=True)
     policy = GuiPathPolicy(root)
     policy.prepare_runtime_directories()
-    config = root / "config.gui.toml"
+    config = gui_root / "config.gui.toml"
     config.write_text("[storage]\ndatabase = '.data/results.sqlite3'\n", encoding="utf-8")
     taxonomy = root / "fixtures" / "taxonomy.json"
     taxonomy.write_text('{"labels": []}', encoding="utf-8")
@@ -70,6 +72,7 @@ def test_gui_paths_reject_symlinked_managed_directories(tmp_path):
     root.mkdir()
     outside.mkdir()
     (root / "fixtures").mkdir()
+    (root / "src" / "cve_agent" / "gui").mkdir(parents=True)
     (root / ".data").mkdir()
     (root / ".cache").symlink_to(outside, target_is_directory=True)
 

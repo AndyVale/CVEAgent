@@ -14,7 +14,7 @@ dependencies = [
 
 [project.scripts]
 cve-agent = "cve_agent.cli:main"
-cve-agent-gui = "cve_agent.gui:main"
+cve-agent-gui = "cve_agent.gui.app:main"
 
 [build-system]
 requires = ["hatchling"]

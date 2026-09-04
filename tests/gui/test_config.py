@@ -5,15 +5,16 @@ from pathlib import Path
 import pytest
 
 from cve_agent.config import load_settings
-from cve_agent.gui_config import (
+from cve_agent.gui.config import (
     GlobalGuiSettings,
     GlobalSettingsStore,
     GuiConfigurationError,
     apply_chat_overrides,
+    load_gui_settings,
     public_configuration,
     settings_values,
 )
-from cve_agent.gui_paths import GuiPathPolicy
+from cve_agent.gui.paths import GuiPathPolicy
 
 
 def gui_project(tmp_path):
@@ -21,7 +22,9 @@ def gui_project(tmp_path):
     fixtures.mkdir()
     (tmp_path / ".data").mkdir()
     (tmp_path / ".cache").mkdir()
-    config = tmp_path / "config.gui.toml"
+    gui_root = tmp_path / "src" / "cve_agent" / "gui"
+    gui_root.mkdir(parents=True)
+    config = gui_root / "config.gui.toml"
     config.write_text(Path("config.example.toml").read_text(encoding="utf-8"), encoding="utf-8")
     taxonomy = fixtures / "taxonomy.json"
     taxonomy.write_text(Path("fixtures/flat_taxonomy.json").read_text(encoding="utf-8"), encoding="utf-8")
@@ -30,7 +33,7 @@ def gui_project(tmp_path):
 
 def test_chat_overrides_convert_values_validate_and_force_global_database(tmp_path):
     policy, config, _ = gui_project(tmp_path)
-    base = load_settings(config)
+    base = load_gui_settings(config, policy)
     database = tmp_path / ".data" / "history.sqlite3"
 
     settings = apply_chat_overrides(
@@ -53,7 +56,7 @@ def test_chat_overrides_convert_values_validate_and_force_global_database(tmp_pa
 
 def test_chat_overrides_reject_unknown_fields_and_invalid_ranges(tmp_path):
     policy, config, _ = gui_project(tmp_path)
-    base = load_settings(config)
+    base = load_gui_settings(config, policy)
     database = tmp_path / ".data" / "db.sqlite3"
 
     with pytest.raises(GuiConfigurationError, match="unknown chat configuration"):

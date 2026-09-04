@@ -4,10 +4,15 @@ from pathlib import Path
 import pytest
 
 from cve_agent.application import ClassificationApplication
-from cve_agent.config import load_settings, non_secret_settings
-from cve_agent.gui_config import GlobalGuiSettings, GlobalSettingsStore, GuiConfigurationError
-from cve_agent.gui_paths import GuiPathPolicy
-from cve_agent.gui_service import GuiService, normalize_cve_id
+from cve_agent.config import non_secret_settings
+from cve_agent.gui.config import (
+    GlobalGuiSettings,
+    GlobalSettingsStore,
+    GuiConfigurationError,
+    load_gui_settings,
+)
+from cve_agent.gui.paths import GuiPathPolicy
+from cve_agent.gui.service import GuiService, normalize_cve_id
 from cve_agent.models import (
     CVERecord,
     ClassificationResult,
@@ -52,8 +57,10 @@ def service(tmp_path):
         encoding="utf-8",
     )
     policy = GuiPathPolicy(tmp_path)
+    gui_root = tmp_path / "src" / "cve_agent" / "gui"
+    gui_root.mkdir(parents=True)
     policy.prepare_runtime_directories()
-    config = tmp_path / "config.gui.toml"
+    config = gui_root / "config.gui.toml"
     template = Path("config.example.toml").read_text(encoding="utf-8")
     config.write_text(
         template.replace("[runtime]\n", "[runtime]\n# keep this GUI-only option\nenable_thinking = true\n", 1),
@@ -218,7 +225,7 @@ def test_service_validates_and_persists_gui_options_without_touching_unknown_tom
     assert updated["taxonomy"]["hierarchical"] is False
     assert "# keep this GUI-only option" in persisted
     assert "enable_thinking = true" in persisted
-    assert load_settings(config_path).temperature == 0.4
+    assert load_gui_settings(config_path, gui.path_policy).temperature == 0.4
 
     invalid_values = dict(updated["values"])
     invalid_values["temperature"] = 3
@@ -234,7 +241,7 @@ def test_service_validates_and_persists_gui_options_without_touching_unknown_tom
 def test_global_settings_keep_the_gui_configuration_fixed(tmp_path):
     gui = service(tmp_path)
     taxonomy = tmp_path / "fixtures" / "flat_taxonomy.json"
-    gui_config = tmp_path / "config.gui.toml"
+    gui_config = tmp_path / "src" / "cve_agent" / "gui" / "config.gui.toml"
     gui_original = gui_config.read_text(encoding="utf-8")
 
     updated = gui.update_global_settings({
@@ -257,7 +264,10 @@ def test_service_lists_only_scoped_path_choices(tmp_path):
 
     options = gui.path_options()
 
-    assert options["configuration"] == {"prefix": "./", "name": "config.gui.toml"}
+    assert options["configuration"] == {
+        "prefix": "src/cve_agent/gui/",
+        "name": "config.gui.toml",
+    }
     assert options["taxonomies"][0]["value"] == "fixtures/flat_taxonomy.json"
     assert options["databases"][0]["value"] == ".data/gui.sqlite3"
 

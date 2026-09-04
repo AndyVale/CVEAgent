@@ -5,7 +5,6 @@ import pytest
 
 from cve_agent.evaluation import Benchmark, BenchmarkCase, BenchmarkError, evaluate_results, format_classification_summary, format_evaluation_report, load_benchmark, taxonomy_fingerprint
 from cve_agent.models import ClassificationResult, LabelClassification
-from cve_agent.pipeline import persisted_taxonomy_fingerprint
 from cve_agent.taxonomy import Taxonomy, TaxonomyLabel, load_taxonomy
 
 
@@ -40,12 +39,6 @@ def test_load_benchmark_validates_fingerprint_membership_and_selection(tmp_path)
     path.write_text(json.dumps({"taxonomy_sha256": "wrong", "cases": [{"cve_id": "CVE-2020-0001", "labels": ["A"]}]}), encoding="utf-8")
     with pytest.raises(BenchmarkError, match="fingerprint"):
         load_benchmark(path, selected_taxonomy)
-
-
-def test_persistence_and_evaluation_use_one_taxonomy_fingerprint():
-    selected_taxonomy = taxonomy()
-
-    assert persisted_taxonomy_fingerprint(selected_taxonomy) == taxonomy_fingerprint(selected_taxonomy)
 
 
 def test_evaluation_reports_micro_macro_exact_and_mismatches():

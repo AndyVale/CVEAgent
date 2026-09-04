@@ -33,7 +33,16 @@ class GuiPathPolicy:
     def cache_root(self) -> Path:
         return self.project_root / ".cache"
 
+    @property
+    def gui_root(self) -> Path:
+        return self.project_root / "src" / "cve_agent" / "gui"
+
+    @property
+    def gui_configuration_path(self) -> Path:
+        return self.gui_root / "config.gui.toml"
+
     def prepare_runtime_directories(self) -> None:
+        self._require_gui_root()
         for directory in (self.data_root, self.cache_root):
             if directory.is_symlink():
                 raise GuiPathError(f"managed GUI directory cannot be a symbolic link: {directory}")
@@ -42,16 +51,23 @@ class GuiPathPolicy:
 
     def configuration_file(self, value: Any, *, must_exist: bool = True) -> Path:
         path = self._resolve(value, "configuration path")
-        if path.parent != self.project_root:
-            raise GuiPathError("configuration files must be in the project root")
+        if path.parent != self.project_root and path != self.gui_configuration_path:
+            raise GuiPathError(
+                "configuration files must be in the project root or use the fixed GUI configuration path"
+            )
+        if path == self.gui_configuration_path:
+            self._require_gui_root()
         self._require_suffix(path, {".toml"}, "configuration file")
         return self._require_file(path, "configuration file") if must_exist else path
 
-    def gui_configuration_file(self, value: Any) -> Path:
-        path = self.configuration_file(value)
-        if path.name != "config.gui.toml":
-            raise GuiPathError("the GUI can write only the project-root config.gui.toml")
-        return path
+    def gui_configuration_file(self, value: Any, *, must_exist: bool = True) -> Path:
+        path = self._resolve(value, "GUI configuration path")
+        self._require_gui_root()
+        if path != self.gui_configuration_path:
+            raise GuiPathError(
+                "the GUI can write only src/cve_agent/gui/config.gui.toml"
+            )
+        return self._require_file(path, "GUI configuration file") if must_exist else path
 
     def taxonomy_file(self, value: Any, *, must_exist: bool = True) -> Path:
         path = self._resolve(value, "taxonomy path")
@@ -119,6 +135,16 @@ class GuiPathPolicy:
         if not resolved.is_dir() or resolved.parent != self.project_root:
             raise GuiPathError(f"managed GUI directory is unavailable: {directory}")
         return resolved
+
+    def _require_gui_root(self) -> Path:
+        current = self.project_root
+        for name in ("src", "cve_agent", "gui"):
+            current = current / name
+            if current.is_symlink():
+                raise GuiPathError(f"GUI package directory cannot be a symbolic link: {current}")
+            if not current.is_dir():
+                raise GuiPathError(f"GUI package directory is unavailable: {current}")
+        return current
 
     @staticmethod
     def _require_suffix(path: Path, suffixes: set[str], label: str) -> None:

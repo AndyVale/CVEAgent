@@ -11,28 +11,20 @@ from typing import Any, Callable, Protocol
 
 from cve_agent.application import ApplicationRun, create_application
 from cve_agent.classification import is_hierarchical
-from cve_agent.config import Settings, load_settings, non_secret_settings
-from cve_agent.gui_config import (
+from cve_agent.config import Settings, non_secret_settings, settings_fingerprint
+from cve_agent.gui.config import (
     GlobalSettingsStore,
     GuiConfigurationError,
     apply_chat_overrides,
+    load_gui_settings,
     public_configuration,
     write_gui_settings,
 )
-from cve_agent.gui_paths import GuiPathError, GuiPathPolicy
-from cve_agent.gui_repository import (
-    AnalysisSummary,
-    GuiAnalysisRepository,
-    StoredAnalysis,
-    settings_fingerprint,
-)
+from cve_agent.gui.paths import GuiPathError, GuiPathPolicy
 from cve_agent.identifiers import CVEIdentifierError, normalize_cve_id as normalize_public_cve_id
 from cve_agent.logging_config import LogTone, redact_secrets, safe_url
-from cve_agent.pipeline import persisted_taxonomy_fingerprint
+from cve_agent.persistence import AnalysisRepository, AnalysisSummary, StoredAnalysis
 from cve_agent.taxonomy import Taxonomy, load_taxonomy
-
-
-_COMPLETE_CACHE_STATUSES = {"classified", "no_matching_label", "not_enough_information"}
 
 
 class Application(Protocol):
@@ -111,7 +103,7 @@ class GuiService:
         self._running: dict[str, RunningAnalysis] = {}
         self._completed_aliases: dict[str, str] = {}
         self._repository_path: Path | None = None
-        self._repository: GuiAnalysisRepository | None = None
+        self._repository: AnalysisRepository | None = None
         self._get_repository()
 
     def close(self) -> None:
@@ -124,7 +116,7 @@ class GuiService:
     def path_options(self) -> dict[str, Any]:
         return {
             "configuration": {
-                "prefix": "./",
+                "prefix": "src/cve_agent/gui/",
                 "name": self.settings_store.get().default_config_path.name,
             },
             "taxonomies": _path_choices(
@@ -153,7 +145,7 @@ class GuiService:
         }
         candidate = self.settings_store.validate(normalized)
         load_taxonomy(candidate.default_taxonomy_path)
-        repository = GuiAnalysisRepository(candidate.database_path)
+        repository = AnalysisRepository(candidate.database_path)
         repository.initialize()
         updated = self.settings_store.update(normalized)
         with self._lock:
@@ -232,7 +224,7 @@ class GuiService:
             taxonomy_fingerprint=configuration.taxonomy_fingerprint,
             settings_fingerprint_value=configuration.settings_fingerprint,
         )
-        if cached and cached.status in _COMPLETE_CACHE_STATUSES:
+        if cached:
             return {"id": cached.analysis_id, "cached": True, "lifecycle": "completed"}
 
         analysis_id = f"pending-{uuid.uuid4().hex}"
@@ -305,7 +297,7 @@ class GuiService:
         try:
             resolved_config = self.path_policy.configuration_file(global_settings.default_config_path)
             resolved_taxonomy = self.path_policy.taxonomy_file(taxonomy_path)
-            base = load_settings(resolved_config)
+            base = load_gui_settings(resolved_config, self.path_policy)
             taxonomy = load_taxonomy(resolved_taxonomy)
         except (OSError, ValueError, GuiPathError) as exc:
             raise GuiConfigurationError(str(exc)) from exc
@@ -315,7 +307,7 @@ class GuiService:
             database_path=global_settings.database_path,
             path_policy=self.path_policy,
         )
-        fingerprint = persisted_taxonomy_fingerprint(taxonomy)
+        fingerprint = taxonomy.fingerprint
         return AnalysisConfiguration(
             settings=settings,
             taxonomy=taxonomy,
@@ -353,11 +345,11 @@ class GuiService:
             hierarchy_policy=analysis.hierarchy_policy,
         )
 
-    def _get_repository(self) -> GuiAnalysisRepository:
+    def _get_repository(self) -> AnalysisRepository:
         path = self.settings_store.get().database_path.resolve()
         with self._lock:
             if self._repository is None or self._repository_path != path:
-                repository = GuiAnalysisRepository(path)
+                repository = AnalysisRepository(path)
                 repository.initialize()
                 self._repository = repository
                 self._repository_path = path
