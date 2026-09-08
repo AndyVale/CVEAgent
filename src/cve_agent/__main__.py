@@ -1,3 +1,4 @@
-from cve_agent.cli import main
+from cve_agent.cli.commands import main
+
 
 main()

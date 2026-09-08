@@ -1,31 +1,31 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
+from enum import StrEnum
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from typing import Any
 import json
 import os
 import shutil
 import stat
 import threading
 import tomllib
-from dataclasses import dataclass, replace
-from enum import StrEnum
-from pathlib import Path
-from tempfile import NamedTemporaryFile
-from typing import Any
 
 from tomlkit import dumps as dump_toml
 from tomlkit import parse as parse_toml
 from tomlkit import table as toml_table
 from tomlkit.exceptions import ParseError
 
-from cve_agent.config import (
+from cve_agent.core.config import (
     Settings,
     load_settings,
     parse_finite_number,
     parse_integer,
     validate_settings,
 )
+from cve_agent.core.strategy import ClassificationStrategy
 from cve_agent.gui.paths import GuiPathError, GuiPathPolicy
-from cve_agent.strategy import ClassificationStrategy
 
 
 class GuiConfigurationError(GuiPathError):

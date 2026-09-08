@@ -1,0 +1,997 @@
+{
+  "model_contract": "36e6ba7390929f167487d74a40bb193b8fb4fc674942aa82a00ce8665df2f1f7",
+  "exhaustive": {
+    "requests": [
+      "871d0523b9bbed0465e114a1a8f25898f52015bf8176406d4c1d2bccf5c36b53",
+      "7d2e0f2dbffa362954006eeee3dd9b4f4427397314cf97d9edb83c6f0096cc44",
+      "021c80eb80adc937252d1429e18b5daea5c2910c9909cdf47b2c921ab7c83c34",
+      "1db9f1ec84a5540b1555286f60215e97a15e76be1c63d8715e0542c6f6cb52ed"
+    ],
+    "result": {
+      "cve_id": "CVE-2026-0001",
+      "status": "classified",
+      "labels": [
+        {
+          "label": "MEMORY",
+          "confidence": 0.9,
+          "evidence": [
+            {
+              "url": "https://fixture.test/advisory",
+              "quote": "The issue causes memory corruption in aggregate processing.",
+              "explanation": "The exact passage supports the label.",
+              "evidence_id": "doc-1:p1"
+            }
+          ]
+        }
+      ],
+      "error": null,
+      "operational": {
+        "turns": 3,
+        "duration_seconds": 0.0,
+        "token_usage": {
+          "prompt_tokens": 40,
+          "completion_tokens": 20,
+          "total_tokens": 60,
+          "reported_interactions": 4,
+          "estimated_interactions": 0,
+          "base_budget": 100000,
+          "expanded_budget": 114999,
+          "classification_reserve": 5308,
+          "investigation_limit": 94692
+        },
+        "coverage": {
+          "effective_strategy": "exhaustive",
+          "total_labels": 1,
+          "evaluated_labels": 1,
+          "pruned_labels": 0,
+          "unresolved_labels": 0,
+          "classification_requests": 1,
+          "routing_levels": 0,
+          "complete": true
+        },
+        "classification": {
+          "configured_strategy": "auto",
+          "effective_strategy": "exhaustive",
+          "pruning_confidence_threshold": 0.8,
+          "cost_switches": 0,
+          "pruned_branches": []
+        },
+        "research_information_status": "sufficient",
+        "research_profile": {
+          "findings": 1,
+          "discarded_findings": 0,
+          "discarded_by_reason": {},
+          "promoted_evidence": 1
+        }
+      },
+      "provenance": {
+        "format_version": 2,
+        "labels": [
+          {
+            "label": "MEMORY",
+            "name": "Memory",
+            "description": "Memory safety issue.",
+            "confidence": 0.9,
+            "evidence": [
+              {
+                "evidence_id": "doc-1:p1",
+                "explanation": "The exact passage supports the label."
+              }
+            ],
+            "ancestor_path": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "source:web:doc-1",
+            "title": "Advisory",
+            "requested_url": "https://fixture.test/advisory",
+            "resolved_url": "https://fixture.test/advisory",
+            "redirect_chain": [],
+            "origins": [
+              {
+                "candidate_id": "nvd-reference-1",
+                "kind": "nvd_reference",
+                "url": "https://fixture.test/advisory",
+                "title": "",
+                "snippet": "",
+                "query": "",
+                "search_id": null,
+                "rank": null,
+                "source": null,
+                "tags": []
+              },
+              {
+                "candidate_id": "search-1:result-1",
+                "kind": "web_search",
+                "url": "https://fixture.test/advisory",
+                "title": "Advisory",
+                "snippet": "memory corruption",
+                "query": "generic vulnerability mechanism",
+                "search_id": "search-1",
+                "rank": 1,
+                "source": null,
+                "tags": []
+              }
+            ],
+            "fetches": [
+              {
+                "fetch_id": "fetch-1",
+                "status": "success",
+                "requested_url": "https://fixture.test/advisory",
+                "candidate_ids": [
+                  "nvd-reference-1",
+                  "search-1:result-1"
+                ],
+                "document_id": "doc-1",
+                "source_id": "source:web:doc-1",
+                "resolved_url": "https://fixture.test/advisory",
+                "redirect_chain": [],
+                "reused": false,
+                "error": null
+              }
+            ],
+            "retrieval": {
+              "extraction_method": "unknown",
+              "extraction_input_chars": null,
+              "extraction_output_chars": null,
+              "truncated": null,
+              "download_bytes": null,
+              "content_type": null
+            },
+            "cve_association": {
+              "status": "nvd_linked",
+              "target_cve_id": "CVE-2026-0001",
+              "target_mentions": [],
+              "other_cve_ids": [],
+              "warnings": [
+                "target_cve_not_explicitly_mentioned"
+              ]
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "evidence_id": "doc-1:p1",
+            "source_id": "source:web:doc-1",
+            "selection_method": "finish_reference",
+            "selection_event_id": "event-4",
+            "context": {
+              "before": null,
+              "after": null
+            },
+            "findings": [
+              {
+                "finding_id": "finding-1",
+                "aspect": "root_cause",
+                "statement": "Source-grounded root_cause finding."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "state": "2b8638ffc5e17afe1bc2d70685b7113b6871332bd87b4f3a5268b92c6eaa1028",
+    "checkpoints": [
+      "4d3988d3878c4c43f43c3384f6f11bf7472914db833a590dc14621f5a9be8a48",
+      "bca39605479d2df18a9ec78b7065ba2d1607cae3ed730b8dadb57c7b0e6187e3",
+      "35fdbd6a7d4cad72d03ba32bda655c0e088f62c6eab4c20a220883ad80d046cb",
+      "0d9364c8a26bb250dbd2a45b674952d827681b0e29378b683ee5a56239f9ce09",
+      "b5370faeb2eee5ec8324f394c3b3064c01d2d53a044fb5b2524eb49ee8de9a24",
+      "0efbbea0b680553cfbf090d0097c7bfd7357e895037cf8eaf12cd0fb08a0b604",
+      "2b8638ffc5e17afe1bc2d70685b7113b6871332bd87b4f3a5268b92c6eaa1028"
+    ]
+  },
+  "hybrid": {
+    "requests": [
+      "871d0523b9bbed0465e114a1a8f25898f52015bf8176406d4c1d2bccf5c36b53",
+      "7d2e0f2dbffa362954006eeee3dd9b4f4427397314cf97d9edb83c6f0096cc44",
+      "021c80eb80adc937252d1429e18b5daea5c2910c9909cdf47b2c921ab7c83c34",
+      "324b5918b1ed6a87d087f987274bc3a1ac2d3252a36ecc19246f5eb24c6e394e",
+      "38b755693d2aa8f70a79856c45a13f157dee17e13499a7479f04c870d2cb41f1"
+    ],
+    "result": {
+      "cve_id": "CVE-2026-0001",
+      "status": "classified",
+      "labels": [
+        {
+          "label": "COPY",
+          "confidence": 0.9,
+          "evidence": [
+            {
+              "url": "https://fixture.test/advisory",
+              "quote": "The issue causes memory corruption in aggregate processing.",
+              "explanation": "The exact passage supports the label.",
+              "evidence_id": "doc-1:p1"
+            }
+          ]
+        }
+      ],
+      "error": null,
+      "operational": {
+        "turns": 3,
+        "duration_seconds": 0.0,
+        "token_usage": {
+          "prompt_tokens": 50,
+          "completion_tokens": 25,
+          "total_tokens": 75,
+          "reported_interactions": 5,
+          "estimated_interactions": 0,
+          "base_budget": 100000,
+          "expanded_budget": 114999,
+          "classification_reserve": 15162,
+          "investigation_limit": 84838
+        },
+        "coverage": {
+          "effective_strategy": "hybrid",
+          "total_labels": 2,
+          "evaluated_labels": 2,
+          "pruned_labels": 0,
+          "unresolved_labels": 0,
+          "classification_requests": 2,
+          "routing_levels": 1,
+          "complete": true
+        },
+        "classification": {
+          "configured_strategy": "hybrid",
+          "effective_strategy": "hybrid",
+          "pruning_confidence_threshold": 0.8,
+          "cost_switches": 1,
+          "pruned_branches": []
+        },
+        "research_information_status": "sufficient",
+        "research_profile": {
+          "findings": 1,
+          "discarded_findings": 0,
+          "discarded_by_reason": {},
+          "promoted_evidence": 1
+        }
+      },
+      "provenance": {
+        "format_version": 2,
+        "labels": [
+          {
+            "label": "COPY",
+            "name": "Copy",
+            "description": "Unchecked copy.",
+            "confidence": 0.9,
+            "evidence": [
+              {
+                "evidence_id": "doc-1:p1",
+                "explanation": "The exact passage supports the label."
+              }
+            ],
+            "ancestor_path": [
+              {
+                "id": "MEMORY",
+                "name": "Memory",
+                "description": "Memory safety issue."
+              }
+            ]
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "source:web:doc-1",
+            "title": "Advisory",
+            "requested_url": "https://fixture.test/advisory",
+            "resolved_url": "https://fixture.test/advisory",
+            "redirect_chain": [],
+            "origins": [
+              {
+                "candidate_id": "nvd-reference-1",
+                "kind": "nvd_reference",
+                "url": "https://fixture.test/advisory",
+                "title": "",
+                "snippet": "",
+                "query": "",
+                "search_id": null,
+                "rank": null,
+                "source": null,
+                "tags": []
+              },
+              {
+                "candidate_id": "search-1:result-1",
+                "kind": "web_search",
+                "url": "https://fixture.test/advisory",
+                "title": "Advisory",
+                "snippet": "memory corruption",
+                "query": "generic vulnerability mechanism",
+                "search_id": "search-1",
+                "rank": 1,
+                "source": null,
+                "tags": []
+              }
+            ],
+            "fetches": [
+              {
+                "fetch_id": "fetch-1",
+                "status": "success",
+                "requested_url": "https://fixture.test/advisory",
+                "candidate_ids": [
+                  "nvd-reference-1",
+                  "search-1:result-1"
+                ],
+                "document_id": "doc-1",
+                "source_id": "source:web:doc-1",
+                "resolved_url": "https://fixture.test/advisory",
+                "redirect_chain": [],
+                "reused": false,
+                "error": null
+              }
+            ],
+            "retrieval": {
+              "extraction_method": "unknown",
+              "extraction_input_chars": null,
+              "extraction_output_chars": null,
+              "truncated": null,
+              "download_bytes": null,
+              "content_type": null
+            },
+            "cve_association": {
+              "status": "nvd_linked",
+              "target_cve_id": "CVE-2026-0001",
+              "target_mentions": [],
+              "other_cve_ids": [],
+              "warnings": [
+                "target_cve_not_explicitly_mentioned"
+              ]
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "evidence_id": "doc-1:p1",
+            "source_id": "source:web:doc-1",
+            "selection_method": "finish_reference",
+            "selection_event_id": "event-4",
+            "context": {
+              "before": null,
+              "after": null
+            },
+            "findings": [
+              {
+                "finding_id": "finding-1",
+                "aspect": "root_cause",
+                "statement": "Source-grounded root_cause finding."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "state": "bccf9149c5c558b474c886296538089bfdc96caf34b05eade46e542703423540",
+    "checkpoints": [
+      "4d3988d3878c4c43f43c3384f6f11bf7472914db833a590dc14621f5a9be8a48",
+      "6efb3249628d905475e43192716bf7eb4c5d174e67b116870d5808ee3d1658cc",
+      "679642bdb70802a9585db85a86b925093978ff68fa23e1ec629f02b8142c5b05",
+      "32696298e6a35d612feb51d8f19396f1512b974c4a8a5d20b9be219cd071b6ed",
+      "d23dc565ef61bf56a02c99b8e850b7b481e8a25d9696fea86de966034080c3bd",
+      "7fc3d62c2e58dab04f0f4f6f1877d3da0a35d4a8b538ed0d7aa242ac72824800",
+      "1a3de69b753cd85568094b8ef8f9a1bd8c2b1a97af245afe0b0759666c53e0f8",
+      "0d4b2c03d4c0844b947a41680afe79e52e23253a3d8cd4567e3466e09dc7ab3d",
+      "bccf9149c5c558b474c886296538089bfdc96caf34b05eade46e542703423540"
+    ]
+  },
+  "correction": {
+    "requests": [
+      "871d0523b9bbed0465e114a1a8f25898f52015bf8176406d4c1d2bccf5c36b53",
+      "5904350fc708a2e17fb7b1918e43508ec4460ff44a093284ba10119c84a33353",
+      "296e9c44ff2a2ddf772250b5527fadeff021bd7d4ad529830c9064f13ed78ae0",
+      "53850b2ae5a877ef70388a7fe8eab044788e797119131ee56d5068f417d00053",
+      "1db9f1ec84a5540b1555286f60215e97a15e76be1c63d8715e0542c6f6cb52ed",
+      "21245c0dd3a13083b49765bb2b358456d95a9467f9978eba000d2c03c7384082"
+    ],
+    "result": {
+      "cve_id": "CVE-2026-0001",
+      "status": "classified",
+      "labels": [
+        {
+          "label": "MEMORY",
+          "confidence": 0.9,
+          "evidence": [
+            {
+              "url": "https://fixture.test/advisory",
+              "quote": "The issue causes memory corruption in aggregate processing.",
+              "explanation": "The exact passage supports the label.",
+              "evidence_id": "doc-1:p1"
+            }
+          ]
+        }
+      ],
+      "error": null,
+      "operational": {
+        "turns": 4,
+        "duration_seconds": 0.0,
+        "token_usage": {
+          "prompt_tokens": 60,
+          "completion_tokens": 30,
+          "total_tokens": 90,
+          "reported_interactions": 6,
+          "estimated_interactions": 0,
+          "base_budget": 100000,
+          "expanded_budget": 114999,
+          "classification_reserve": 5308,
+          "investigation_limit": 94692
+        },
+        "coverage": {
+          "effective_strategy": "exhaustive",
+          "total_labels": 1,
+          "evaluated_labels": 1,
+          "pruned_labels": 0,
+          "unresolved_labels": 0,
+          "classification_requests": 2,
+          "routing_levels": 0,
+          "complete": true
+        },
+        "classification": {
+          "configured_strategy": "auto",
+          "effective_strategy": "exhaustive",
+          "pruning_confidence_threshold": 0.8,
+          "cost_switches": 0,
+          "pruned_branches": []
+        },
+        "research_information_status": "sufficient",
+        "research_profile": {
+          "findings": 1,
+          "discarded_findings": 0,
+          "discarded_by_reason": {},
+          "promoted_evidence": 1
+        }
+      },
+      "provenance": {
+        "format_version": 2,
+        "labels": [
+          {
+            "label": "MEMORY",
+            "name": "Memory",
+            "description": "Memory safety issue.",
+            "confidence": 0.9,
+            "evidence": [
+              {
+                "evidence_id": "doc-1:p1",
+                "explanation": "The exact passage supports the label."
+              }
+            ],
+            "ancestor_path": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "source:web:doc-1",
+            "title": "Advisory",
+            "requested_url": "https://fixture.test/advisory",
+            "resolved_url": "https://fixture.test/advisory",
+            "redirect_chain": [],
+            "origins": [
+              {
+                "candidate_id": "nvd-reference-1",
+                "kind": "nvd_reference",
+                "url": "https://fixture.test/advisory",
+                "title": "",
+                "snippet": "",
+                "query": "",
+                "search_id": null,
+                "rank": null,
+                "source": null,
+                "tags": []
+              },
+              {
+                "candidate_id": "search-2:result-1",
+                "kind": "web_search",
+                "url": "https://fixture.test/advisory",
+                "title": "Advisory",
+                "snippet": "memory corruption",
+                "query": "generic vulnerability mechanism",
+                "search_id": "search-2",
+                "rank": 1,
+                "source": null,
+                "tags": []
+              }
+            ],
+            "fetches": [
+              {
+                "fetch_id": "fetch-1",
+                "status": "success",
+                "requested_url": "https://fixture.test/advisory",
+                "candidate_ids": [
+                  "nvd-reference-1",
+                  "search-2:result-1"
+                ],
+                "document_id": "doc-1",
+                "source_id": "source:web:doc-1",
+                "resolved_url": "https://fixture.test/advisory",
+                "redirect_chain": [],
+                "reused": false,
+                "error": null
+              }
+            ],
+            "retrieval": {
+              "extraction_method": "unknown",
+              "extraction_input_chars": null,
+              "extraction_output_chars": null,
+              "truncated": null,
+              "download_bytes": null,
+              "content_type": null
+            },
+            "cve_association": {
+              "status": "nvd_linked",
+              "target_cve_id": "CVE-2026-0001",
+              "target_mentions": [],
+              "other_cve_ids": [],
+              "warnings": [
+                "target_cve_not_explicitly_mentioned"
+              ]
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "evidence_id": "doc-1:p1",
+            "source_id": "source:web:doc-1",
+            "selection_method": "finish_reference",
+            "selection_event_id": "event-5",
+            "context": {
+              "before": null,
+              "after": null
+            },
+            "findings": [
+              {
+                "finding_id": "finding-1",
+                "aspect": "root_cause",
+                "statement": "Source-grounded root_cause finding."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "state": "4a92905d826b91c6732f565bf31692d631d6f99868eb937148b4251b705d3b57",
+    "checkpoints": [
+      "4d3988d3878c4c43f43c3384f6f11bf7472914db833a590dc14621f5a9be8a48",
+      "df805f8fb58c7f7718f7f44c5ea500263a9ac05fddadb65d4ed4e2534ccef8f8",
+      "1d03a771d0a548b624ca944f2b9b946aff6fced57481e9d28bc71dfe5e39b06d",
+      "321d455095a49b0ea1efa0d60e85053ecb2b204eccb519b1e480ff4652f96294",
+      "cb5598fe73f788f3d40989ced19addefa43c0b0cbd0c51f5f946ac50656d844c",
+      "23d186176a03fcdbce429ee92943adb59cc9b77a8816d6bc3c1c8064c3e91cdb",
+      "f1810c3b5468d09783fb9501eb69e00c3974179b1b289e4d2e74fa7625af8c5c",
+      "4a92905d826b91c6732f565bf31692d631d6f99868eb937148b4251b705d3b57"
+    ]
+  },
+  "finish_correction": {
+    "requests": [
+      "871d0523b9bbed0465e114a1a8f25898f52015bf8176406d4c1d2bccf5c36b53",
+      "7d2e0f2dbffa362954006eeee3dd9b4f4427397314cf97d9edb83c6f0096cc44",
+      "021c80eb80adc937252d1429e18b5daea5c2910c9909cdf47b2c921ab7c83c34",
+      "247ee171fb56d0f00369b661d113cba4f6fa9badf4eb826d1ae23925160ea854",
+      "1db9f1ec84a5540b1555286f60215e97a15e76be1c63d8715e0542c6f6cb52ed"
+    ],
+    "result": {
+      "cve_id": "CVE-2026-0001",
+      "status": "classified",
+      "labels": [
+        {
+          "label": "MEMORY",
+          "confidence": 0.9,
+          "evidence": [
+            {
+              "url": "https://fixture.test/advisory",
+              "quote": "The issue causes memory corruption in aggregate processing.",
+              "explanation": "The exact passage supports the label.",
+              "evidence_id": "doc-1:p1"
+            }
+          ]
+        }
+      ],
+      "error": null,
+      "operational": {
+        "turns": 4,
+        "duration_seconds": 0.0,
+        "token_usage": {
+          "prompt_tokens": 50,
+          "completion_tokens": 25,
+          "total_tokens": 75,
+          "reported_interactions": 5,
+          "estimated_interactions": 0,
+          "base_budget": 100000,
+          "expanded_budget": 114999,
+          "classification_reserve": 5308,
+          "investigation_limit": 94692
+        },
+        "coverage": {
+          "effective_strategy": "exhaustive",
+          "total_labels": 1,
+          "evaluated_labels": 1,
+          "pruned_labels": 0,
+          "unresolved_labels": 0,
+          "classification_requests": 1,
+          "routing_levels": 0,
+          "complete": true
+        },
+        "classification": {
+          "configured_strategy": "auto",
+          "effective_strategy": "exhaustive",
+          "pruning_confidence_threshold": 0.8,
+          "cost_switches": 0,
+          "pruned_branches": []
+        },
+        "research_information_status": "sufficient",
+        "research_profile": {
+          "findings": 1,
+          "discarded_findings": 1,
+          "discarded_by_reason": {
+            "no_usable_evidence": 1
+          },
+          "promoted_evidence": 1
+        }
+      },
+      "provenance": {
+        "format_version": 2,
+        "labels": [
+          {
+            "label": "MEMORY",
+            "name": "Memory",
+            "description": "Memory safety issue.",
+            "confidence": 0.9,
+            "evidence": [
+              {
+                "evidence_id": "doc-1:p1",
+                "explanation": "The exact passage supports the label."
+              }
+            ],
+            "ancestor_path": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "source:web:doc-1",
+            "title": "Advisory",
+            "requested_url": "https://fixture.test/advisory",
+            "resolved_url": "https://fixture.test/advisory",
+            "redirect_chain": [],
+            "origins": [
+              {
+                "candidate_id": "nvd-reference-1",
+                "kind": "nvd_reference",
+                "url": "https://fixture.test/advisory",
+                "title": "",
+                "snippet": "",
+                "query": "",
+                "search_id": null,
+                "rank": null,
+                "source": null,
+                "tags": []
+              },
+              {
+                "candidate_id": "search-1:result-1",
+                "kind": "web_search",
+                "url": "https://fixture.test/advisory",
+                "title": "Advisory",
+                "snippet": "memory corruption",
+                "query": "generic vulnerability mechanism",
+                "search_id": "search-1",
+                "rank": 1,
+                "source": null,
+                "tags": []
+              }
+            ],
+            "fetches": [
+              {
+                "fetch_id": "fetch-1",
+                "status": "success",
+                "requested_url": "https://fixture.test/advisory",
+                "candidate_ids": [
+                  "nvd-reference-1",
+                  "search-1:result-1"
+                ],
+                "document_id": "doc-1",
+                "source_id": "source:web:doc-1",
+                "resolved_url": "https://fixture.test/advisory",
+                "redirect_chain": [],
+                "reused": false,
+                "error": null
+              }
+            ],
+            "retrieval": {
+              "extraction_method": "unknown",
+              "extraction_input_chars": null,
+              "extraction_output_chars": null,
+              "truncated": null,
+              "download_bytes": null,
+              "content_type": null
+            },
+            "cve_association": {
+              "status": "nvd_linked",
+              "target_cve_id": "CVE-2026-0001",
+              "target_mentions": [],
+              "other_cve_ids": [],
+              "warnings": [
+                "target_cve_not_explicitly_mentioned"
+              ]
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "evidence_id": "doc-1:p1",
+            "source_id": "source:web:doc-1",
+            "selection_method": "finish_reference",
+            "selection_event_id": "event-5",
+            "context": {
+              "before": null,
+              "after": null
+            },
+            "findings": [
+              {
+                "finding_id": "finding-1",
+                "aspect": "root_cause",
+                "statement": "Source-grounded root_cause finding."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "state": "baa6d807ffc62baf27f27e35a246d39ddfbf53c438d0a8e4ce9435cda3221409",
+    "checkpoints": [
+      "4d3988d3878c4c43f43c3384f6f11bf7472914db833a590dc14621f5a9be8a48",
+      "bca39605479d2df18a9ec78b7065ba2d1607cae3ed730b8dadb57c7b0e6187e3",
+      "35fdbd6a7d4cad72d03ba32bda655c0e088f62c6eab4c20a220883ad80d046cb",
+      "08f37016d6caccb0874665eb433780d432c8c3c6e9b29a987143d1188c5bbfd2",
+      "19606c94142352ddf6ead11f6c5a697802f253523793ee568b8c7ab589e5f465",
+      "9e172099a4d7da8ed8136434ac943bc6703f1eec54762614b9c890557572e8ee",
+      "8ea72d740929e288bb547f10f0a4034c0734600e07596a3f11258959b69e5b35",
+      "baa6d807ffc62baf27f27e35a246d39ddfbf53c438d0a8e4ce9435cda3221409"
+    ]
+  },
+  "empty": {
+    "requests": [
+      "871d0523b9bbed0465e114a1a8f25898f52015bf8176406d4c1d2bccf5c36b53",
+      "7d2e0f2dbffa362954006eeee3dd9b4f4427397314cf97d9edb83c6f0096cc44",
+      "021c80eb80adc937252d1429e18b5daea5c2910c9909cdf47b2c921ab7c83c34",
+      "1db9f1ec84a5540b1555286f60215e97a15e76be1c63d8715e0542c6f6cb52ed"
+    ],
+    "result": {
+      "cve_id": "CVE-2026-0001",
+      "status": "no_matching_label",
+      "labels": [],
+      "error": null,
+      "operational": {
+        "turns": 3,
+        "duration_seconds": 0.0,
+        "token_usage": {
+          "prompt_tokens": 40,
+          "completion_tokens": 20,
+          "total_tokens": 60,
+          "reported_interactions": 4,
+          "estimated_interactions": 0,
+          "base_budget": 100000,
+          "expanded_budget": 114999,
+          "classification_reserve": 5308,
+          "investigation_limit": 94692
+        },
+        "coverage": {
+          "effective_strategy": "exhaustive",
+          "total_labels": 1,
+          "evaluated_labels": 1,
+          "pruned_labels": 0,
+          "unresolved_labels": 0,
+          "classification_requests": 1,
+          "routing_levels": 0,
+          "complete": true
+        },
+        "classification": {
+          "configured_strategy": "auto",
+          "effective_strategy": "exhaustive",
+          "pruning_confidence_threshold": 0.8,
+          "cost_switches": 0,
+          "pruned_branches": []
+        },
+        "research_information_status": "sufficient",
+        "research_profile": {
+          "findings": 1,
+          "discarded_findings": 0,
+          "discarded_by_reason": {},
+          "promoted_evidence": 1
+        }
+      },
+      "provenance": {
+        "format_version": 2,
+        "labels": [],
+        "sources": [],
+        "evidence": []
+      }
+    },
+    "state": "b53efd2d8f749d85adccf72d7e7c7166f30c2c03359c424a86ed6cd0e046b706",
+    "checkpoints": [
+      "4d3988d3878c4c43f43c3384f6f11bf7472914db833a590dc14621f5a9be8a48",
+      "bca39605479d2df18a9ec78b7065ba2d1607cae3ed730b8dadb57c7b0e6187e3",
+      "35fdbd6a7d4cad72d03ba32bda655c0e088f62c6eab4c20a220883ad80d046cb",
+      "0d9364c8a26bb250dbd2a45b674952d827681b0e29378b683ee5a56239f9ce09",
+      "b5370faeb2eee5ec8324f394c3b3064c01d2d53a044fb5b2524eb49ee8de9a24",
+      "b53efd2d8f749d85adccf72d7e7c7166f30c2c03359c424a86ed6cd0e046b706",
+      "b53efd2d8f749d85adccf72d7e7c7166f30c2c03359c424a86ed6cd0e046b706"
+    ]
+  },
+  "pruning": {
+    "requests": [
+      "e4550bc7aa6f5e35fba5741051fd1d999e770f3663b29d81a4d97b22392d4aab",
+      "a728cdfba831029fb0244f966cccd47f7c717cad987667bdd2cac173c9351945",
+      "2c141eba7d900f2ce3a2ea955d386f039075816c2e3e82ba96251583be4ff501"
+    ],
+    "outcome": {
+      "candidates": [
+        {
+          "label": "ROOT",
+          "confidence": 0.9,
+          "evidence": [
+            {
+              "url": "https://source.test",
+              "quote": "Exact mechanism evidence.",
+              "explanation": "The exact passage supports this node.",
+              "evidence_id": "e-1"
+            }
+          ]
+        },
+        {
+          "label": "LEAF",
+          "confidence": 0.9,
+          "evidence": [
+            {
+              "url": "https://source.test",
+              "quote": "Exact mechanism evidence.",
+              "explanation": "The exact passage supports this node.",
+              "evidence_id": "e-1"
+            }
+          ]
+        }
+      ],
+      "evaluated_ids": [
+        "ROOT",
+        "CHILD",
+        "LEAF",
+        "OTHER"
+      ],
+      "pruned_ids": [
+        "OTHER-LEAF"
+      ],
+      "unresolved_ids": [],
+      "classification_requests": 3,
+      "routing_levels": 3,
+      "pruned_branches": [
+        {
+          "label": "OTHER",
+          "confidence": 0.95,
+          "pruned_descendants": 1,
+          "explanation": "Fixture decision for OTHER."
+        }
+      ],
+      "cost_switches": 0,
+      "stop_reason": null,
+      "error": null
+    },
+    "state": "fcc352335c4bf5d9efa3ccfa31549b7ed739d4070d66f051a9560cbcc5459efe",
+    "checkpoints": [
+      1,
+      2,
+      3
+    ]
+  },
+  "uncertain": {
+    "requests": [
+      "e4550bc7aa6f5e35fba5741051fd1d999e770f3663b29d81a4d97b22392d4aab",
+      "a728cdfba831029fb0244f966cccd47f7c717cad987667bdd2cac173c9351945",
+      "2c141eba7d900f2ce3a2ea955d386f039075816c2e3e82ba96251583be4ff501",
+      "82db44a374d0f410458170422fa608d16d9e8034529d3fc30b09228b26deaa6e"
+    ],
+    "outcome": {
+      "candidates": [
+        {
+          "label": "LEAF",
+          "confidence": 0.9,
+          "evidence": [
+            {
+              "url": "https://source.test",
+              "quote": "Exact mechanism evidence.",
+              "explanation": "The exact passage supports the final label.",
+              "evidence_id": "e-1"
+            }
+          ]
+        }
+      ],
+      "evaluated_ids": [
+        "ROOT",
+        "CHILD",
+        "LEAF",
+        "OTHER"
+      ],
+      "pruned_ids": [
+        "OTHER-LEAF"
+      ],
+      "unresolved_ids": [],
+      "classification_requests": 4,
+      "routing_levels": 3,
+      "pruned_branches": [
+        {
+          "label": "OTHER",
+          "confidence": 0.95,
+          "pruned_descendants": 1,
+          "explanation": "Fixture decision for OTHER."
+        }
+      ],
+      "cost_switches": 0,
+      "stop_reason": null,
+      "error": null
+    },
+    "state": "0e00f8fff03924b72b4496d5194bcf8bcbec50eea6a09e82205b0cb4fbe35982",
+    "checkpoints": [
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  "switch": {
+    "requests": [
+      "e4550bc7aa6f5e35fba5741051fd1d999e770f3663b29d81a4d97b22392d4aab",
+      "52f815315fb336a1942d98a22144ff486354e9268dfb129fdd8197dfe57aad7d"
+    ],
+    "outcome": {
+      "candidates": [
+        {
+          "label": "ROOT",
+          "confidence": 0.9,
+          "evidence": [
+            {
+              "url": "https://source.test",
+              "quote": "Exact mechanism evidence.",
+              "explanation": "The exact passage supports this node.",
+              "evidence_id": "e-1"
+            }
+          ]
+        },
+        {
+          "label": "LEAF",
+          "confidence": 0.9,
+          "evidence": [
+            {
+              "url": "https://source.test",
+              "quote": "Exact mechanism evidence.",
+              "explanation": "The exact passage supports the final label.",
+              "evidence_id": "e-1"
+            }
+          ]
+        }
+      ],
+      "evaluated_ids": [
+        "ROOT",
+        "CHILD",
+        "LEAF",
+        "OTHER"
+      ],
+      "pruned_ids": [
+        "OTHER-LEAF"
+      ],
+      "unresolved_ids": [],
+      "classification_requests": 2,
+      "routing_levels": 1,
+      "pruned_branches": [
+        {
+          "label": "OTHER",
+          "confidence": 0.95,
+          "pruned_descendants": 1,
+          "explanation": "Fixture decision for OTHER."
+        }
+      ],
+      "cost_switches": 1,
+      "stop_reason": null,
+      "error": null
+    },
+    "state": "116b9e40362efec190f71da0e212c97c37514afeff6f6828d1005aa8d3d8757f",
+    "checkpoints": [
+      1,
+      2,
+      3
+    ]
+  }
+}

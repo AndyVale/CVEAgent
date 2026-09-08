@@ -54,7 +54,7 @@ def test_gui_serves_separate_web_entrypoint_and_assets():
     assert script.status_code == 200
     assert b"/api/analyses" in script.data
     assert styles.status_code == 200
-    assert Path("src/cve_agent/cli.py").read_text(encoding="utf-8").find("Flask") == -1
+    assert all("Flask" not in module.read_text(encoding="utf-8") for module in Path("src/cve_agent/cli").glob("*.py"))
 
 
 def test_gui_home_starts_analysis_without_a_separate_new_analysis_button():

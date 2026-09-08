@@ -1,27 +1,24 @@
-import logging
 from pathlib import Path
+import logging
 
 import pytest
 
-from cve_agent.application import ClassificationApplication
-from cve_agent.config import non_secret_settings
+from cve_agent.application.pipeline import Pipeline
+from cve_agent.application.service import ClassificationApplication
+from cve_agent.core.config import non_secret_settings
+from cve_agent.core.investigation import InvestigationState
+from cve_agent.core.results import ClassificationResult, Evidence, LabelClassification
+from cve_agent.core.sources import CVERecord
 from cve_agent.gui.config import (
     GlobalGuiSettings,
     GlobalSettingsStore,
     GuiConfigurationError,
     load_gui_settings,
 )
+from cve_agent.gui.configuration import normalize_cve_id
 from cve_agent.gui.paths import GuiPathPolicy
-from cve_agent.gui.service import GuiService, normalize_cve_id
-from cve_agent.models import (
-    CVERecord,
-    ClassificationResult,
-    Evidence,
-    InvestigationState,
-    LabelClassification,
-)
-from cve_agent.persistence import Database
-from cve_agent.pipeline import Pipeline
+from cve_agent.gui.service import GuiService
+from cve_agent.persistence.writer import Database
 
 
 class ImmediateExecutor:
@@ -145,7 +142,7 @@ def test_fresh_defaults_use_saved_config_while_old_analysis_keeps_its_snapshot(t
 def test_service_displays_recovered_stale_analysis_as_interrupted(tmp_path):
     gui = service(tmp_path)
     settings = gui.settings_store.get()
-    taxonomy = gui._resolve_configuration(
+    taxonomy = gui.configuration.resolve(
         taxonomy_path=settings.default_taxonomy_path,
         values={},
     ).taxonomy
@@ -162,7 +159,7 @@ def test_service_displays_recovered_stale_analysis_as_interrupted(tmp_path):
             "UPDATE analyses SET updated_at='2020-01-01T00:00:00+00:00'"
         )
         database.connection.commit()
-    gui._get_repository().initialize()
+    gui.repositories.get().initialize()
 
     stored = gui.get_analysis(f"{run_id}:0")
 
@@ -225,7 +222,7 @@ def test_service_validates_and_persists_gui_options_without_touching_unknown_tom
     assert updated["taxonomy"]["hierarchical"] is False
     assert "# keep this GUI-only option" in persisted
     assert "enable_thinking = true" in persisted
-    assert load_gui_settings(config_path, gui.path_policy).temperature == 0.4
+    assert load_gui_settings(config_path, gui.configuration.path_policy).temperature == 0.4
 
     invalid_values = dict(updated["values"])
     invalid_values["temperature"] = 3

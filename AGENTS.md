@@ -62,6 +62,27 @@ Preserve existing behavior unless the task explicitly requires a behavior change
 
 Before making substantial changes, inspect the existing repository structure and conventions and follow them where they do not conflict with these instructions.
 
+### Package boundaries
+
+- `core` contains shared records, configuration and protocols and imports no higher layer.
+- `runtime` depends only on `core` and its own package within this project.
+- `investigation` and `classification` each depend on `core` and `runtime`, never on one
+  another, concrete persistence, caching, integrations, CLI or GUI.
+- `integrations` owns provider/network adapters; `cache` wraps them and owns result-reuse
+  eligibility. `persistence` owns SQLite and imports only `core` within the project.
+- `application` composes adapters and coordinates investigation and classification.
+  CLI and GUI consume these services and never import one another.
+- Keep package initializers lightweight. Import definitions from their owning modules;
+  do not restore the former flat-module paths through compatibility re-exports.
+- Keep stable diagnostic logger names when moving code: CLI and GUI display these names.
+- Tests mirror subsystem packages; reusable test doubles live in `tests/support`.
+  Run `tests/architecture` after boundary changes and `tests/integration` after pipeline changes.
+- Frozen contracts in `tests/fixtures/refactor_contracts.json` were captured from the
+  pre-refactor implementation. Never regenerate them merely to make a refactor pass;
+  changes require an explicitly intended behavior change and review.
+- `ARCHITECTURE.md` is local developer material. Never stage or commit it; it is also
+  excluded from distribution builds.
+
 ## Secrets, generated files, and repository hygiene
 
 Do not commit secrets, credentials, API keys, access tokens, or other sensitive information.

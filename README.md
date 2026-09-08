@@ -344,8 +344,8 @@ patch can be relevant even when it does not repeat the CVE identifier.
 The terminal is an adapter around the UI-independent `ClassificationApplication`. Application
 execution returns typed classification results and an optional evaluation report; argument
 parsing, colored logging, JSON serialization, summary tables, and exit-code policy stay in the
-CLI. A future GUI can therefore reuse application and pipeline behavior without invoking or
-parsing terminal output.
+CLI. The GUI reuses application and pipeline behavior without invoking or parsing terminal
+output.
 
 NVD records can contain hundreds of references. To avoid resending an oversized record on every
 turn, the model receives at most 24 unique candidates, prioritizing vendor advisories, patches,
@@ -456,3 +456,27 @@ Tests are deterministic and require no live web or model service:
 ```bash
 uv run pytest -q
 ```
+
+Source code is grouped by responsibility under `src/cve_agent/`:
+
+| Package | Responsibility |
+| --- | --- |
+| `investigation` | Research agent, tools, evidence, profiles and research provenance |
+| `classification` | Planning, exhaustive/hybrid scans, validation, finalization and evaluation |
+| `persistence` | SQLite schema, transactions, history queries and payload codecs |
+| `cache` | Web-cache files and persisted-result reuse policy |
+| `cli` / `gui` | Independent terminal and graphical interfaces |
+| `application` | Shared application service, pipeline, coordination and adapter construction |
+| `core` | Shared records, taxonomy, configuration and interface contracts |
+| `runtime` | Token accounting, model requests, pacing and diagnostics |
+| `integrations` | NVD, Tavily, HTTP retrieval, extraction and URL validation |
+
+Tests follow the same grouping. Run a focused suite with, for example,
+`uv run pytest -q tests/gui` or `uv run pytest -q tests/classification`.
+`tests/integration` covers complete flows and frozen model-request/result contracts;
+`tests/architecture` checks import cycles and package boundaries. Ordinary tests use fixtures
+and mocks, never live providers.
+
+Python callers use `cve_agent.application.factory.create_application` and
+`cve_agent.application.service.ClassificationApplication`. Internal import paths were reorganized
+without legacy forwarding modules; the CLI and GUI commands and persisted formats are unchanged.

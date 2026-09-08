@@ -1,56 +1,66 @@
 # Coding-agent notes
 
-## Current state
+## Current work
 
-The web-retrieval reliability repair is complete and ready for commit review.
+The behavior-preserving package reorganization is complete and ready for commit review.
+Work is on `main`; no files are staged and no commits have been created.
+`ARCHITECTURE.md` must remain untouched, untracked and uncommitted.
 
-- `CachedWebClient.fetch` now gives Trafilatura the complete decoded, byte-bounded response and
-  applies `max_document_chars` only to the extracted article or raw fallback. Extraction input and
-  stored output lengths retain their distinct meanings in provenance.
-- Cache directories are created lazily on the first cache write. Constructing the application no
-  longer creates the web-cache directory before token-budget preflight rejects a run.
-- `README.md` now defines `max_investigation_seconds` as the cutoff for admitting another research
-  interaction; an already-started request and its bounded retries may finish afterward.
-- Provider-specific retry-delay parsing and a hard wall-clock cancellation mechanism remain
-  deferred: the former is not portable enough to justify extra behavior, and the documented
-  admission-cutoff semantics are sufficient for the current product.
+## Implementation
 
-Validation completed:
+- Source responsibilities are separated into investigation, classification, persistence, cache,
+  CLI, GUI, application, core, runtime and integrations. Imports use owning modules without
+  legacy forwarding modules. Stable logger names preserve displayed progress components.
+- Application coordination invokes independent research and classification components. Generic
+  token accounting/model calls are separate from taxonomy-specific reserve planning. Shared
+  repository/model-call protocols allow deterministic adapters without SQLite or live providers.
+- Web retrieval is independent of the disk-cache wrapper. Result reuse eligibility belongs to
+  cache; SQL, schema-v3 writes, codecs and history queries belong to persistence.
+- GUI service delegates configuration, jobs, progress capture and history presentation. Routes,
+  static assets, GUI-owned configuration paths and the scratchpad event fallback are preserved.
+- Prompt strings, tool descriptions/schemas, response schemas, research-context content,
+  classification algorithms, budgets and provider settings are unchanged. No dependencies added;
+  `uv.lock` is unchanged. README and AGENTS document the new organization and import boundaries.
+- Tests mirror subsystem packages; shared doubles are under `tests/support`.
 
-- Focused adapter/pipeline/config tests: 82 passed. Full offline suite: 243 passed.
-- Bytecode compilation, `git diff --check`, secret checks, source distribution, and wheel build
-  passed.
-- Fresh first-chance debugger runs classified `CVE-2023-44487` as `ResourceExhaustion` and
-  `CVE-2020-11022` as `XSS`, with format-v2 public/internal provenance and no credential leakage.
-- All three successfully downloaded live HTML pages used Trafilatura, with full extraction inputs
-  of 517,620, 55,953, and 563,055 characters. The raw fallback was not selected; a deterministic
-  unit test separately covers the fallback when extraction returns no usable content.
-- One reference returned HTTP 404. It was converted into an auditable research-tool error, after
-  which the model selected another source. The trace otherwise contained only expected cleanup
-  exceptions and final `SystemExit(0)`.
+## Verification
 
-## Refactor state
+- Original offline suite: 243 passed. Each structural unit passed the full suite before proceeding.
+- Frozen regression fixtures were captured from original source, including actual request-time
+  copies, result payloads, state and checkpoints: exhaustive, hybrid, malformed responses,
+  finish correction, empty scans, pruning, uncertain adjudication and strategy switching.
+- Full offline suite: 263 passed (all 243 original tests plus 20 regression checks). This includes
+  nine frozen-contract tests, two dependency/import-cycle tests, writer-interface failure tests,
+  cache eligibility/snapshot tests and GUI-job failure/logging-restoration tests. Compilation,
+  annotation resolution, tracked/new-file whitespace review and credential scans passed.
+- Source distribution and wheel built successfully. Both commands and module execution passed
+  from an isolated wheel installation; installed GUI assets served successfully. Neither archive
+  includes local configuration, credentials, data, caches, or ARCHITECTURE.md.
+- `uv sync --dev --locked` refreshed the editable entry point. Both local command help checks pass.
+- The original-code live benchmark completed all 14 launcher CVEs with no partial/failed runs:
+  9 exact matches, micro precision 0.714286, recall 0.9375, F1 0.810811.
+- New persistence/cache implementations read all 14 original-run results exactly, including
+  unchanged snapshots and cache fingerprints.
+- Both original and refactored live benchmarks completed all 14 launcher CVEs successfully,
+  with the same taxonomy/validation pair, config settings and 15-second request pacing. Runs used
+  separate databases and equivalent starting web caches. All 14 complete public results match
+  exactly except elapsed duration: labels, confidence, quotes, provenance, token accounting,
+  coverage and all other operational metadata are unchanged. Benchmark metrics also match.
+  Sanitized comparison: `.cache/refactor-verification/comparison.json`.
+- Original source/tests, sanitized results and build artifacts are in ignored
+  `.cache/refactor-verification/`. Credentials were provided through non-echoing process input,
+  existed only in process memory/environment, and were never written to files. Both live workers
+  and their parent have exited. ARCHITECTURE.md remains untracked and the index is empty.
 
-Completed non-GUI units:
+## Commit proposal
 
-- `ccec8e8 refactor: centralize input validation and fingerprints`
-- `5213eaf refactor: unify analysis persistence`
-- `306d300 test: normalize benchmark fixture metadata`
-- `1d8d12e refactor: remove redundant metadata`
-- `c6b09e8 fix: gate evidence recording on fetched documents`
-- `5e9388c fix: enforce public web retrieval boundaries`
-- `dcd9713 fix: require coherent investigation evidence`
-- `65f81f4 fix: prevent redundant web retrieval`
-- `aa721c6 refactor: make vulnerability research adaptive`
-- `7cdc3c7 refactor: organize gui package`
+Proposed Conventional Commit: `refactor: separate application responsibilities`.
+Developer approval is required before creating it. Stage only the intended source, tests,
+README, AGENTS, AGENT_NOTES and pyproject changes; exclude ARCHITECTURE.md and local artifacts.
 
-Remaining larger work:
+## Deferred work
 
-- Reliability: provider-specific retry-delay parsing and hard wall-clock cancellation are deferred;
-  current retries are bounded and `max_investigation_seconds` is documented as an admission cutoff.
-- GUI behavior: typed pipeline events, incremental event persistence, and service decomposition.
-- Efficiency: shared HTTP clients and deferred hybrid scheduling work.
-- Cleanup: remove the scratchpad event fallback only after every run source persists typed events.
-- Taxonomy: prepare and execute the separate comprehensive ambiguity pass.
-
-`ARCHITECTURE.md` is developer-only and must remain untracked and uncommitted.
+Typed pipeline events/incremental persistence, removal of the legacy event fallback, shared HTTP
+clients, hybrid scheduling changes, provider-specific retry delays, hard wall-clock cancellation,
+and the separate taxonomy ambiguity pass are outside this refactor. Investigation time limits
+remain admission cutoffs, and the prior full-input extraction/lazy-cache fixes are preserved.

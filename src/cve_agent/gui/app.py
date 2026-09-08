@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
 import argparse
 import atexit
 import sys
 import threading
 import webbrowser
-from pathlib import Path
-from typing import Any
-from urllib.parse import urlsplit
 
 from flask import Flask, jsonify, request, send_from_directory
 
+from cve_agent.core.errors import IncompatibleDatabaseError, PersistenceError
+from cve_agent.core.taxonomy import TaxonomyError
 from cve_agent.gui.config import (
     GlobalGuiSettings,
     GlobalSettingsStore,
@@ -20,8 +22,6 @@ from cve_agent.gui.config import (
 )
 from cve_agent.gui.paths import GuiPathPolicy
 from cve_agent.gui.service import GuiService
-from cve_agent.persistence import IncompatibleDatabaseError, PersistenceError
-from cve_agent.taxonomy import TaxonomyError
 
 
 def create_gui_app(service: GuiService) -> Flask:

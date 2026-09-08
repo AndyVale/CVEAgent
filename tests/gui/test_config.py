@@ -1,10 +1,10 @@
-import json
 from dataclasses import replace
 from pathlib import Path
+import json
 
 import pytest
 
-from cve_agent.config import load_settings
+from cve_agent.core.config import load_settings
 from cve_agent.gui.config import (
     GlobalGuiSettings,
     GlobalSettingsStore,
