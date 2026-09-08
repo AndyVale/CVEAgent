@@ -160,11 +160,15 @@ class CachedWebClient:
         self.searcher = searcher
         self.http_client = http_client
         self.url_policy = url_policy or PublicWebUrlPolicy()
-        self.settings.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _cache(self, prefix: str, key: str) -> Path:
         import hashlib
         return self.settings.cache_dir / f"{prefix}-{hashlib.sha256(key.encode()).hexdigest()}.json"
+
+    @staticmethod
+    def _write_cache(path: Path, payload: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(payload, encoding="utf-8")
 
     def search(self, query: str) -> list[SearchResult]:
         path = self._cache("search", query)
@@ -176,7 +180,7 @@ class CachedWebClient:
             raise RuntimeError("no web search provider configured")
         logger.info("search cache miss query_chars=%d", len(query))
         results = self._public_search_results(self.searcher(query))
-        path.write_text(json.dumps([x.__dict__ for x in results]), encoding="utf-8")
+        self._write_cache(path, json.dumps([x.__dict__ for x in results]))
         logger.info("search cached query_chars=%d results=%d", len(query), len(results))
         return results
 
@@ -211,39 +215,43 @@ class CachedWebClient:
                 if attempt >= self.settings.web_retry_count:
                     raise
                 time.sleep(0.2 * (2**attempt))
-        raw_content = raw_response[: self.settings.max_document_chars]
         extraction_url = safe_url(response_url)
-        extracted = trafilatura.extract(raw_content, url=extraction_url, include_comments=False, include_tables=True)
+        extracted = trafilatura.extract(
+            raw_response,
+            url=extraction_url,
+            include_comments=False,
+            include_tables=True,
+        )
         extraction_method = "trafilatura" if extracted and extracted.strip() else "raw_fallback"
-        content = extracted if extraction_method == "trafilatura" else raw_content
-        content = content[: self.settings.max_document_chars]
+        extracted_content = extracted if extraction_method == "trafilatura" else raw_response
+        content = extracted_content[: self.settings.max_document_chars]
         _ensure_usable_document_content(content)
         logger.info(
             "fetch extracted url=%s input_chars=%d output_chars=%d extraction_method=%s",
             safe_url(url),
-            len(raw_content),
+            len(raw_response),
             len(content),
             extraction_method,
         )
-        metadata = trafilatura.extract_metadata(raw_content, default_url=extraction_url) if raw_content else None
+        metadata = trafilatura.extract_metadata(raw_response, default_url=extraction_url) if raw_response else None
         title = (metadata.title or "") if metadata else ""
         document = Document(
             url=response_url,
             title=title,
             content=content,
             metadata={
-                "truncated": len(raw_response) > len(raw_content),
+                "truncated": len(extracted_content) > len(content),
                 "download_bytes": len(raw_bytes),
                 "content_type": content_type,
                 "extraction_method": extraction_method,
-                "extraction_input_chars": len(raw_content),
+                "extraction_input_chars": len(raw_response),
                 "extraction_output_chars": len(content),
             },
             document_id=hashlib.sha256(url.encode()).hexdigest()[:16],
             requested_url=url,
             redirect_chain=redirect_chain,
         )
-        path.write_text(json.dumps(document.__dict__), encoding="utf-8")
+        self._write_cache(path, json.dumps(document.__dict__))
         return document
 
     def _public_search_results(self, results: list[SearchResult]) -> list[SearchResult]:

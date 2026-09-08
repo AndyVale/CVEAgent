@@ -1267,6 +1267,32 @@ def test_cached_web_client_extracts_html(tmp_path):
     assert document.metadata["extraction_input_chars"] > document.metadata["extraction_output_chars"]
 
 
+def test_cached_web_client_extracts_before_bounding_document_text(tmp_path, monkeypatch):
+    raw = "<html>" + ("navigation " * 20) + "<main>useful evidence</main></html>"
+    extracted = "Useful vulnerability evidence found after the noisy page prefix."
+    observed: list[str] = []
+
+    def extract(content, **_kwargs):
+        observed.append(content)
+        return extracted
+
+    monkeypatch.setattr("cve_agent.adapters.trafilatura.extract", extract)
+    configured = replace(settings(tmp_path), max_document_chars=32, max_preview_chars=16)
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, text=raw))
+
+    document = CachedWebClient(
+        configured,
+        http_client=httpx.Client(transport=transport),
+        url_policy=public_url_policy(),
+    ).fetch("https://fixture.test/large-page")
+
+    assert observed == [raw]
+    assert document.content == extracted[:32]
+    assert document.metadata["extraction_input_chars"] == len(raw)
+    assert document.metadata["extraction_output_chars"] == 32
+    assert document.metadata["truncated"] is True
+
+
 def test_cached_web_client_records_raw_extraction_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr("cve_agent.adapters.trafilatura.extract", lambda *_args, **_kwargs: None)
     raw = "<html><body>Fallback vulnerability evidence.</body></html>"
@@ -1311,7 +1337,7 @@ def test_cached_web_client_rejects_legacy_cached_javascript_shell(tmp_path):
         document_id="legacy-shell",
         requested_url=url,
     )
-    client._cache("fetch", url).write_text(json.dumps(document.__dict__), encoding="utf-8")
+    client._write_cache(client._cache("fetch", url), json.dumps(document.__dict__))
 
     with pytest.raises(UnusableDocumentError, match="choose another source"):
         client.fetch(url)
@@ -1328,7 +1354,7 @@ def test_cached_web_client_accepts_legacy_document_metadata(tmp_path):
         "legacy-doc",
         url,
     )
-    client._cache("fetch", url).write_text(json.dumps(legacy.__dict__), encoding="utf-8")
+    client._write_cache(client._cache("fetch", url), json.dumps(legacy.__dict__))
 
     document = client.fetch(url)
 
@@ -1401,12 +1427,20 @@ def test_cached_web_client_discards_non_public_search_results(tmp_path):
     )
 
     assert [item.title for item in client.search("VULN-1")] == ["Public"]
+    assert client.settings.cache_dir.is_dir()
+
+
+def test_cached_web_client_does_not_create_cache_directory_during_construction(tmp_path):
+    client = CachedWebClient(settings(tmp_path), url_policy=public_url_policy())
+
+    assert not client.settings.cache_dir.exists()
 
 
 def test_cached_web_client_discards_malformed_cached_search_result_with_reason(tmp_path, caplog):
     client = CachedWebClient(settings(tmp_path), url_policy=public_url_policy())
     query = "VULN-1 advisory"
-    client._cache("search", query).write_text(
+    client._write_cache(
+        client._cache("search", query),
         json.dumps([
             {
                 "title": "Malformed",
@@ -1414,7 +1448,6 @@ def test_cached_web_client_discards_malformed_cached_search_result_with_reason(t
                 "snippet": "cached result",
             }
         ]),
-        encoding="utf-8",
     )
     caplog.set_level(logging.WARNING, logger="cve_agent.adapters")
 

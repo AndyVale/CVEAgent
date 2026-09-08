@@ -2,32 +2,32 @@
 
 ## Current state
 
-The GUI package organization is complete and targets the commit
-`refactor: organize gui package`.
+The web-retrieval reliability repair is complete and ready for commit review.
 
-- GUI Python modules now live in `src/cve_agent/gui/`; browser assets live in
-  `src/cve_agent/gui/static/`, and GUI tests mirror the boundary in `tests/gui/`.
-- The `cve-agent-gui` command now enters through `cve_agent.gui.app:main`. HTTP routes,
-  payloads, CLI arguments, the database schema, and GUI behavior remain unchanged.
-- The ignored machine-local configuration moved to
-  `src/cve_agent/gui/config.gui.toml`. GUI settings load its relative database and cache paths
-  against the project root, so moving the TOML does not redirect runtime state into the package.
-- `gui_repository.py`, `GuiAnalysisRepository`, and the redundant persisted-taxonomy fingerprint
-  alias were removed. GUI code uses the unified persistence and fingerprint implementations
-  directly. The scratchpad-to-event fallback remains for CLI and older analyses without UI events.
-- Repository contract tests now live in `tests/test_analysis_repository.py`; no compatibility
-  imports for the old GUI module paths remain.
+- `CachedWebClient.fetch` now gives Trafilatura the complete decoded, byte-bounded response and
+  applies `max_document_chars` only to the extracted article or raw fallback. Extraction input and
+  stored output lengths retain their distinct meanings in provenance.
+- Cache directories are created lazily on the first cache write. Constructing the application no
+  longer creates the web-cache directory before token-budget preflight rejects a run.
+- `README.md` now defines `max_investigation_seconds` as the cutoff for admitting another research
+  interaction; an already-started request and its bounded retries may finish afterward.
+- Provider-specific retry-delay parsing and a hard wall-clock cancellation mechanism remain
+  deferred: the former is not portable enough to justify extra behavior, and the documented
+  admission-cutoff semantics are sufficient for the current product.
 
 Validation completed:
 
-- Focused GUI/repository/evaluation tests: 50 passed. Full offline suite: 240 passed.
-- Bytecode compilation, `git diff --check`, source distribution, and wheel build passed.
-- The wheel contains all three GUI assets. A clean temporary wheel installation passed command,
-  server startup, health, index, JavaScript, and stylesheet checks.
-- Fresh GUI debugger runs submitted `CVE-2014-0160` and `CVE-2020-11022` through HTTP. Both
-  completed as classified, stored 126-label taxonomy snapshots, sequenced events, and format-v2
-  public/internal provenance. The project first-chance trace contained only expected
-  `GeneratorExit` cleanup events. No process credentials were persisted.
+- Focused adapter/pipeline/config tests: 82 passed. Full offline suite: 243 passed.
+- Bytecode compilation, `git diff --check`, secret checks, source distribution, and wheel build
+  passed.
+- Fresh first-chance debugger runs classified `CVE-2023-44487` as `ResourceExhaustion` and
+  `CVE-2020-11022` as `XSS`, with format-v2 public/internal provenance and no credential leakage.
+- All three successfully downloaded live HTML pages used Trafilatura, with full extraction inputs
+  of 517,620, 55,953, and 563,055 characters. The raw fallback was not selected; a deterministic
+  unit test separately covers the fallback when extraction returns no usable content.
+- One reference returned HTTP 404. It was converted into an auditable research-tool error, after
+  which the model selected another source. The trace otherwise contained only expected cleanup
+  exceptions and final `SystemExit(0)`.
 
 ## Refactor state
 
@@ -42,11 +42,12 @@ Completed non-GUI units:
 - `dcd9713 fix: require coherent investigation evidence`
 - `65f81f4 fix: prevent redundant web retrieval`
 - `aa721c6 refactor: make vulnerability research adaptive`
+- `7cdc3c7 refactor: organize gui package`
 
 Remaining larger work:
 
-- Reliability: provider retry delays, hard wall-clock deadlines, extraction-before-truncation,
-  and side-effect-free application preflight.
+- Reliability: provider-specific retry-delay parsing and hard wall-clock cancellation are deferred;
+  current retries are bounded and `max_investigation_seconds` is documented as an admission cutoff.
 - GUI behavior: typed pipeline events, incremental event persistence, and service decomposition.
 - Efficiency: shared HTTP clients and deferred hybrid scheduling work.
 - Cleanup: remove the scratchpad event fallback only after every run source persists typed events.

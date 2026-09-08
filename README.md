@@ -394,6 +394,10 @@ otherwise. Unexpected exhaustion returns `partial` with validated labels and exa
 When research stops before it can produce a profile, classification receives a bounded set of
 the evidence already collected instead of silently discarding it.
 
+`max_investigation_seconds` is a research-turn admission cutoff: after it elapses, the agent does
+not begin another research interaction. A request already in progress, including its bounded
+retries, may finish after that cutoff.
+
 `max_input_tokens_per_request` controls exhaustive and routing request chunk sizes. Large or
 unusually verbose taxonomies may require raising `token_budget`; preflight reports its estimated
 minimum. Planning reserves room for the repeated vulnerability profile and structured-output
