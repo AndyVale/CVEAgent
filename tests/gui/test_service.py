@@ -319,7 +319,7 @@ def test_history_search_and_click_route_do_not_create_new_results(tmp_path):
     assert len(gui.history()) == 2
     assert gui.get_analysis(first['id'])['id'] != gui.get_analysis(second['id'])['id']
     assert app.get('/api/history?q=missing').json['analyses'] == []
-    for query in ['offset=-1', 'offset=oops', 'q=' + 'x' * 201]:
+    for query in ['offset=-1', 'offset=oops', 'cursor=invalid', 'q=' + 'x' * 201]:
         assert app.get('/api/history?' + query).status_code == 400
 
 

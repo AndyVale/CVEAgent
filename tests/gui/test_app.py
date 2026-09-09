@@ -22,6 +22,13 @@ class FakeService:
     def history(self, *, query="", offset=0, limit=200):
         return [{"id": "1:0", "cve_id": "CVE-2024-1000"}]
 
+    def history_page(self, *, query="", cursor=None, limit=200):
+        return {
+            "analyses": [{"id": "1:0", "cve_id": "CVE-2024-1000"}],
+            "next_cursor": None,
+            "has_more": False,
+        }
+
     def defaults(self, from_analysis_id=None):
         return {"source": from_analysis_id or "global"}
 
@@ -209,11 +216,22 @@ def test_gui_rejects_non_local_host_headers():
 
 def test_gui_history_route_requests_next_page_with_search_criteria():
     class SearchService(FakeService):
-        def history(self, **kwargs):
-            assert kwargs == {'query': '2020', 'offset': 200, 'limit': 201}
-            return [{'id': str(index)} for index in range(201)]
+        def history_page(self, **kwargs):
+            assert kwargs == {'query': '2020', 'cursor': 'next-page', 'limit': 200}
+            return {
+                'analyses': [{'id': str(index)} for index in range(200)],
+                'next_cursor': 'last-page',
+                'has_more': True,
+            }
 
     gui = create_gui_app(SearchService()).test_client()
-    result = gui.get('/api/history?q=2020&offset=200').json
+    result = gui.get('/api/history?q=2020&cursor=next-page').json
     assert result['has_more'] is True
     assert len(result['analyses']) == 200
+
+
+def test_gui_history_route_rejects_offsets_and_oversized_cursors():
+    gui = client()
+
+    assert gui.get('/api/history?offset=1').status_code == 400
+    assert gui.get('/api/history?cursor=' + 'x' * 1001).status_code == 400

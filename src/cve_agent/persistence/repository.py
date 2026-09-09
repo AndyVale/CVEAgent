@@ -5,11 +5,13 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+import base64
+import binascii
 import json
 import sqlite3
 
 from cve_agent.core.errors import PersistenceError
-from cve_agent.core.history import AnalysisSummary, HistorySearch
+from cve_agent.core.history import AnalysisSummary, HistoryPage, HistorySearch
 from cve_agent.core.history import StoredAnalysis
 from cve_agent.core.history import parse_analysis_id
 from cve_agent.core.serialization import canonical_json
@@ -41,18 +43,79 @@ class AnalysisRepository:
             return []
         if offset < 0:
             raise ValueError("history offset must not be negative")
-        query = (search.cve_query if search else "").strip().upper()
+        query = _normalized_query(search)
         try:
             with self._connect() as connection:
-                rows = connection.execute(
-                    _SUMMARY_QUERY + " WHERE instr(upper(a.cve_id), ?) > 0"
-                    " ORDER BY (upper(a.cve_id) = ?) DESC, a.updated_at DESC,"
-                    " a.run_id DESC, a.input_position ASC LIMIT ? OFFSET ?",
-                    (query, query, limit, offset),
-                ).fetchall()
+                if query:
+                    rows = connection.execute(
+                        _SUMMARY_QUERY + " WHERE instr(upper(a.cve_id), ?) > 0"
+                        " ORDER BY (upper(a.cve_id) = ?) DESC,"
+                        " a.run_id DESC, a.input_position DESC LIMIT ? OFFSET ?",
+                        (query, query, limit, offset),
+                    ).fetchall()
+                else:
+                    rows = connection.execute(
+                        _SUMMARY_QUERY
+                        + " ORDER BY a.run_id DESC, a.input_position DESC LIMIT ? OFFSET ?",
+                        (limit, offset),
+                    ).fetchall()
             return [_decode_summary(row) for row in rows]
         except (sqlite3.Error, json.JSONDecodeError) as exc:
             raise PersistenceError(f"failed to read analysis history: {exc}") from exc
+
+    def list_analysis_page(
+        self,
+        *,
+        limit: int = 200,
+        cursor: str | None = None,
+        search: HistorySearch | None = None,
+    ) -> HistoryPage:
+        if limit <= 0:
+            return HistoryPage((), None)
+        if limit > 1000:
+            raise ValueError("history page limit must not exceed 1000")
+        query = _normalized_query(search)
+        criteria = {"cve_query": query}
+        try:
+            with self._connect() as connection:
+                if cursor:
+                    snapshot_run_id, snapshot_row_id, last_key = _decode_history_cursor(
+                        cursor, criteria,
+                    )
+                else:
+                    row = connection.execute(
+                        "SELECT COALESCE(MAX(run_id), 0) AS snapshot_run_id,"
+                        " COALESCE(MAX(rowid), 0) AS snapshot_row_id FROM analyses"
+                    ).fetchone()
+                    snapshot_run_id = int(row["snapshot_run_id"])
+                    snapshot_row_id = int(row["snapshot_row_id"])
+                    last_key = None
+                sql, parameters = _history_page_query(
+                    query=query,
+                    snapshot_run_id=snapshot_run_id,
+                    snapshot_row_id=snapshot_row_id,
+                    last_key=last_key,
+                    limit=limit + 1,
+                )
+                rows = connection.execute(sql, parameters).fetchall()
+            has_more = len(rows) > limit
+            selected = rows[:limit]
+            analyses = tuple(_decode_summary(row) for row in selected)
+            next_cursor = None
+            if has_more and selected:
+                last = selected[-1]
+                exact = int(str(last["cve_id"]).upper() == query) if query else None
+                next_cursor = _encode_history_cursor(
+                    criteria=criteria,
+                    snapshot_run_id=snapshot_run_id,
+                    snapshot_row_id=snapshot_row_id,
+                    last_key=(exact, int(last["run_id"]), int(last["input_position"])),
+                )
+            return HistoryPage(analyses, next_cursor)
+        except (sqlite3.Error, json.JSONDecodeError) as exc:
+            raise PersistenceError(f"failed to read analysis history: {exc}") from exc
+        except ValueError:
+            raise
 
     def get_analysis(self, analysis_id: str) -> StoredAnalysis | None:
         run_id, input_position = parse_analysis_id(analysis_id)
@@ -240,3 +303,110 @@ LEFT JOIN provenance_records internal
 LEFT JOIN provenance_records public
   ON public.run_id=a.run_id AND public.input_position=a.input_position
   AND public.kind='public'"""
+
+
+def _normalized_query(search: HistorySearch | None) -> str:
+    return (search.cve_query if search else "").strip().upper()
+
+
+def _history_page_query(
+    *,
+    query: str,
+    snapshot_run_id: int,
+    snapshot_row_id: int,
+    last_key: tuple[int | None, int, int] | None,
+    limit: int,
+) -> tuple[str, tuple[Any, ...]]:
+    where = ["a.run_id<=?", "a.rowid<=?"]
+    parameters: list[Any] = [snapshot_run_id, snapshot_row_id]
+    if query:
+        where.append("instr(upper(a.cve_id), ?) > 0")
+        parameters.append(query)
+        if last_key is not None:
+            last_exact, last_run_id, last_position = last_key
+            if last_exact not in {0, 1}:
+                raise ValueError("invalid history cursor")
+            where.append(
+                "((upper(a.cve_id) = ?) < ? OR "
+                "((upper(a.cve_id) = ?) = ? AND "
+                "(a.run_id < ? OR (a.run_id = ? AND a.input_position < ?))))"
+            )
+            parameters.extend((
+                query,
+                last_exact,
+                query,
+                last_exact,
+                last_run_id,
+                last_run_id,
+                last_position,
+            ))
+        order = "(upper(a.cve_id) = ?) DESC, a.run_id DESC, a.input_position DESC"
+        parameters.append(query)
+    else:
+        if last_key is not None:
+            last_exact, last_run_id, last_position = last_key
+            if last_exact is not None:
+                raise ValueError("invalid history cursor")
+            where.append(
+                "(a.run_id < ? OR (a.run_id = ? AND a.input_position < ?))"
+            )
+            parameters.extend((last_run_id, last_run_id, last_position))
+        order = "a.run_id DESC, a.input_position DESC"
+    parameters.append(limit)
+    return (
+        _SUMMARY_QUERY + " WHERE " + " AND ".join(where) + f" ORDER BY {order} LIMIT ?",
+        tuple(parameters),
+    )
+
+
+def _encode_history_cursor(
+    *,
+    criteria: dict[str, str],
+    snapshot_run_id: int,
+    snapshot_row_id: int,
+    last_key: tuple[int | None, int, int],
+) -> str:
+    payload = canonical_json({
+        "version": 1,
+        "criteria": criteria,
+        "snapshot_run_id": snapshot_run_id,
+        "snapshot_row_id": snapshot_row_id,
+        "last_key": list(last_key),
+    }).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_history_cursor(
+    cursor: str,
+    criteria: dict[str, str],
+) -> tuple[int, int, tuple[int | None, int, int]]:
+    if not isinstance(cursor, str) or not cursor or len(cursor) > 1000:
+        raise ValueError("invalid history cursor")
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        decoded = base64.b64decode(cursor + padding, altchars=b"-_", validate=True)
+        payload = json.loads(decoded.decode("utf-8"))
+        if not isinstance(payload, dict) or set(payload) != {
+            "version", "criteria", "snapshot_run_id", "snapshot_row_id", "last_key",
+        }:
+            raise ValueError
+        if payload["version"] != 1 or payload["criteria"] != criteria:
+            raise ValueError
+        snapshot_run_id = payload["snapshot_run_id"]
+        snapshot_row_id = payload["snapshot_row_id"]
+        last_key = payload["last_key"]
+        if (
+            not isinstance(snapshot_run_id, int)
+            or not 0 <= snapshot_run_id <= 2**63 - 1
+            or not isinstance(snapshot_row_id, int)
+            or not 0 <= snapshot_row_id <= 2**63 - 1
+            or not isinstance(last_key, list)
+            or len(last_key) != 3
+            or last_key[0] not in {None, 0, 1}
+            or not all(isinstance(value, int) for value in last_key[1:])
+            or not all(0 <= value <= 2**63 - 1 for value in last_key[1:])
+        ):
+            raise ValueError
+    except (ValueError, TypeError, UnicodeError, json.JSONDecodeError, binascii.Error) as exc:
+        raise ValueError("invalid history cursor") from exc
+    return snapshot_run_id, snapshot_row_id, (last_key[0], last_key[1], last_key[2])

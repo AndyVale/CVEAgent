@@ -89,14 +89,15 @@ def create_gui_app(service: GuiService) -> Flask:
 
     @app.get("/api/history")
     def history():  # type: ignore[no-untyped-def]
-        offset = int(request.args.get("offset", "0"))
-        if offset < 0 or offset > 2**63 - 1:
-            raise ValueError("history offset must be a non-negative integer")
+        if "offset" in request.args:
+            raise ValueError("history offset pagination is no longer supported; use a cursor")
         query = request.args.get("q", "").strip()
         if len(query) > 200:
             raise ValueError("history search must not exceed 200 characters")
-        analyses = service.history(query=query, offset=offset, limit=201)
-        return jsonify({"analyses": analyses[:200], "has_more": len(analyses) > 200})
+        cursor = request.args.get("cursor")
+        if cursor is not None and len(cursor) > 1000:
+            raise ValueError("invalid history cursor")
+        return jsonify(service.history_page(query=query, cursor=cursor, limit=200))
 
     @app.get("/api/defaults")
     def defaults():  # type: ignore[no-untyped-def]
