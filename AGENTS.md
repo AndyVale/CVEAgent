@@ -77,8 +77,15 @@ Before making substantial changes, inspect the existing repository structure and
 - Keep stable diagnostic logger names when moving code: CLI and GUI display these names.
 - Tests mirror subsystem packages; reusable test doubles live in `tests/support`.
   Run `tests/architecture` after boundary changes and `tests/integration` after pipeline changes.
-  GUI renderer regression tests also use Node’s built-in runner (no npm dependencies):
+  GUI request, polling, history, submission-guard and renderer regression tests also use Node’s
+  built-in runner (no npm dependencies):
   `node --test tests/gui/*.test.cjs`. Run these when changing sidebar rendering or filtering.
+- Keep browser JavaScript in cohesive CSP-compatible assets loaded explicitly by `index.html`.
+  Do not add a framework or build step merely to share state; preserve separate ownership for
+  requests, polling, history, configuration, evidence rendering and top-level orchestration.
+- History-facing changes must retain cursor/snapshot stability and parameterized search. Inspect
+  SQLite query plans before adding an index, and cover concurrent inserts/updates, ordering ties,
+  page boundaries and invalid cursors.
 - Frozen contracts in `tests/fixtures/refactor_contracts.json` were captured from the
   pre-refactor implementation. Never regenerate them merely to make a refactor pass;
   changes require an explicitly intended behavior change and review.

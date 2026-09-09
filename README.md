@@ -201,10 +201,15 @@ GUI settings or sent to the browser.
 
 The selected SQLite database holds saved analyses. Clicking a CVE row in the left-side list
 opens that specific saved analysis without running the investigator or creating another entry.
+Completed pending references remain bound to the database in which their result was created, so
+switching databases cannot redirect an in-flight browser response, copied configuration, or
+progress warning to an unrelated analysis with the same local ID.
 The wider sidebar searches full CVE IDs or case-insensitive fragments: `CVE-2020-2889`, `2889`
 and `2020` all find `CVE-2020-2889`. Exact ID matches appear first, followed by recent partial
 matches. Search covers the database, with **Show more saved analyses** for additional results.
-Each run remains a separate row with its saved time, taxonomy and labels.
+Each run remains a separate row with its saved time, taxonomy and labels. Additional pages use a
+stable search snapshot, so analyses created or updated while paging do not repeat or skip rows in
+that snapshot; refreshing the search starts a new snapshot.
 
 **Start another analysis** always starts a fresh run and creates a new saved entry, even for
 an already analyzed CVE. Previous results remain unchanged. While the same CVE, taxonomy and
@@ -212,9 +217,18 @@ settings are queued or running in the same database, repeated submissions show t
 instead of queuing duplicates; the UI explicitly reports this. Once it finishes, submitting the
 CVE again starts another analysis. Web-document caching still applies to these fresh runs.
 Runs created by the CLI and GUI use the same repository and appear in the same history.
-If saving the GUI progress log fails after a result has been stored, the analysis remains
-completed and its current view shows a warning. The result remains available in history;
-missing progress logs use the stored research summary as a fallback.
+Transient polling failures show **Connection interrupted** and retry with bounded backoff while
+the backend continues running. If retries are exhausted, **Reconnect** resumes polling the same
+active run and never submits a new analysis. Connectivity failures are displayed separately from
+an analysis whose terminal status is `failed`, and controls remain guarded while reconnecting.
+
+GUI progress events are appended to SQLite as the analysis runs, with stable sequence numbers, so
+available progress survives a process interruption. If progress storage fails, the GUI retries a
+complete idempotent flush at completion and shows a redacted warning if it still cannot be saved.
+An already persisted successful result remains completed and available in history; legacy or
+missing progress logs continue to use the stored research summary as a fallback. Pending aliases,
+failed-job details, and progress warnings have bounded in-memory retention; persisted analyses are
+never evicted by that limit.
 Machine-local GUI defaults live in the ignored `.data/cve-agent-gui.json` file by default.
 
 ## Evaluating classification performance
@@ -445,7 +459,7 @@ SQLite schema version 3 uses one repository for the CLI and GUI:
 - `runs` stores immutable canonical taxonomy and non-secret settings snapshots with fingerprints;
 - `analyses` stores lightweight per-CVE lifecycle, labels, errors, and timestamps;
 - `analysis_payloads` contains the current checkpoint or final result;
-- `analysis_events` contains sequenced progress events;
+- `analysis_events` contains incrementally appended, sequenced progress events;
 - `provenance_records` keeps internal and public evidence audit data separately.
 
 History queries do not load result, checkpoint, taxonomy, settings, or provenance JSON. Exact
@@ -501,10 +515,13 @@ owned by their caller. When using `create_web_source`, `WebClient`, or `TavilySe
 directly, call `close()` in a `finally` block after use.
 
 History search uses the shared `HistorySearch` criteria record, translated into parameterized
-SQLite filters before pagination. Additional taxonomy, label or metadata filters can extend
-that record and the repository query without coupling search to browser-side result rendering.
-The sidebar also filters visible rows immediately against the current input, so non-matching
-CVEs remain hidden while updated results are being fetched.
+SQLite filters before cursor pagination. Cursors bind the normalized criteria, initial row/run
+snapshot and immutable ordering key. Additional taxonomy, label or metadata filters can extend
+that record and cursor payload without coupling search to browser-side result rendering. The
+sidebar also filters visible rows immediately against the current input, so non-matching CVEs
+remain hidden while updated results are being fetched.
 
-GUI renderer checks use Node’s built-in test runner without npm dependencies:
+GUI browser code is split into CSP-compatible request, polling, history, configuration, evidence
+rendering and orchestration assets, loaded directly without a framework or build step. Executable
+behavior checks use Node’s built-in test runner without npm dependencies:
 `node --test tests/gui/*.test.cjs`.

@@ -52,14 +52,20 @@ def test_gui_serves_separate_web_entrypoint_and_assets():
     gui = client()
 
     index = gui.get("/")
-    script = gui.get("/assets/app.js")
+    scripts = {
+        name: gui.get(f"/assets/{name}")
+        for name in [
+            "api.js", "polling.js", "history.js", "rendering.js", "configuration.js", "app.js",
+        ]
+    }
     styles = gui.get("/assets/styles.css")
 
     assert index.status_code == 200
     assert b"CVE Agent" in index.data
     assert "default-src 'self'" in index.headers["Content-Security-Policy"]
-    assert script.status_code == 200
-    assert b"/api/analyses" in script.data
+    assert all(script.status_code == 200 for script in scripts.values())
+    assert b"/api/analyses" in scripts["app.js"].data
+    assert b"AnalysisPoller" in scripts["polling.js"].data
     assert styles.status_code == 200
     assert all("Flask" not in module.read_text(encoding="utf-8") for module in Path("src/cve_agent/cli").glob("*.py"))
 
@@ -92,6 +98,7 @@ def test_gui_settings_submit_on_enter_and_keep_dialog_errors_visible():
 
     markup = gui.get("/").get_data(as_text=True)
     script = gui.get("/assets/app.js").get_data(as_text=True)
+    configuration = gui.get("/assets/configuration.js").get_data(as_text=True)
 
     assert '<form id="globalSettingsForm">' in markup
     assert '<form id="chatSettingsForm">' in markup
@@ -103,9 +110,9 @@ def test_gui_settings_submit_on_enter_and_keep_dialog_errors_visible():
     assert 'elements.globalSettingsForm.requestSubmit();' in script
     assert 'elements.chatSettingsForm.addEventListener("submit"' in script
     assert 'const activeDialog = document.querySelector("dialog[open]")' in script
-    assert 'api("/api/analysis-options"' in script
-    assert "settingIsRelevant" in script
-    assert "exclusiveMinimum" in script
+    assert 'this.request("/api/analysis-options"' in configuration
+    assert "settingIsRelevant" in configuration
+    assert "exclusiveMinimum" in configuration
     assert '.settings-dialog .toast { z-index: 2; }' in gui.get("/assets/styles.css").get_data(as_text=True)
 
 
@@ -125,7 +132,7 @@ def test_gui_panels_scroll_independently_and_history_views_reset_scroll():
 
 def test_gui_renders_accessible_human_readable_evidence_chains():
     gui = client()
-    script = gui.get("/assets/app.js").get_data(as_text=True)
+    script = gui.get("/assets/rendering.js").get_data(as_text=True)
     styles = gui.get("/assets/styles.css").get_data(as_text=True)
 
     assert 'renderLabel(label, result.provenance)' in script
@@ -146,6 +153,20 @@ def test_gui_renders_accessible_human_readable_evidence_chains():
     assert '.evidence-chain-scroll { max-width: 100%; overflow-x: auto;' in styles
     assert '.chain-node.active {' in styles
     assert 'button:focus-visible' in styles
+
+
+def test_gui_exposes_distinct_connection_recovery_controls():
+    gui = client()
+    markup = gui.get("/").get_data(as_text=True)
+    app_script = gui.get("/assets/app.js").get_data(as_text=True)
+    poll_script = gui.get("/assets/polling.js").get_data(as_text=True)
+
+    assert 'id="connectionState"' in markup
+    assert 'id="retryPollButton"' in markup
+    assert '>Reconnect<' in markup
+    assert 'Connection interrupted' in app_script
+    assert 'Reconnecting to the active analysis without starting another run' in app_script
+    assert 'retryDelays = [500, 1000, 2000, 4000]' in poll_script
 
 
 def test_gui_json_routes_delegate_to_service():

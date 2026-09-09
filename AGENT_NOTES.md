@@ -2,10 +2,52 @@
 
 ## Current work
 
-GUI history/reanalysis separation is implemented on `main` and awaiting commit approval.
-Clicking a left-sidebar row loads that exact saved result. Submitting a CVE always requests a
-fresh analysis; only identical queued/running work is deduplicated. No new commits created.
-`ARCHITECTURE.md` remains untouched, untracked and excluded.
+Reliability and maintainability follow-up is complete on `main` and awaiting review; no commits
+have been created.
+The working tree was clean before this work began. `ARCHITECTURE.md` remains untouched and
+excluded.
+
+Current-code reproductions completed before fixes:
+- A completed pending ID for database A resolves to the overlapping `1:0` analysis in database B.
+- A rejected GUI poll schedules only the toast timer and never another poll.
+- Application resource cleanup and pipeline failed-run finalization both replace the primary
+  exception when cleanup also fails.
+- GUI events are not written during the first active run, and completed aliases grow without a
+  retention bound.
+- Inserting a newer history row between offset pages repeats the prior page's last row.
+- The browser controller remains a single 1,031-line asset with only renderer-focused JS tests.
+
+Implemented and verified units:
+- Cleanup preserves primary pipeline/application failures, reports secondary failures with
+  type-only diagnostics, surfaces cleanup-only failures, and continues independent resource
+  cleanup. Focused application suite: 37 passed.
+- Completed pending references carry their resolved database path. Defaults, result loading and
+  progress warnings use that repository. Progress binds after an initial persisted checkpoint,
+  appends idempotent sequence deltas, retries a final full flush, and uses context-local capture
+  so concurrent runs cannot receive one another's diagnostics. Terminal pending state is retained
+  with an LRU bound of 128 without deleting SQLite results.
+- GUI history now uses criteria-bound cursor snapshots ordered by exact match, run ID and input
+  position. Empty history follows the analyses primary key; substring plans still require a sort,
+  so no index was added. Concurrent insert/update, boundary, exact-priority, repeated-run,
+  wildcard and invalid-cursor tests pass.
+- Browser code is split into request, polling, history, rendering, configuration and orchestration
+  assets. Bounded retry/backoff, exhausted reconnect, stale response/timer guards, search races,
+  cursor append and submission guards have executable Node coverage (7 passed).
+- Full offline Python suite passed after integration: 318 passed. Frozen request/result fixtures
+  were unchanged. Real browser verification used temporary database A/B instances and a mocked
+  delayed classifier: overlapping `1:0` histories stayed separate, saved-row opening was read-only,
+  two injected poll failures recovered the same pending run, and repeated submission created a
+  new third row. A terminal helper-text ordering issue found in that pass was fixed and rechecked.
+- Python compilation passed. Final source and wheel builds passed; both archives contain all six
+  ordered GUI scripts and the stylesheet. An isolated import from the built wheel served every
+  asset with HTTP 200 and the existing CSP. `git diff --check` passed and no schema, lockfile,
+  prompt, request/result contract fixture, classification algorithm or model-setting file changed.
+
+Proposed review units (not committed):
+- `fix: preserve primary failures during cleanup`
+- `feat: persist isolated analysis progress safely`
+- `fix: scope analysis references and stabilize history`
+- `refactor: split GUI responsibilities and recover polling`
 
 ## GUI changes (2026-09-09)
 
@@ -116,7 +158,7 @@ Include the corresponding tests and documentation. Never stage ARCHITECTURE.md o
 
 ## Deferred work
 
-Typed pipeline events/incremental persistence, removal of the
-legacy event fallback, hybrid scheduling changes, provider-specific retry delays, hard wall-clock cancellation,
-and the separate taxonomy ambiguity pass are outside this refactor. Investigation time limits
+Further typed event records, removal of the legacy event fallback, hybrid scheduling changes,
+provider-specific retry delays, hard wall-clock cancellation, and the separate taxonomy ambiguity
+pass are outside this refactor. Investigation time limits
 remain admission cutoffs, and the prior full-input extraction/lazy-cache fixes are preserved.
