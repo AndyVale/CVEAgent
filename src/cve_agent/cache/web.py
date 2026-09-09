@@ -28,8 +28,17 @@ class CachedWebClient:
         path = self.cache.path("search", query)
         if path.exists():
             logger.info("search cache hit query_chars=%d", len(query))
-            cached = [SearchResult(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
-            return public_search_results(cached, self.url_policy)
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(payload, list):
+                    raise TypeError("invalid search cache structure")
+                cached = [SearchResult(**item) for item in payload]
+                if not all(isinstance(value, str) for item in cached for value in (item.title, item.url, item.snippet)):
+                    raise TypeError("invalid search cache fields")
+            except (ValueError, TypeError, UnicodeError):
+                logger.warning("invalid search cache entry; fetching fresh results")
+            else:
+                return public_search_results(cached, self.url_policy)
         logger.info("search cache miss query_chars=%d", len(query))
         results = public_search_results(self.source.search(query), self.url_policy)
         self.cache.write(path, json.dumps([x.__dict__ for x in results]))
@@ -40,13 +49,25 @@ class CachedWebClient:
         self.url_policy.validate(url)
         path = self.cache.path("fetch", url)
         if path.exists():
-            cached = json.loads(path.read_text(encoding="utf-8"))
-            cached["redirect_chain"] = tuple(cached.get("redirect_chain", ()))
-            document = Document(**cached)
-            validate_document_urls(document, self.url_policy)
-            _ensure_usable_document_content(document.content)
-            logger.info("fetch cache hit url=%s document_id=%s chars=%d", safe_url(url), document.document_id, len(document.content))
-            return document
+            try:
+                cached = json.loads(path.read_text(encoding="utf-8"))
+                redirects = cached.get("redirect_chain", [])
+                if not isinstance(redirects, list):
+                    raise TypeError("invalid document redirects")
+                cached["redirect_chain"] = tuple(redirects)
+                document = Document(**cached)
+                if not all(isinstance(value, str) for value in (
+                    document.url, document.requested_url, document.title, document.content,
+                    document.document_id, *document.redirect_chain,
+                )) or not isinstance(document.metadata, dict):
+                    raise TypeError("invalid document cache fields")
+            except (ValueError, TypeError, AttributeError, UnicodeError):
+                logger.warning("invalid document cache entry; fetching fresh document")
+            else:
+                validate_document_urls(document, self.url_policy)
+                _ensure_usable_document_content(document.content)
+                logger.info("fetch cache hit url=%s document_id=%s chars=%d", safe_url(url), document.document_id, len(document.content))
+                return document
         logger.info("fetch cache miss url=%s", safe_url(url))
         document = self.source.fetch(url)
         self.cache.write(path, json.dumps(document.__dict__))

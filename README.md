@@ -418,7 +418,9 @@ source data rather than agent instructions. Verbose logs include a safe URL and 
 when a search candidate or fetch is rejected.
 
 Searches and fetched documents are cached under `[web].cache_dir`. The cache has no automatic
-expiry. To reset it, delete only the configured cache directory; with the example configuration:
+expiry. Writes replace entries atomically. Malformed JSON or invalid cache structures are
+refetched and replaced after successful retrieval; filesystem access errors and unsafe URLs
+still raise errors. To reset it, delete only the configured cache directory; with the example configuration:
 
 ```bash
 rm -r .cache/cve-agent/web
