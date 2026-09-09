@@ -117,6 +117,12 @@ def test_repository_recovers_stale_investigations_as_interrupted(tmp_path):
         )
 
     repository = AnalysisRepository(path)
+    repository.save_events(f"{run_id}:0", [{
+        "created_at": "2020-01-01T00:00:00+00:00",
+        "tone": "normal",
+        "component": "PIPELINE",
+        "message": "durable progress before interruption",
+    }])
     assert repository.recover_stale(before="2021-01-01T00:00:00+00:00") == 1
     stored = repository.get_analysis(f"{run_id}:0")
 
@@ -124,6 +130,9 @@ def test_repository_recovers_stale_investigations_as_interrupted(tmp_path):
     assert stored.status == "interrupted"
     assert stored.run_status == "interrupted"
     assert stored.error == "analysis process stopped before completion"
+    assert repository.get_events(f"{run_id}:0")[0]["message"] == (
+        "durable progress before interruption"
+    )
 
 
 def test_repository_recovers_stale_terminal_and_empty_runs(tmp_path):
@@ -168,6 +177,27 @@ def test_event_queries_support_sequence_deltas(tmp_path):
 
     assert [event["message"] for event in repository.get_events(analysis_id, after_sequence=0)] == [
         "second"
+    ]
+
+
+def test_event_writes_are_ordered_and_idempotent(tmp_path):
+    path = tmp_path / "history.sqlite3"
+    analysis_id, _, _ = persisted_analysis(path)
+    repository = AnalysisRepository(path)
+    repository.save_events(analysis_id, [{"created_at": "one", "message": "first"}])
+    repository.save_events(
+        analysis_id,
+        [{"created_at": "changed", "message": "must not replace first"}],
+    )
+    repository.save_events(
+        analysis_id,
+        [{"created_at": "two", "message": "second"}],
+        start_sequence=1,
+    )
+
+    assert [event["message"] for event in repository.get_events(analysis_id)] == [
+        "first",
+        "second",
     ]
 
 

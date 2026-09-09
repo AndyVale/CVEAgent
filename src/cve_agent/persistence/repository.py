@@ -93,10 +93,18 @@ class AnalysisRepository:
         except (sqlite3.Error, json.JSONDecodeError, TaxonomyError) as exc:
             raise PersistenceError(f"failed to query cached analysis: {exc}") from exc
 
-    def save_events(self, analysis_id: str, events: Iterable[dict[str, Any]]) -> None:
+    def save_events(
+        self,
+        analysis_id: str,
+        events: Iterable[dict[str, Any]],
+        *,
+        start_sequence: int = 0,
+    ) -> None:
         run_id, input_position = parse_analysis_id(analysis_id)
+        if start_sequence < 0 or start_sequence > 2**63 - 1:
+            raise ValueError("event start sequence must be a non-negative integer")
         rows = []
-        for sequence, event in enumerate(events):
+        for sequence, event in enumerate(events, start=start_sequence):
             payload = dict(event)
             created_at = str(payload.pop("created_at", ""))
             event_type = str(payload.pop("type", "message"))
@@ -114,9 +122,7 @@ class AnalysisRepository:
                     """INSERT INTO analysis_events(
                         run_id,input_position,sequence,created_at,event_type,payload_json
                     ) VALUES(?,?,?,?,?,?)
-                    ON CONFLICT(run_id,input_position,sequence) DO UPDATE SET
-                        created_at=excluded.created_at,event_type=excluded.event_type,
-                        payload_json=excluded.payload_json""",
+                    ON CONFLICT(run_id,input_position,sequence) DO NOTHING""",
                     rows,
                 )
         except sqlite3.Error as exc:

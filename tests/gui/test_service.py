@@ -284,7 +284,7 @@ def test_progress_write_failure_preserves_result_and_displays_warning(tmp_path, 
 
     gui = service(tmp_path)
 
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise PersistenceError('event storage unavailable')
 
     monkeypatch.setattr(gui.repositories.get(), 'save_events', fail)
@@ -294,7 +294,7 @@ def test_progress_write_failure_preserves_result_and_displays_warning(tmp_path, 
     assert analysis['error'] is None
     assert analysis['result']['status'] == 'classified'
     assert analysis['events'][-1]['tone'] == 'warning'
-    assert 'progress log could not be saved' in analysis['events'][-1]['message']
+    assert 'progress could not be saved' in analysis['events'][-1]['message']
     assert not gui.jobs.has_active()
     cached = gui.start_analysis({'cve_id': 'CVE-2024-12345'})
     assert cached['already_running'] is False
@@ -341,3 +341,58 @@ def test_gui_normalizes_cve_before_deduplicating_active_runs(tmp_path):
     third = gui.start_analysis({'cve_id': 'CVE-2020-2889'})
     assert third['already_running'] is False
     assert third['id'] != first['id']
+
+
+def test_completed_pending_reference_stays_bound_to_original_database(tmp_path, monkeypatch):
+    gui = service(tmp_path)
+    original_defaults = gui.defaults()
+    original_repository = gui.repositories.get()
+
+    def fail_progress(*args, **kwargs):
+        raise RuntimeError('database A progress unavailable')
+
+    monkeypatch.setattr(original_repository, 'save_events', fail_progress)
+    original = gui.start_analysis({'cve_id': 'CVE-2020-2889'})
+    original_result = gui.get_analysis(original['id'])
+
+    other_database = tmp_path / '.data' / 'other.sqlite3'
+    gui.update_global_settings({
+        'database_path': str(other_database),
+        'default_taxonomy_path': str(tmp_path / 'fixtures' / 'flat_taxonomy.json'),
+    })
+    changed_values = dict(gui.defaults()['values'])
+    changed_values['temperature'] = 0.6
+    gui.update_analysis_options({
+        'taxonomy_path': str(tmp_path / 'fixtures' / 'flat_taxonomy.json'),
+        'values': changed_values,
+    })
+    overlapping = gui.start_analysis({'cve_id': 'CVE-2021-26855'})
+    overlapping_result = gui.get_analysis(overlapping['id'])
+
+    loaded_original = gui.get_analysis(original['id'])
+    copied_defaults = gui.defaults(original['id'])
+
+    assert original_result['stored_analysis_id'] == '1:0'
+    assert overlapping_result['stored_analysis_id'] == '1:0'
+    assert loaded_original['cve_id'] == 'CVE-2020-2889'
+    assert loaded_original['result'] == original_result['result']
+    assert copied_defaults == original_defaults
+    assert loaded_original['events'][-1]['tone'] == 'warning'
+    assert 'database A progress unavailable' in loaded_original['events'][-1]['message']
+    assert all(event['tone'] != 'warning' for event in overlapping_result['events'])
+    assert overlapping_result['configuration']['values']['temperature'] == 0.6
+
+
+def test_terminal_alias_eviction_never_removes_persisted_results(tmp_path):
+    gui = service(tmp_path)
+    gui.jobs._terminal_retention = 2
+    pending_ids = []
+    stored_ids = []
+    for index in range(3):
+        pending = gui.start_analysis({'cve_id': f'CVE-2026-{1000 + index}'})['id']
+        pending_ids.append(pending)
+        stored_ids.append(gui.get_analysis(pending)['stored_analysis_id'])
+
+    assert gui.get_analysis(pending_ids[0]) is None
+    assert gui.get_analysis(stored_ids[0])['cve_id'] == 'CVE-2026-1000'
+    assert len(gui.history()) == 3

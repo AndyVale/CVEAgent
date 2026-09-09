@@ -71,14 +71,17 @@ class RepositoryAccess:
             self._repository_path = path
             self._repository = repository
 
-    def get(self) -> AnalysisHistory:
-        path = self.settings_store.get().database_path.resolve()
+    def get(self, database_path: str | Path | None = None) -> AnalysisHistory:
+        active_path = self.settings_store.get().database_path.resolve()
+        path = Path(database_path).resolve() if database_path is not None else active_path
         with self._lock:
             if self._repository is None or self._repository_path != path:
                 repository = create_history_repository(path)
                 repository.initialize()
-                self._repository = repository
-                self._repository_path = path
+                if path == active_path:
+                    self._repository = repository
+                    self._repository_path = path
+                return repository
             return self._repository
 
 def stored_payload(repository: AnalysisHistory, analysis: StoredAnalysis) -> dict[str, Any]:

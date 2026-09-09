@@ -45,13 +45,37 @@ class GuiService:
     def history(self, *, limit: int = 200, offset: int = 0, query: str = "") -> list[dict[str, Any]]:
         return [history_item(analysis) for analysis in self.repositories.get().list_analyses(limit=limit, offset=offset, search=HistorySearch(cve_query=query))]
 
+    def history_page(
+        self,
+        *,
+        limit: int = 200,
+        cursor: str | None = None,
+        query: str = "",
+    ) -> dict[str, Any]:
+        page = self.repositories.get().list_analysis_page(
+            limit=limit,
+            cursor=cursor,
+            search=HistorySearch(cve_query=query),
+        )
+        return {
+            "analyses": [history_item(analysis) for analysis in page.analyses],
+            "next_cursor": page.next_cursor,
+            "has_more": page.next_cursor is not None,
+        }
+
     def defaults(self, from_analysis_id: str | None = None) -> dict[str, Any]:
         global_settings = self.settings_store.get()
         if from_analysis_id:
-            running, stored_alias = self.jobs.lookup(from_analysis_id)
+            running, completed = self.jobs.lookup(from_analysis_id)
             if running:
                 return running.configuration.to_public_dict()
-            stored = self.repositories.get().get_analysis(stored_alias or from_analysis_id)
+            if completed:
+                repository = self.repositories.get(completed.database_path)
+                stored = repository.get_analysis(completed.analysis_id)
+            elif from_analysis_id.startswith("pending-"):
+                stored = None
+            else:
+                stored = self.repositories.get().get_analysis(from_analysis_id)
             if stored:
                 return stored_configuration(stored)
         return self.configuration.resolve(
@@ -60,16 +84,24 @@ class GuiService:
         ).to_public_dict()
 
     def get_analysis(self, analysis_id: str) -> dict[str, Any] | None:
-        running, stored_alias = self.jobs.lookup(analysis_id)
+        running, completed = self.jobs.lookup(analysis_id)
         if running:
             return running.snapshot()
-        stored = self.repositories.get().get_analysis(stored_alias or analysis_id)
+        if completed:
+            repository = self.repositories.get(completed.database_path)
+            stored_id = completed.analysis_id
+        elif analysis_id.startswith("pending-"):
+            return None
+        else:
+            repository = self.repositories.get()
+            stored_id = analysis_id
+        stored = repository.get_analysis(stored_id)
         if stored is None:
             return None
-        payload = stored_payload(self.repositories.get(), stored)
-        warning = self.jobs.progress_warning(analysis_id)
+        payload = stored_payload(repository, stored)
+        warning = completed.warning if completed else self.jobs.progress_warning(analysis_id)
         if warning:
-            payload["events"].append(warning)
+            payload["events"].append(dict(warning))
         return payload
 
     def start_analysis(self, raw: dict[str, Any]) -> dict[str, Any]:
