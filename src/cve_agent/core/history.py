@@ -15,6 +15,12 @@ class HistorySearch:
 
 
 @dataclass(frozen=True)
+class HistoryPage:
+    analyses: tuple[AnalysisSummary, ...]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True)
 class AnalysisSummary:
     run_id: int
     input_position: int

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cve_agent.application.factory import create_application
+from cve_agent.application.factory import create_application, create_web_source
 from tests.support.agent import settings
 
 
@@ -28,3 +28,33 @@ def test_application_closes_only_owned_web_source_after_run(tmp_path, monkeypatc
         else:
             assert app.run([], None).results == ()
     assert closed == ([] if injected else [True, True])
+
+
+def test_default_web_cleanup_attempts_source_and_provider_and_preserves_first_failure(
+    tmp_path, monkeypatch, caplog,
+):
+    calls = []
+
+    class Source:
+        def __init__(self, *args, **kwargs): pass
+        def close(self):
+            calls.append("source")
+            raise RuntimeError("source close failure")
+
+    class Provider:
+        def __init__(self, *args, **kwargs): pass
+        def search(self, query): return []
+        def close(self):
+            calls.append("provider")
+            raise ValueError("provider close failure")
+
+    monkeypatch.setattr("cve_agent.application.factory.WebClient", Source)
+    monkeypatch.setattr("cve_agent.application.factory.TavilySearchProvider", Provider)
+    configured = settings(tmp_path)
+
+    with caplog.at_level("ERROR", logger="cve_agent.application"):
+        with pytest.raises(RuntimeError, match="source close failure"):
+            create_web_source(configured).close()
+
+    assert calls == ["source", "provider"]
+    assert "secondary HTTP cleanup failure" in caplog.text

@@ -1,3 +1,4 @@
+import logging
 from dataclasses import replace
 
 import pytest
@@ -117,4 +118,56 @@ def test_pipeline_uses_writer_contract_and_propagates_checkpoint_failure(fail_ch
     else:
         result = pipeline.run(['CVE-OK'], taxonomy)[0]
         assert result.operational['run_id'] == 42
-        assert writer.events == ['open', 'start', 'investigating', 'investigating', 'classified', 'complete', 'close']
+        assert writer.events == ['open', 'start', 'investigating', 'investigating', 'investigating', 'classified', 'complete', 'close']
+
+
+def test_pipeline_preserves_primary_failure_when_failed_run_finalization_also_fails(caplog):
+    secret = "fixture-secret-value"
+
+    class Writer:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def start_run(self, **snapshot): return 42
+        def save_investigation(self, *args, **kwargs):
+            raise PersistenceError("primary checkpoint failure")
+        def finish_run(self, run_id, status):
+            raise PersistenceError(f"secondary failure exposed {secret}")
+
+    taxonomy = Taxonomy((TaxonomyLabel('CWE-120', 'Buffer Copy', 'copy without bounds'),))
+    with caplog.at_level(logging.ERROR, logger="cve_agent.pipeline"):
+        with pytest.raises(PersistenceError, match="primary checkpoint failure"):
+            Pipeline(Source(), Classifier(), Writer()).run(['CVE-OK'], taxonomy)
+
+    assert "secondary cleanup failure" in caplog.text
+    assert "cleanup_type=PersistenceError" in caplog.text
+    assert secret not in caplog.text
+
+
+def test_pipeline_surfaces_cleanup_only_failure():
+    class Writer:
+        def __enter__(self): return self
+        def __exit__(self, *args): raise PersistenceError("writer close failed")
+        def start_run(self, **snapshot): return 42
+        def save_investigation(self, *args, **kwargs): pass
+        def finish_run(self, run_id, status): pass
+
+    taxonomy = Taxonomy((TaxonomyLabel('CWE-120', 'Buffer Copy', 'copy without bounds'),))
+    with pytest.raises(PersistenceError, match="writer close failed"):
+        Pipeline(Source(), Classifier(), Writer()).run(['CVE-OK'], taxonomy)
+
+
+def test_pipeline_preserves_primary_failure_when_writer_close_also_fails(caplog):
+    class Writer:
+        def __enter__(self): return self
+        def __exit__(self, *args): raise PersistenceError("secondary close failure")
+        def start_run(self, **snapshot): return 42
+        def save_investigation(self, *args, **kwargs):
+            raise PersistenceError("primary save failure")
+        def finish_run(self, run_id, status): pass
+
+    taxonomy = Taxonomy((TaxonomyLabel('CWE-120', 'Buffer Copy', 'copy without bounds'),))
+    with caplog.at_level(logging.ERROR, logger="cve_agent.pipeline"):
+        with pytest.raises(PersistenceError, match="primary save failure"):
+            Pipeline(Source(), Classifier(), Writer()).run(['CVE-OK'], taxonomy)
+
+    assert "closing the analysis writer" in caplog.text

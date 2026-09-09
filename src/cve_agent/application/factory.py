@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+import logging
 
 import httpx
 
@@ -19,6 +20,9 @@ from cve_agent.integrations.web import WebClient
 from cve_agent.integrations.web_policy import PublicWebUrlPolicy
 from cve_agent.persistence.repository import AnalysisRepository
 from cve_agent.persistence.writer import Database
+
+
+logger = logging.getLogger("cve_agent.application")
 
 
 def create_application(
@@ -60,11 +64,26 @@ def create_web_source(
     source = WebClient(settings, searcher=active_searcher, http_client=http_client, url_policy=policy)
 
     def close() -> None:
+        first_failure: BaseException | None = None
         try:
             source.close()
-        finally:
-            if provider is not None:
+        except BaseException as exc:
+            first_failure = exc
+        if provider is not None:
+            try:
                 provider.close()
+            except BaseException as exc:
+                if first_failure is None:
+                    first_failure = exc
+                else:
+                    logger.error(
+                        "secondary HTTP cleanup failure preserved separately "
+                        "primary_type=%s cleanup_type=%s",
+                        type(first_failure).__name__,
+                        type(exc).__name__,
+                    )
+        if first_failure is not None:
+            raise first_failure
 
     return CachedWebClient(source, JsonDiskCache(settings.cache_dir), policy, close=close)
 

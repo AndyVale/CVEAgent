@@ -1,3 +1,7 @@
+import logging
+
+import pytest
+
 from cve_agent.application.service import ClassificationApplication
 from cve_agent.classification.evaluation import Benchmark, BenchmarkCase
 from cve_agent.core.results import ClassificationResult, LabelClassification
@@ -51,3 +55,44 @@ def test_application_exposes_partial_and_failed_counts_without_terminal_policy()
     assert outcome.failed_count == 1
     assert outcome.successful_count == 1
     assert not outcome.complete
+
+
+def test_application_preserves_primary_failure_and_reports_cleanup_separately(caplog):
+    secret = "fixture-secret-value"
+
+    class FailingPipeline:
+        def run(self, *_):
+            raise RuntimeError("primary pipeline failure")
+
+    def cleanup():
+        raise RuntimeError(f"cleanup exposed {secret}")
+
+    with caplog.at_level(logging.ERROR, logger="cve_agent.application"):
+        with pytest.raises(RuntimeError, match="primary pipeline failure"):
+            ClassificationApplication(FailingPipeline(), close_resources=cleanup).run([], taxonomy())
+
+    assert "secondary resource cleanup failure" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert secret not in caplog.text
+
+
+def test_application_surfaces_cleanup_only_failure_and_attempts_every_resource(caplog):
+    calls = []
+
+    def first():
+        calls.append("first")
+        raise RuntimeError("first cleanup failure")
+
+    def second():
+        calls.append("second")
+        raise ValueError("second cleanup failure")
+
+    with caplog.at_level(logging.ERROR, logger="cve_agent.application"):
+        with pytest.raises(RuntimeError, match="first cleanup failure"):
+            ClassificationApplication(
+                FixturePipeline([]),
+                close_resources=(first, second),
+            ).run([], taxonomy())
+
+    assert calls == ["first", "second"]
+    assert "cleanup_type=ValueError" in caplog.text
