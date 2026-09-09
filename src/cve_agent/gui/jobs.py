@@ -64,6 +64,7 @@ class AnalysisJobs:
         self._owns_executor = executor is None
         self._running: dict[str, RunningAnalysis] = {}
         self._completed_aliases: dict[str, str] = {}
+        self._progress_warnings: dict[str, dict[str, Any]] = {}
 
     def close(self) -> None:
         if self._owns_executor:
@@ -80,7 +81,12 @@ class AnalysisJobs:
         )
         with self._lock:
             self._running[analysis_id] = running
-        self._executor.submit(self._run_analysis, running)
+        try:
+            self._executor.submit(self._run_analysis, running)
+        except Exception:
+            with self._lock:
+                self._running.pop(analysis_id, None)
+            raise
         return {"id": analysis_id, "cached": False, "lifecycle": "queued"}
 
     def _run_analysis(self, running: RunningAnalysis) -> None:
@@ -111,7 +117,14 @@ class AnalysisJobs:
                 component="SYSTEM",
                 message=f"Analysis finished with status {result.status} and {len(result.labels)} label(s).",
             )
-            self._get_repository().save_events(stored_id, running.events)
+            try:
+                self._get_repository().save_events(stored_id, running.events)
+            except Exception as exc:
+                detail = redact_secrets(exc, configuration.settings.api_key, configuration.settings.tavily_api_key)
+                message = f"Analysis completed, but its progress log could not be saved: {detail}"
+                with self._lock:
+                    self._progress_warnings[running.analysis_id] = _event(tone="warning", component="SYSTEM", message=message)
+                package_logger.warning("%s", message)
             with running._lock:
                 running.stored_analysis_id = stored_id
                 running.lifecycle = "completed"
@@ -133,6 +146,11 @@ class AnalysisJobs:
     def lookup(self, analysis_id: str) -> tuple[RunningAnalysis | None, str | None]:
         with self._lock:
             return self._running.get(analysis_id), self._completed_aliases.get(analysis_id)
+
+    def progress_warning(self, analysis_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            warning = self._progress_warnings.get(analysis_id)
+            return dict(warning) if warning else None
 
     def has_active(self) -> bool:
         with self._lock:

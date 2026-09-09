@@ -273,3 +273,25 @@ def test_normalize_cve_id_is_case_insensitive_but_strict():
     assert normalize_cve_id(" cve-2021-44228 ") == "CVE-2021-44228"
     with pytest.raises(GuiConfigurationError):
         normalize_cve_id("CVE-21-1")
+
+
+def test_progress_write_failure_preserves_result_and_displays_warning(tmp_path, monkeypatch):
+    from cve_agent.core.errors import PersistenceError
+
+    gui = service(tmp_path)
+
+    def fail(*args):
+        raise PersistenceError('event storage unavailable')
+
+    monkeypatch.setattr(gui.repositories.get(), 'save_events', fail)
+    started = gui.start_analysis({'cve_id': 'CVE-2024-12345'})
+    analysis = gui.get_analysis(started['id'])
+    assert analysis['lifecycle'] == 'completed'
+    assert analysis['error'] is None
+    assert analysis['result']['status'] == 'classified'
+    assert analysis['events'][-1]['tone'] == 'warning'
+    assert 'progress log could not be saved' in analysis['events'][-1]['message']
+    assert not gui.jobs.has_active()
+    cached = gui.start_analysis({'cve_id': 'CVE-2024-12345'})
+    assert cached['cached'] is True
+    assert cached['id'] == analysis['id']

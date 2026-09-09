@@ -64,7 +64,13 @@ class GuiService:
         if running:
             return running.snapshot()
         stored = self.repositories.get().get_analysis(stored_alias or analysis_id)
-        return stored_payload(self.repositories.get(), stored) if stored else None
+        if stored is None:
+            return None
+        payload = stored_payload(self.repositories.get(), stored)
+        warning = self.jobs.progress_warning(analysis_id)
+        if warning:
+            payload["events"].append(warning)
+        return payload
 
     def start_analysis(self, raw: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(raw, dict):

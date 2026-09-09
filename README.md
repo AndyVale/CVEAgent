@@ -203,6 +203,9 @@ The selected SQLite database is also the history and result cache. A completed r
 only when its normalized CVE ID, taxonomy fingerprint, and complete non-secret effective settings
 all match. Partial and failed runs are displayed but never treated as successful cache entries.
 Runs created by the CLI and GUI use the same repository and appear in the same history.
+If saving the GUI progress log fails after a result has been stored, the analysis remains
+completed and its current view shows a warning. The result remains available in history;
+missing progress logs use the stored research summary as a fallback.
 Machine-local GUI defaults live in the ignored `.data/cve-agent-gui.json` file by default.
 
 ## Evaluating classification performance

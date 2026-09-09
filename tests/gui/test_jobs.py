@@ -20,7 +20,7 @@ class ImmediateExecutor:
 
 
 @pytest.mark.parametrize('failure', ['provider', 'events'])
-def test_failed_job_remains_visible_and_restores_logging(tmp_path, failure):
+def test_job_failure_handling_preserves_outcome_and_restores_logging(tmp_path, failure):
     configured = replace(settings(tmp_path), api_key='fixture-credential')
     taxonomy = Taxonomy((TaxonomyLabel('A', 'A', 'Definition.'),))
     configuration = AnalysisConfiguration(configured, taxonomy, tmp_path / 'taxonomy.json', 'Fixture', taxonomy.fingerprint, 'settings')
@@ -31,21 +31,39 @@ def test_failed_job_remains_visible_and_restores_logging(tmp_path, failure):
         return ApplicationRun((ClassificationResult(cve_ids[0], 'classified', operational={'run_id': 1}),))
 
     def save_events(*args):
-        raise PersistenceError('event write failed')
+        raise PersistenceError('fixture-credential event write failed')
 
     logger = logging.getLogger('cve_agent')
     previous = (logger.level, logger.propagate, tuple(logger.handlers))
     jobs = AnalysisJobs(lambda _: SimpleNamespace(run=run), lambda: SimpleNamespace(save_events=save_events), threading.RLock(), ImmediateExecutor())
     queued = jobs.submit('CVE-2026-0001', configuration)
     running, stored = jobs.lookup(queued['id'])
-    snapshot = running.snapshot()
-
-    assert snapshot['lifecycle'] == 'failed'
-    assert stored is None
     assert not jobs.has_active()
-    assert 'fixture-credential' not in str(snapshot)
     if failure == 'provider':
+        snapshot = running.snapshot()
+        assert snapshot['lifecycle'] == 'failed'
+        assert stored is None
+        assert 'fixture-credential' not in str(snapshot)
         assert '[REDACTED]' in snapshot['error']
     else:
-        assert snapshot['error'] == 'event write failed'
+        # Event persistence is auxiliary: the completed classification remains accessible.
+        assert running is None
+        assert stored == '1:0'
+        warning = jobs.progress_warning(queued['id'])
+        assert warning['tone'] == 'warning'
+        assert 'fixture-credential' not in warning['message']
+        assert '[REDACTED]' in warning['message']
     assert (logger.level, logger.propagate, tuple(logger.handlers)) == previous
+
+
+def test_rejected_submission_does_not_leave_an_active_job():
+    class RejectingExecutor:
+        def submit(self, *args):
+            raise RuntimeError('executor unavailable')
+
+    jobs = AnalysisJobs(lambda _: None, lambda: None, threading.RLock(), RejectingExecutor())
+    configuration = SimpleNamespace(taxonomy_name='Fixture', taxonomy=SimpleNamespace(labels=[]))
+    with pytest.raises(RuntimeError, match='executor unavailable'):
+        jobs.submit('CVE-2026-0001', configuration)
+    assert not jobs.has_active()
+    assert not jobs._running
