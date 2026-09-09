@@ -5,6 +5,7 @@ import time
 
 import httpx
 
+from cve_agent.integrations.http import HttpClientSession
 from cve_agent.core.config import Settings
 from cve_agent.core.sources import SearchResult
 
@@ -17,7 +18,10 @@ class TavilySearchProvider:
 
     def __init__(self, settings: Settings, http_client: httpx.Client | None = None):
         self.settings = settings
-        self.http_client = http_client
+        self.http = HttpClientSession(settings.web_timeout, http_client)
+
+    def close(self) -> None:
+        self.http.close()
 
     def search(self, query: str) -> list[SearchResult]:
         if not self.settings.tavily_api_key:
@@ -40,11 +44,7 @@ class TavilySearchProvider:
                     self.settings.tavily_search_depth,
                     self.settings.tavily_max_results,
                 )
-                if self.http_client is None:
-                    with httpx.Client(timeout=self.settings.web_timeout, headers={"User-Agent": "cve-agent/0.1"}) as client:
-                        response = client.post(f"{self.settings.tavily_base_url.rstrip('/')}/search", json=payload, headers=headers)
-                else:
-                    response = self.http_client.post(f"{self.settings.tavily_base_url.rstrip('/')}/search", json=payload, headers=headers)
+                response = self.http.get().post(f"{self.settings.tavily_base_url.rstrip('/')}/search", json=payload, headers=headers)
                 if response.status_code == 401:
                     raise RuntimeError("Tavily rejected TAVILY_API_KEY (HTTP 401)")
                 if response.status_code == 429 or response.status_code >= 500:

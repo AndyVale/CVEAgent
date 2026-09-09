@@ -485,3 +485,8 @@ and mocks, never live providers.
 Python callers use `cve_agent.application.factory.create_application` and
 `cve_agent.application.service.ClassificationApplication`. Internal import paths were reorganized
 without legacy forwarding modules; the CLI and GUI commands and persisted formats are unchanged.
+
+Default web-download and Tavily clients reuse HTTP connections within an application run and
+are closed when that run ends, including on failure. Injected clients and web sources remain
+owned by their caller. When using `create_web_source`, `WebClient`, or `TavilySearchProvider`
+directly, call `close()` in a `finally` block after use.

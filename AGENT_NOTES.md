@@ -2,11 +2,36 @@
 
 ## Current work
 
-The behavior-preserving package reorganization is complete and ready for commit review.
-Work is on `main`; no files are staged and no commits have been created.
+The package reorganization is committed as `refactor: separate application responsibilities`.
+The authorized follow-up fixes (review items 1, 3, 4 and 5) are complete on `main`.
+The developer approved the three focused commits on 2026-09-09, with no parenthesized scopes.
+Item 2, duplicate GUI submissions, was explicitly deferred.
 `ARCHITECTURE.md` must remain untouched, untracked and uncommitted.
 
-## Implementation
+## Follow-up fixes (2026-09-08)
+
+- Cache writes use a same-directory temporary file and atomic replacement. Invalid JSON,
+  encoding or record structures trigger a fresh fetch; only successful retrieval replaces the
+  entry. Filesystem errors, unsafe URLs and unusable cached content remain explicit failures.
+- An event-save failure no longer marks a persisted analysis failed. The pending analysis view
+  displays a redacted warning and the result remains available for history/cache reuse. A
+  rejected executor submission removes its pending entry so settings are not blocked forever.
+- Download and Tavily adapters lazily reuse separate HTTP clients within a run. Application
+  cleanup closes only its owned sources on success/failure; injected clients remain caller-owned.
+  Direct adapter users call close(). Cookies are cleared between logical requests, preserving
+  prior isolation; authentication headers remain request-local. Redirect/response URL validation
+  remains intact, with the duplicate initial uncached-fetch check removed.
+- README documents recovery and ownership. No prompts, model settings, dependencies, SQLite
+  schemas or valid cache formats changed. Progress still persists at completion; incremental
+  event persistence is a separate deferred redesign.
+- Verification: 290 offline tests pass, including the frozen request/result contracts and
+  architecture checks. Added malformed-cache/recovery/write-failure, GUI completion/warning,
+  queue rejection, HTTP pooling/cookie/auth isolation and resource ownership/failure tests.
+  Live API benchmarks were not repeated for these follow-ups; prior results below describe
+  the package reorganization. All 290 tests passed again before committing on 2026-09-09.
+  Source and wheel builds and changed-file hygiene checks passed.
+
+## Reorganization implementation
 
 - Source responsibilities are separated into investigation, classification, persistence, cache,
   CLI, GUI, application, core, runtime and integrations. Imports use owning modules without
@@ -23,7 +48,7 @@ Work is on `main`; no files are staged and no commits have been created.
   `uv.lock` is unchanged. README and AGENTS document the new organization and import boundaries.
 - Tests mirror subsystem packages; shared doubles are under `tests/support`.
 
-## Verification
+## Reorganization verification
 
 - Original offline suite: 243 passed. Each structural unit passed the full suite before proceeding.
 - Frozen regression fixtures were captured from original source, including actual request-time
@@ -52,15 +77,18 @@ Work is on `main`; no files are staged and no commits have been created.
   existed only in process memory/environment, and were never written to files. Both live workers
   and their parent have exited. ARCHITECTURE.md remains untracked and the index is empty.
 
-## Commit proposal
+## Approved commit units
 
-Proposed Conventional Commit: `refactor: separate application responsibilities`.
-Developer approval is required before creating it. Stage only the intended source, tests,
-README, AGENTS, AGENT_NOTES and pyproject changes; exclude ARCHITECTURE.md and local artifacts.
+Developer-approved follow-ups:
+- `fix: recover malformed entries with atomic writes`
+- `fix: preserve completed results and clean up rejected jobs`
+- `perf: reuse and release owned HTTP clients`
+
+Include the corresponding tests and documentation. Never stage ARCHITECTURE.md or local artifacts.
 
 ## Deferred work
 
-Typed pipeline events/incremental persistence, removal of the legacy event fallback, shared HTTP
-clients, hybrid scheduling changes, provider-specific retry delays, hard wall-clock cancellation,
+GUI duplicate-submission handling, typed pipeline events/incremental persistence, removal of the
+legacy event fallback, hybrid scheduling changes, provider-specific retry delays, hard wall-clock cancellation,
 and the separate taxonomy ambiguity pass are outside this refactor. Investigation time limits
 remain admission cutoffs, and the prior full-input extraction/lazy-cache fixes are preserved.

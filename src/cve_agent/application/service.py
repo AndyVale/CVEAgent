@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -39,8 +40,9 @@ class ApplicationRun:
 class ClassificationApplication:
     """Run the core pipeline and optional evaluation without terminal concerns."""
 
-    def __init__(self, pipeline: PipelineRunner):
+    def __init__(self, pipeline: PipelineRunner, *, close_resources: Callable[[], None] | None = None):
         self.pipeline = pipeline
+        self._close_resources = close_resources
 
     def run(
         self,
@@ -48,6 +50,10 @@ class ClassificationApplication:
         taxonomy: Taxonomy,
         benchmark: Benchmark | None = None,
     ) -> ApplicationRun:
-        results = tuple(self.pipeline.run(cve_ids, taxonomy))
+        try:
+            results = tuple(self.pipeline.run(cve_ids, taxonomy))
+        finally:
+            if self._close_resources is not None:
+                self._close_resources()
         report = evaluate_results(list(results), benchmark, taxonomy) if benchmark else None
         return ApplicationRun(results, report)

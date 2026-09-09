@@ -30,9 +30,12 @@ def create_application(
     database: AnalysisWriter | None = None,
 ) -> ClassificationApplication:
     """Compose default adapters while retaining injectable boundaries for other UIs."""
+    close_resources = None
     active_classifier = classifier
     if active_classifier is None:
         active_web_source = web_source or create_web_source(settings)
+        if web_source is None:
+            close_resources = active_web_source.close
         active_classifier = ClassificationCoordinator(settings, active_web_source)
     pipeline = Pipeline(
         cve_source or NVDClient(settings),
@@ -40,7 +43,7 @@ def create_application(
         database or Database(settings.database),
         run_metadata={"model": settings.model, "settings": non_secret_settings(settings)},
     )
-    return ClassificationApplication(pipeline)
+    return ClassificationApplication(pipeline, close_resources=close_resources)
 
 
 def create_web_source(
@@ -49,11 +52,21 @@ def create_web_source(
 ) -> CachedWebClient:
     """Compose provider retrieval and caching; optional adapters support offline tests."""
     policy = url_policy or PublicWebUrlPolicy()
+    provider = None
     active_searcher = searcher
     if active_searcher is None and settings.web_provider == "tavily":
-        active_searcher = TavilySearchProvider(settings).search
+        provider = TavilySearchProvider(settings)
+        active_searcher = provider.search
     source = WebClient(settings, searcher=active_searcher, http_client=http_client, url_policy=policy)
-    return CachedWebClient(source, JsonDiskCache(settings.cache_dir), policy)
+
+    def close() -> None:
+        try:
+            source.close()
+        finally:
+            if provider is not None:
+                provider.close()
+
+    return CachedWebClient(source, JsonDiskCache(settings.cache_dir), policy, close=close)
 
 
 def create_history_repository(path: Path) -> AnalysisHistory:

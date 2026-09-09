@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import json
 import logging
 
@@ -19,10 +21,15 @@ logger = logging.getLogger("cve_agent.adapters")
 class CachedWebClient:
     """Cache a web source while validating cached documents before reuse."""
 
-    def __init__(self, source: WebSource, cache: JsonDiskCache, url_policy: PublicWebUrlPolicy):
+    def __init__(self, source: WebSource, cache: JsonDiskCache, url_policy: PublicWebUrlPolicy, *, close: Callable[[], None] | None = None):
         self.source = source
         self.cache = cache
         self.url_policy = url_policy
+        self._close = close
+
+    def close(self) -> None:
+        if self._close is not None:
+            self._close()
 
     def search(self, query: str) -> list[SearchResult]:
         path = self.cache.path("search", query)

@@ -10,6 +10,7 @@ import trafilatura
 
 from cve_agent.core.config import Settings
 from cve_agent.core.sources import Document, SearchResult
+from cve_agent.integrations.http import HttpClientSession
 from cve_agent.integrations.content import _ensure_usable_document_content, _is_text_content_type
 from cve_agent.integrations.web_policy import PublicWebUrlError, PublicWebUrlPolicy
 from cve_agent.runtime.diagnostics import safe_url
@@ -31,8 +32,11 @@ class WebClient:
     ):
         self.settings = settings
         self.searcher = searcher
-        self.http_client = http_client
+        self.http = HttpClientSession(settings.web_timeout, http_client)
         self.url_policy = url_policy or PublicWebUrlPolicy()
+
+    def close(self) -> None:
+        self.http.close()
 
     def search(self, query: str) -> list[SearchResult]:
         if self.searcher is None:
@@ -40,7 +44,6 @@ class WebClient:
         return self.searcher(query)
 
     def fetch(self, url: str) -> Document:
-        self.url_policy.validate(url)
         for attempt in range(self.settings.web_retry_count + 1):
             try:
                 logger.info("fetch attempt=%d/%d url=%s", attempt + 1, self.settings.web_retry_count + 1, safe_url(url))
@@ -99,39 +102,34 @@ class WebClient:
         return document
 
     def _download(self, url: str) -> tuple[bytes, str, tuple[str, ...], str, str | None]:
-        client = self.http_client or httpx.Client(timeout=self.settings.web_timeout, headers={"User-Agent": "cve-agent/0.1"})
-        close_client = self.http_client is None
-        try:
-            current_url = url
-            redirect_chain: list[str] = []
-            for _ in range(11):
-                self.url_policy.validate(current_url)
-                with client.stream("GET", current_url, follow_redirects=False) as response:
-                    response_url = str(response.url)
-                    self.url_policy.validate(response_url)
-                    if response.has_redirect_location:
-                        redirect_chain.append(response_url)
-                        current_url = str(response.url.join(response.headers["location"]))
-                        continue
-                    response.raise_for_status()
-                    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-                    if content_type and not _is_text_content_type(content_type):
-                        raise ValueError(f"unsupported content type: {content_type}")
-                    chunks: list[bytes] = []
-                    size = 0
-                    for chunk in response.iter_bytes():
-                        size += len(chunk)
-                        if size > self.settings.max_download_bytes:
-                            raise ValueError(f"response exceeds max_download_bytes={self.settings.max_download_bytes}")
-                        chunks.append(chunk)
-                    return (
-                        b"".join(chunks),
-                        response_url,
-                        tuple((*redirect_chain, response_url)),
-                        content_type,
-                        response.encoding,
-                    )
-            raise PublicWebUrlError("public-web fetch exceeded 10 redirects")
-        finally:
-            if close_client:
-                client.close()
+        client = self.http.get()
+        current_url = url
+        redirect_chain: list[str] = []
+        for _ in range(11):
+            self.url_policy.validate(current_url)
+            with client.stream("GET", current_url, follow_redirects=False) as response:
+                response_url = str(response.url)
+                self.url_policy.validate(response_url)
+                if response.has_redirect_location:
+                    redirect_chain.append(response_url)
+                    current_url = str(response.url.join(response.headers["location"]))
+                    continue
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                if content_type and not _is_text_content_type(content_type):
+                    raise ValueError(f"unsupported content type: {content_type}")
+                chunks: list[bytes] = []
+                size = 0
+                for chunk in response.iter_bytes():
+                    size += len(chunk)
+                    if size > self.settings.max_download_bytes:
+                        raise ValueError(f"response exceeds max_download_bytes={self.settings.max_download_bytes}")
+                    chunks.append(chunk)
+                return (
+                    b"".join(chunks),
+                    response_url,
+                    tuple((*redirect_chain, response_url)),
+                    content_type,
+                    response.encoding,
+                )
+        raise PublicWebUrlError("public-web fetch exceeded 10 redirects")
