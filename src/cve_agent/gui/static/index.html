@@ -9,7 +9,7 @@
 </head>
 <body>
   <header class="topbar">
-    <button id="homeButton" class="brand" type="button" title="Start a new analysis" aria-label="CVE Agent home">
+    <button id="homeButton" class="brand" type="button" title="Open the new analysis form" aria-label="CVE Agent home">
       <span class="brand-mark">C</span>
       <span>CVE Agent</span>
     </button>
@@ -27,10 +27,16 @@
       <div class="panel-heading">
         <div>
           <p class="eyebrow">Workspace</p>
-          <h1>Analyses</h1>
+          <h1>Saved analyses</h1>
         </div>
       </div>
+      <div class="history-search">
+        <label for="historySearch">Find a saved analysis</label>
+        <input id="historySearch" type="search" disabled autocomplete="off" spellcheck="false" maxlength="200" placeholder="CVE ID or part, e.g. 2889" aria-describedby="historySearchHint">
+        <p id="historySearchHint">Search by CVE ID. Opening a result does not run a new analysis.</p>
+      </div>
       <div id="historyList" class="history-list" aria-live="polite"></div>
+      <button id="historyMore" class="text-button history-more hidden" type="button">Show more saved analyses</button>
       <div class="history-footer">
         <span class="footer-label">SQLite database</span>
         <span id="databasePath" class="path-value">Loading…</span>
@@ -65,7 +71,7 @@
             </label>
             <button id="welcomeSubmitButton" class="send-button" type="submit"><span>Create analysis</span><span aria-hidden="true">↑</span></button>
           </form>
-          <p class="welcome-note">The analysis will use the taxonomy and options shown on the right.</p>
+          <p class="welcome-note">Always creates a new saved analysis, even for a CVE analyzed before. To open a saved result, use the list on the left.</p>
         </div>
         <div id="messageList" class="message-list"></div>
         <div id="resultReport" class="result-report"></div>
@@ -80,7 +86,7 @@
           </label>
           <button id="submitButton" class="send-button" type="submit"><span>Start new analysis</span><span aria-hidden="true">↑</span></button>
         </form>
-        <p id="composerNote" class="composer-note">The stored CVE remains unchanged; the new analysis inherits its configuration.</p>
+        <p id="composerNote" class="composer-note">Always creates a new saved analysis. Enter the same CVE to analyze it again; previous results stay unchanged.</p>
       </div>
     </section>
 

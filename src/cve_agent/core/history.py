@@ -8,6 +8,13 @@ from cve_agent.core.taxonomy import Taxonomy
 
 
 @dataclass(frozen=True)
+class HistorySearch:
+    """Explicit history criteria; add future metadata filters here independently of the UI."""
+
+    cve_query: str = ""
+
+
+@dataclass(frozen=True)
 class AnalysisSummary:
     run_id: int
     input_position: int

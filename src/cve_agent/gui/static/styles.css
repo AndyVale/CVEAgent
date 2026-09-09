@@ -67,7 +67,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 }
 .icon-button { height: 32px; padding: 0 10px; border-radius: 8px; background: #edf2ef; }
 .icon-button.labeled { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 650; }
-.app-shell { width: 100%; height: calc(100vh - 58px); min-height: 0; display: grid; grid-template-columns: 244px minmax(420px, 1fr) 286px; overflow: hidden; background: var(--paper); }
+.app-shell { width: 100%; height: calc(100vh - 58px); min-height: 0; display: grid; grid-template-columns: 320px minmax(0, 1fr) 286px; overflow: hidden; background: var(--paper); }
 .panel-border { background: var(--canvas); }
 .history-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border-right: 1px solid var(--line); }
 .config-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border-left: 1px solid var(--line); }
@@ -75,6 +75,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .panel-heading.compact { min-height: 76px; }
 .panel-heading h1, .panel-heading h2, .chat-heading h2, .dialog-heading h2 { margin: 2px 0 0; font-size: 17px; line-height: 1.2; letter-spacing: -.025em; }
 .eyebrow { margin: 0; color: var(--quiet); font-size: 10px; font-weight: 760; letter-spacing: .11em; text-transform: uppercase; }
+.history-search { padding: 0 16px 12px; }
+.history-search label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 650; }
+.history-search input { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); font-size: 12px; }
+.history-search p { color: var(--muted); font-size: 11px; line-height: 1.45; margin: 7px 0 0; }
+.history-more { margin: 8px 16px 14px; text-align: left; }
+.history-open { display: block; margin-top: 7px; color: var(--green); font-size: 10px; }
 .history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px 12px; }
 .history-empty { margin: 18px 9px; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .history-item { width: 100%; padding: 11px 10px; margin: 2px 0; text-align: left; border: 1px solid transparent; border-radius: 9px; background: transparent; cursor: pointer; }
@@ -243,14 +249,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .settings-dialog .toast { z-index: 2; }
 
 @media (max-width: 1100px) {
-  .app-shell { grid-template-columns: 205px minmax(0, 1fr) 245px; }
+  .app-shell { grid-template-columns: 280px minmax(0, 1fr) 245px; }
 }
 @media (max-width: 820px) {
   body { overflow: hidden; }
   .topbar { position: sticky; top: 0; z-index: 3; }
   .icon-button.labeled span:last-child { display: none; }
-  .app-shell { height: calc(100vh - 58px); grid-template-columns: 1fr; }
-  .history-panel, .config-panel { display: none; }
+  .app-shell { height: calc(100vh - 58px); grid-template-columns: 1fr; grid-template-rows: minmax(180px, 32vh) minmax(0, 1fr); }
+  .config-panel { display: none; }
+  .history-panel { border-right: 0; border-bottom: 1px solid var(--line); }
+  .history-panel .panel-heading { min-height: auto; padding: 8px 16px; }
+  .history-search { padding-bottom: 4px; }
+  .history-search p, .history-footer { display: none; }
   .chat-viewport { padding: 18px 14px; }
   .composer { margin: 0 12px; }
   .next-analysis-title { margin-left: 12px; margin-right: 12px; }

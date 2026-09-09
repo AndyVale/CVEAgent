@@ -4,6 +4,11 @@ const state = {
   global: null,
   paths: null,
   history: [],
+  historyQuery: "",
+  historyVersion: 0,
+  historyTimer: null,
+  historyHasMore: false,
+  submitting: false,
   selectedId: null,
   analysis: null,
   draftConfiguration: null,
@@ -15,7 +20,7 @@ const elements = {};
 document.addEventListener("DOMContentLoaded", async () => {
   [
     "homeButton", "topTaxonomy", "topStatus", "globalSettingsButton", "footerSettingsButton",
-    "historyList", "databasePath", "chatKicker", "chatTitle", "chatStatus", "welcomeState",
+    "historySearch", "historyMore", "historyList", "databasePath", "chatKicker", "chatTitle", "chatStatus", "welcomeState",
     "backButton", "welcomeComposer", "welcomeCveInput", "welcomeSubmitButton", "messageList",
     "resultReport", "chatViewport", "nextAnalysisPanel", "composer", "cveInput", "submitButton",
     "composerNote", "configurationView", "configurationOptionsButton", "globalSettingsDialog",
@@ -33,6 +38,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   elements.globalDatabaseSelect.addEventListener("change", toggleNewDatabaseField);
   elements.welcomeComposer.addEventListener("submit", submitAnalysis);
   elements.composer.addEventListener("submit", submitAnalysis);
+  elements.historySearch.addEventListener("input", () => {
+    state.historyQuery = elements.historySearch.value.trim();
+    state.historyVersion += 1;
+    renderHistory();
+    elements.historyMore.classList.add("hidden");
+    window.clearTimeout(state.historyTimer);
+    state.historyTimer = window.setTimeout(() => refreshHistory().catch(error => showToast(`Could not search saved analyses: ${error.message}`, true)), 200);
+  });
+  elements.historyMore.addEventListener("click", () => refreshHistory({append: true}).catch(error => showToast(`Could not load more saved analyses: ${error.message}`, true)));
   elements.globalSettingsForm.addEventListener("submit", (event) => {
     event.preventDefault();
     saveGlobalSettings();
@@ -57,7 +71,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     state.global = globalSettings;
     state.paths = pathOptions;
     state.history = historyResponse.analyses;
+    state.historyHasMore = historyResponse.has_more;
     state.draftConfiguration = defaults;
+    elements.historySearch.disabled = false;
     renderGlobalSettings();
     renderHistory();
     renderDraft();
@@ -86,43 +102,61 @@ function renderGlobalSettings() {
 }
 
 function renderHistory() {
+  // Filter at the display boundary too: a running older server may ignore q,
+  // and cached/in-flight rows must never contradict the current search input.
+  const query = elements.historySearch.value.trim().toUpperCase();
+  const matches = state.history.filter(item => item.cve_id.toUpperCase().includes(query));
   elements.historyList.replaceChildren();
-  if (!state.history.length) {
-    const empty = node("p", "history-empty", "No persisted analyses yet. Enter a CVE ID to create the first chat.");
+  elements.historyMore.classList.toggle("hidden", !state.historyHasMore);
+  if (!matches.length) {
+    const empty = node("p", "history-empty", query ? "No saved analyses match this CVE search." : "No saved analyses yet. Start a new analysis to create the first result.");
     elements.historyList.append(empty);
     return;
   }
-  state.history.forEach((item) => {
+  matches.forEach((item) => {
     const button = node("button", `history-item${item.id === state.selectedId ? " active" : ""}`);
     button.type = "button";
-    button.disabled = isAnalysisActive();
+    button.disabled = isAnalysisActive() || state.submitting;
+    button.title = `Open saved analysis for ${item.cve_id} — ${new Date(item.updated_at).toLocaleString()}`;
     const primary = node("span", "history-primary");
     primary.append(node("span", "history-cve", item.cve_id), node("span", "history-time", relativeTime(item.updated_at)));
     button.append(primary, node("span", "history-taxonomy", item.taxonomy_name));
     const labels = node("span", "history-labels");
     if (item.labels.length) item.labels.slice(0, 2).forEach((label) => labels.append(node("span", "", label)));
     else labels.append(node("span", "empty-label", item.status.replaceAll("_", " ")));
-    button.append(labels);
+    button.append(labels, node("span", "history-open", `Open saved analysis · ${new Date(item.updated_at).toLocaleString()}`));
     button.addEventListener("click", () => selectAnalysis(item.id));
     elements.historyList.append(button);
   });
 }
 
-async function refreshHistory() {
-  const response = await api("/api/history");
-  state.history = response.analyses;
-  renderHistory();
+async function refreshHistory({append = false} = {}) {
+  const version = ++state.historyVersion;
+  const query = state.historyQuery;
+  const offset = append ? state.history.length : 0;
+  elements.historyMore.disabled = true;
+  try {
+    const response = await api(`/api/history?q=${encodeURIComponent(query)}&offset=${offset}`);
+    if (version !== state.historyVersion) return;
+    state.history = append ? [...state.history, ...response.analyses] : response.analyses;
+    state.historyHasMore = response.has_more;
+    renderHistory();
+  } catch (error) {
+    if (version === state.historyVersion) throw error;
+  } finally {
+    if (version === state.historyVersion) elements.historyMore.disabled = false;
+  }
 }
 
 async function selectAnalysis(id) {
-  if (isAnalysisActive() && id !== state.selectedId) {
-    showToast("Wait for the active analysis to finish before opening another chat.", true);
+  if (state.submitting || (isAnalysisActive() && id !== state.selectedId)) {
+    showToast("Wait for the active analysis to finish before opening a saved analysis.", true);
     return;
   }
   clearPolling();
   state.selectedId = id;
   renderHistory();
-  setTopStatus("running", "Loading");
+  setTopStatus("running", "Opening saved analysis");
   try {
     const analysis = await api(`/api/analyses/${encodeURIComponent(id)}`);
     if (state.selectedId !== id) return;
@@ -131,6 +165,7 @@ async function selectAnalysis(id) {
     state.selectedId = analysis.id;
     renderAnalysis({followProgress: false});
     renderHistory();
+    showToast(`Opened saved analysis for ${analysis.cve_id}. No new analysis was started.`);
   } catch (error) {
     if (state.selectedId !== id) return;
     setAnalysisControls(false);
@@ -141,6 +176,7 @@ async function selectAnalysis(id) {
 }
 
 function startDraft() {
+  if (state.submitting || isAnalysisActive()) return;
   clearPolling();
   state.selectedId = null;
   state.analysis = null;
@@ -170,6 +206,7 @@ function renderDraft() {
 
 async function submitAnalysis(event) {
   event.preventDefault();
+  if (state.submitting || isAnalysisActive()) return;
   const submittedInput = event.currentTarget.elements.namedItem("cve_id");
   const cveId = submittedInput.value.trim().toUpperCase();
   if (!cveId) return;
@@ -177,9 +214,11 @@ async function submitAnalysis(event) {
     showToast("Analysis configuration is still loading.", true);
     return;
   }
+  state.submitting = true;
   setAnalysisControls(true);
+  renderHistory();
   elements.homeButton.disabled = true;
-  setTopStatus("running", "Starting");
+  setTopStatus("running", "Starting new analysis");
   try {
     const response = await api("/api/analyses", {
       method: "POST",
@@ -192,18 +231,19 @@ async function submitAnalysis(event) {
       }),
     });
     state.selectedId = response.id;
-    if (response.cached) {
-      showToast("Loaded an exact cached analysis.");
-      await selectAnalysis(response.id);
-      return;
-    }
+    showToast(response.already_running
+      ? `An identical analysis for ${cveId} is already queued or running. Showing that run; no duplicate was started.`
+      : `New analysis queued for ${cveId}. Previous saved analyses remain unchanged.`);
     await pollAnalysis(response.id);
   } catch (error) {
     setAnalysisControls(false);
     elements.homeButton.disabled = false;
     submittedInput.focus();
     setTopStatus("failed", "Error");
-    showToast(error.message, true);
+    showToast(`Could not start a new analysis: ${error.message}`, true);
+  } finally {
+    state.submitting = false;
+    renderHistory();
   }
 }
 
@@ -218,7 +258,7 @@ async function pollAnalysis(id) {
       state.pollTimer = window.setTimeout(() => pollAnalysis(id), 850);
     } else {
       await refreshHistory();
-      if (analysis.lifecycle === "completed") showToast("Analysis persisted.");
+      if (analysis.lifecycle === "completed") showToast(`New analysis for ${analysis.cve_id} saved. Previous analyses remain unchanged.`);
     }
   } catch (error) {
     setTopStatus("failed", "Error");
@@ -248,7 +288,7 @@ function renderAnalysis({followProgress = false} = {}) {
   elements.homeButton.disabled = active;
   elements.composerNote.textContent = active
     ? "The pipeline is running. A new analysis can start after it finishes."
-    : "The stored CVE remains unchanged; the new analysis inherits its configuration.";
+    : "Always creates a new saved analysis. Enter the same CVE to analyze it again; previous results stay unchanged.";
   renderEvents(analysis.events || []);
   renderResult(analysis.result);
   renderConfiguration(analysis.configuration);
@@ -735,6 +775,10 @@ async function saveGlobalSettings() {
     state.global = await api("/api/global-settings", { method: "PUT", body: JSON.stringify(body) });
     state.paths = await api("/api/path-options");
     state.history = [];
+    state.historyQuery = "";
+    window.clearTimeout(state.historyTimer);
+    state.historyVersion += 1;
+    elements.historySearch.value = "";
     state.selectedId = null;
     state.analysis = null;
     state.draftConfiguration = await api("/api/defaults");

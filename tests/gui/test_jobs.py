@@ -56,14 +56,73 @@ def test_job_failure_handling_preserves_outcome_and_restores_logging(tmp_path, f
     assert (logger.level, logger.propagate, tuple(logger.handlers)) == previous
 
 
-def test_rejected_submission_does_not_leave_an_active_job():
+def test_rejected_submission_does_not_leave_an_active_job(tmp_path):
     class RejectingExecutor:
         def submit(self, *args):
             raise RuntimeError('executor unavailable')
 
     jobs = AnalysisJobs(lambda _: None, lambda: None, threading.RLock(), RejectingExecutor())
-    configuration = SimpleNamespace(taxonomy_name='Fixture', taxonomy=SimpleNamespace(labels=[]))
+    configuration = SimpleNamespace(taxonomy_name='Fixture', taxonomy=SimpleNamespace(labels=[]), settings=settings(tmp_path), taxonomy_fingerprint='taxonomy', settings_fingerprint='settings')
     with pytest.raises(RuntimeError, match='executor unavailable'):
         jobs.submit('CVE-2026-0001', configuration)
     assert not jobs.has_active()
     assert not jobs._running
+    assert not jobs._active
+
+
+class QueuedExecutor:
+    def __init__(self):
+        self.calls = []
+
+    def submit(self, function, *args):
+        self.calls.append((function, args))
+
+
+def test_concurrent_identical_submissions_share_one_job(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    executor = QueuedExecutor()
+    jobs = AnalysisJobs(lambda _: None, lambda: None, threading.RLock(), executor)
+    configuration = SimpleNamespace(taxonomy_name='Fixture', taxonomy=SimpleNamespace(labels=[]),
+                                    settings=settings(tmp_path), taxonomy_fingerprint='taxonomy', settings_fingerprint='settings')
+    with ThreadPoolExecutor(max_workers=8) as callers:
+        results = list(callers.map(lambda _: jobs.submit('CVE-2020-2889', configuration), range(20)))
+    assert len({result['id'] for result in results}) == 1
+    assert sum(not result['already_running'] for result in results) == 1
+    assert len(executor.calls) == 1
+    running, _ = jobs.lookup(results[0]['id'])
+    running.lifecycle = 'running'
+    assert jobs.submit('CVE-2020-2889', configuration)['lifecycle'] == 'running'
+
+
+@pytest.mark.parametrize('difference', ['cve', 'taxonomy', 'settings', 'database'])
+def test_different_analysis_keys_are_not_deduplicated(tmp_path, difference):
+    executor = QueuedExecutor()
+    jobs = AnalysisJobs(lambda _: None, lambda: None, threading.RLock(), executor)
+    configuration = SimpleNamespace(taxonomy_name='Fixture', taxonomy=SimpleNamespace(labels=[]),
+                                    settings=settings(tmp_path), taxonomy_fingerprint='taxonomy', settings_fingerprint='settings')
+    first = jobs.submit('CVE-2020-2889', configuration)
+    other = SimpleNamespace(**vars(configuration))
+    cve = 'CVE-2020-2889'
+    if difference == 'cve':
+        cve = 'CVE-2020-2890'
+    elif difference == 'database':
+        other.settings = replace(configuration.settings, database=tmp_path / 'other.sqlite')
+    else:
+        setattr(other, f'{difference}_fingerprint', 'different')
+    second = jobs.submit(cve, other)
+    assert first['id'] != second['id']
+    assert len(executor.calls) == 2
+
+
+def test_failed_job_releases_key_for_retry(tmp_path):
+    def fail(*args):
+        raise RuntimeError('provider unavailable')
+
+    jobs = AnalysisJobs(lambda _: SimpleNamespace(run=fail), lambda: None, threading.RLock(), ImmediateExecutor())
+    configuration = SimpleNamespace(taxonomy_name='Fixture', taxonomy=SimpleNamespace(labels=[]),
+                                    settings=settings(tmp_path), taxonomy_fingerprint='taxonomy', settings_fingerprint='settings')
+    first = jobs.submit('CVE-2020-2889', configuration)
+    second = jobs.submit('CVE-2020-2889', configuration)
+    assert first['id'] != second['id']
+    assert not jobs._active

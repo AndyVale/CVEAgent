@@ -63,6 +63,7 @@ class AnalysisJobs:
         self._executor = executor or ThreadPoolExecutor(max_workers=1, thread_name_prefix="cve-gui")
         self._owns_executor = executor is None
         self._running: dict[str, RunningAnalysis] = {}
+        self._active: dict[tuple[str, str, str, str], RunningAnalysis] = {}
         self._completed_aliases: dict[str, str] = {}
         self._progress_warnings: dict[str, dict[str, Any]] = {}
 
@@ -71,6 +72,7 @@ class AnalysisJobs:
             self._executor.shutdown(wait=False, cancel_futures=False)
 
     def submit(self, cve_id: str, configuration: AnalysisConfiguration) -> dict[str, Any]:
+        key = self._key(cve_id, configuration)
         analysis_id = f"pending-{uuid.uuid4().hex}"
         running = RunningAnalysis(analysis_id, cve_id, configuration)
         running.add_event(tone="normal", component="YOU", message=f"Analyze {cve_id}")
@@ -80,14 +82,23 @@ class AnalysisJobs:
             message=f"Queued with taxonomy {configuration.taxonomy_name} ({len(configuration.taxonomy.labels)} labels).",
         )
         with self._lock:
+            existing = self._active.get(key)
+            if existing and existing.lifecycle in {"queued", "running"}:
+                return {"id": existing.analysis_id, "already_running": True, "lifecycle": existing.lifecycle}
             self._running[analysis_id] = running
-        try:
-            self._executor.submit(self._run_analysis, running)
-        except Exception:
-            with self._lock:
+            self._active[key] = running
+            try:
+                self._executor.submit(self._run_analysis, running)
+            except Exception:
                 self._running.pop(analysis_id, None)
-            raise
-        return {"id": analysis_id, "cached": False, "lifecycle": "queued"}
+                self._active.pop(key, None)
+                raise
+        return {"id": analysis_id, "already_running": False, "lifecycle": "queued"}
+
+    @staticmethod
+    def _key(cve_id: str, configuration: AnalysisConfiguration) -> tuple[str, str, str, str]:
+        return (str(configuration.settings.database.resolve()), cve_id,
+                configuration.taxonomy_fingerprint, configuration.settings_fingerprint)
 
     def _run_analysis(self, running: RunningAnalysis) -> None:
         configuration = running.configuration
@@ -138,6 +149,10 @@ class AnalysisJobs:
                 running.lifecycle = "failed"
                 running.error = detail
         finally:
+            with self._lock:
+                key = self._key(running.cve_id, configuration)
+                if self._active.get(key) is running:
+                    self._active.pop(key)
             package_logger.removeHandler(handler)
             handler.close()
             package_logger.setLevel(previous_level)

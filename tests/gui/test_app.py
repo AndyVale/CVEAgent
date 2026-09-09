@@ -19,7 +19,7 @@ class FakeService:
             "databases": [],
         }
 
-    def history(self):
+    def history(self, *, query="", offset=0, limit=200):
         return [{"id": "1:0", "cve_id": "CVE-2024-1000"}]
 
     def defaults(self, from_analysis_id=None):
@@ -29,7 +29,7 @@ class FakeService:
         return {"validated": raw}
 
     def start_analysis(self, raw):
-        return {"id": "pending-fixture", "cached": False, "lifecycle": "queued"}
+        return {"id": "pending-fixture", "already_running": False, "lifecycle": "queued"}
 
     def get_analysis(self, analysis_id):
         return None if analysis_id == "missing" else {"id": analysis_id, "lifecycle": "running"}
@@ -205,3 +205,15 @@ def test_gui_rejects_non_local_host_headers():
 
     assert response.status_code == 403
     assert response.json == {"error": "the GUI accepts local requests only"}
+
+
+def test_gui_history_route_requests_next_page_with_search_criteria():
+    class SearchService(FakeService):
+        def history(self, **kwargs):
+            assert kwargs == {'query': '2020', 'offset': 200, 'limit': 201}
+            return [{'id': str(index)} for index in range(201)]
+
+    gui = create_gui_app(SearchService()).test_client()
+    result = gui.get('/api/history?q=2020&offset=200').json
+    assert result['has_more'] is True
+    assert len(result['analyses']) == 200

@@ -89,7 +89,14 @@ def create_gui_app(service: GuiService) -> Flask:
 
     @app.get("/api/history")
     def history():  # type: ignore[no-untyped-def]
-        return jsonify({"analyses": service.history()})
+        offset = int(request.args.get("offset", "0"))
+        if offset < 0 or offset > 2**63 - 1:
+            raise ValueError("history offset must be a non-negative integer")
+        query = request.args.get("q", "").strip()
+        if len(query) > 200:
+            raise ValueError("history search must not exceed 200 characters")
+        analyses = service.history(query=query, offset=offset, limit=201)
+        return jsonify({"analyses": analyses[:200], "has_more": len(analyses) > 200})
 
     @app.get("/api/defaults")
     def defaults():  # type: ignore[no-untyped-def]

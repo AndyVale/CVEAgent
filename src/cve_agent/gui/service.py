@@ -5,7 +5,7 @@ from typing import Any
 import threading
 
 from cve_agent.application.factory import create_application
-from cve_agent.cache.results import ResultCache
+from cve_agent.core.history import HistorySearch
 from cve_agent.gui.config import GlobalSettingsStore, GuiConfigurationError
 from cve_agent.gui.configuration import ConfigurationService, normalize_cve_id
 from cve_agent.gui.history import RepositoryAccess, history_item, stored_configuration, stored_payload
@@ -42,8 +42,8 @@ class GuiService:
     def update_analysis_options(self, raw: dict[str, Any]) -> dict[str, Any]:
         return self.configuration.update_analysis_options(raw)
 
-    def history(self, *, limit: int = 200) -> list[dict[str, Any]]:
-        return [history_item(analysis) for analysis in self.repositories.get().list_analyses(limit=limit)]
+    def history(self, *, limit: int = 200, offset: int = 0, query: str = "") -> list[dict[str, Any]]:
+        return [history_item(analysis) for analysis in self.repositories.get().list_analyses(limit=limit, offset=offset, search=HistorySearch(cve_query=query))]
 
     def defaults(self, from_analysis_id: str | None = None) -> dict[str, Any]:
         global_settings = self.settings_store.get()
@@ -90,12 +90,4 @@ class GuiService:
             taxonomy_path=(configuration_raw.get("taxonomy_path") or global_settings.default_taxonomy_path),
             values=configuration_raw.get("values", {}),
         )
-        cached = ResultCache(self.repositories.get()).find_cached(
-            cve_id=cve_id,
-            taxonomy_fingerprint=configuration.taxonomy_fingerprint,
-            settings_fingerprint_value=configuration.settings_fingerprint,
-        )
-        if cached:
-            return {"id": cached.analysis_id, "cached": True, "lifecycle": "completed"}
-
         return self.jobs.submit(cve_id, configuration)

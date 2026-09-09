@@ -9,7 +9,7 @@ import json
 import sqlite3
 
 from cve_agent.core.errors import PersistenceError
-from cve_agent.core.history import AnalysisSummary
+from cve_agent.core.history import AnalysisSummary, HistorySearch
 from cve_agent.core.history import StoredAnalysis
 from cve_agent.core.history import parse_analysis_id
 from cve_agent.core.serialization import canonical_json
@@ -36,14 +36,19 @@ class AnalysisRepository:
             pass
         self.recover_stale()
 
-    def list_analyses(self, *, limit: int = 200) -> list[AnalysisSummary]:
+    def list_analyses(self, *, limit: int = 200, offset: int = 0, search: HistorySearch | None = None) -> list[AnalysisSummary]:
         if limit <= 0:
             return []
+        if offset < 0:
+            raise ValueError("history offset must not be negative")
+        query = (search.cve_query if search else "").strip().upper()
         try:
             with self._connect() as connection:
                 rows = connection.execute(
-                    _SUMMARY_QUERY + " ORDER BY a.updated_at DESC LIMIT ?",
-                    (limit,),
+                    _SUMMARY_QUERY + " WHERE instr(upper(a.cve_id), ?) > 0"
+                    " ORDER BY (upper(a.cve_id) = ?) DESC, a.updated_at DESC,"
+                    " a.run_id DESC, a.input_position ASC LIMIT ? OFFSET ?",
+                    (query, query, limit, offset),
                 ).fetchall()
             return [_decode_summary(row) for row in rows]
         except (sqlite3.Error, json.JSONDecodeError) as exc:

@@ -2,11 +2,39 @@
 
 ## Current work
 
-The package reorganization is committed as `refactor: separate application responsibilities`.
-The authorized follow-up fixes (review items 1, 3, 4 and 5) are complete on `main`.
-The developer approved the three focused commits on 2026-09-09, with no parenthesized scopes.
-Item 2, duplicate GUI submissions, was explicitly deferred.
-`ARCHITECTURE.md` must remain untouched, untracked and uncommitted.
+GUI history/reanalysis separation is implemented on `main` and awaiting commit approval.
+Clicking a left-sidebar row loads that exact saved result. Submitting a CVE always requests a
+fresh analysis; only identical queued/running work is deduplicated. No new commits created.
+`ARCHITECTURE.md` remains untouched, untracked and excluded.
+
+## GUI changes (2026-09-09)
+
+- Removed completed-result reuse from GUI submissions. Active-job keys include normalized CVE,
+  database, taxonomy and settings fingerprints; registration/submission is locked against races,
+  and terminal outcomes/rejected submissions release the key. Responses explicitly report
+  `already_running` instead of `cached`.
+- Wider history sidebar provides debounced full/partial CVE search with stale-response protection,
+  exact-match priority, and additional pages. Shared HistorySearch criteria keep future filters
+  separate from presentation; SQLite filters before the limit, using bound parameters and stable
+  tie-breaking. No schema migration or payload loading is needed for search.
+- Labels, helper text and toasts distinguish opening saved rows from starting another run.
+  The history/search panel remains available at narrow widths. Existing result snapshots are
+  preserved and opening history remains read-only.
+- Verification: 301 offline tests pass, including concurrency, key differences, failures/retries,
+  repeated fresh runs, read-only loading, exact/partial search beyond 200 rows, pagination and
+  literal wildcard handling. Browser preview with temporary SQLite data and a mocked classifier
+  verified searching 2889, clicking an old row, and analyzing it again creates a third matching
+  row while retaining the old results. Narrow layout checked at 390px without horizontal overflow.
+- Search follow-up: renderHistory now filters against the current input even when a response
+  contains unrelated rows (for example from an older still-running backend). Filtering occurs
+  immediately on input and applies to every rerender; server filtering/pagination remain intact.
+  Added three executable JavaScript regression tests using the actual app.js renderer, including
+  CVE-2021-26855 excluding CVE-2020-11022, fragments/clearing and stale query state.
+- Source distribution and wheel builds passed; staged filenames remain empty and whitespace
+  review passed.
+- Prompts, classification behavior, dependencies and existing database/cache formats unchanged.
+  No live model calls used. README documents new user behavior and the extensible search contract.
+- Proposed commit: `feat: separate saved analysis search from new GUI runs`.
 
 ## Follow-up fixes (2026-09-08)
 
@@ -88,7 +116,7 @@ Include the corresponding tests and documentation. Never stage ARCHITECTURE.md o
 
 ## Deferred work
 
-GUI duplicate-submission handling, typed pipeline events/incremental persistence, removal of the
+Typed pipeline events/incremental persistence, removal of the
 legacy event fallback, hybrid scheduling changes, provider-specific retry delays, hard wall-clock cancellation,
 and the separate taxonomy ambiguity pass are outside this refactor. Investigation time limits
 remain admission cutoffs, and the prior full-input extraction/lazy-cache fixes are preserved.

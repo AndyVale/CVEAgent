@@ -199,9 +199,18 @@ never modify that analysis. Source paths are informational, so editing or deleti
 taxonomy file cannot change history. API keys remain environment-only and are never stored in
 GUI settings or sent to the browser.
 
-The selected SQLite database is also the history and result cache. A completed result is reused
-only when its normalized CVE ID, taxonomy fingerprint, and complete non-secret effective settings
-all match. Partial and failed runs are displayed but never treated as successful cache entries.
+The selected SQLite database holds saved analyses. Clicking a CVE row in the left-side list
+opens that specific saved analysis without running the investigator or creating another entry.
+The wider sidebar searches full CVE IDs or case-insensitive fragments: `CVE-2020-2889`, `2889`
+and `2020` all find `CVE-2020-2889`. Exact ID matches appear first, followed by recent partial
+matches. Search covers the database, with **Show more saved analyses** for additional results.
+Each run remains a separate row with its saved time, taxonomy and labels.
+
+**Start another analysis** always starts a fresh run and creates a new saved entry, even for
+an already analyzed CVE. Previous results remain unchanged. While the same CVE, taxonomy and
+settings are queued or running in the same database, repeated submissions show that active run
+instead of queuing duplicates; the UI explicitly reports this. Once it finishes, submitting the
+CVE again starts another analysis. Web-document caching still applies to these fresh runs.
 Runs created by the CLI and GUI use the same repository and appear in the same history.
 If saving the GUI progress log fails after a result has been stored, the analysis remains
 completed and its current view shows a warning. The result remains available in history;
@@ -490,3 +499,12 @@ Default web-download and Tavily clients reuse HTTP connections within an applica
 are closed when that run ends, including on failure. Injected clients and web sources remain
 owned by their caller. When using `create_web_source`, `WebClient`, or `TavilySearchProvider`
 directly, call `close()` in a `finally` block after use.
+
+History search uses the shared `HistorySearch` criteria record, translated into parameterized
+SQLite filters before pagination. Additional taxonomy, label or metadata filters can extend
+that record and the repository query without coupling search to browser-side result rendering.
+The sidebar also filters visible rows immediately against the current input, so non-matching
+CVEs remain hidden while updated results are being fetched.
+
+GUI renderer checks use Node’s built-in test runner without npm dependencies:
+`node --test tests/gui/*.test.cjs`.

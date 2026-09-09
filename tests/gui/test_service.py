@@ -81,7 +81,7 @@ def service(tmp_path):
     return GuiService(store, application_factory=factory, executor=ImmediateExecutor())
 
 
-def test_service_runs_persists_progress_and_reuses_exact_cache(tmp_path):
+def test_service_creates_new_runs_and_loads_saved_results_without_rerunning(tmp_path):
     gui = service(tmp_path)
     defaults = gui.defaults()
 
@@ -107,8 +107,12 @@ def test_service_runs_persists_progress_and_reuses_exact_cache(tmp_path):
             "values": defaults["values"],
         },
     })
-    assert cached == {"id": analysis["id"], "cached": True, "lifecycle": "completed"}
-    assert len(gui.history()) == 1
+    assert cached["already_running"] is False
+    second = gui.get_analysis(cached["id"])
+    assert second["id"] != analysis["id"]
+    assert len(gui.history()) == 2
+    assert gui.get_analysis(analysis["id"])["result"] == analysis["result"]
+    assert len(gui.history()) == 2
 
 
 def test_fresh_defaults_use_saved_config_while_old_analysis_keeps_its_snapshot(tmp_path):
@@ -293,5 +297,47 @@ def test_progress_write_failure_preserves_result_and_displays_warning(tmp_path, 
     assert 'progress log could not be saved' in analysis['events'][-1]['message']
     assert not gui.jobs.has_active()
     cached = gui.start_analysis({'cve_id': 'CVE-2024-12345'})
-    assert cached['cached'] is True
-    assert cached['id'] == analysis['id']
+    assert cached['already_running'] is False
+    assert gui.get_analysis(cached['id'])['id'] != analysis['id']
+
+
+def test_history_search_and_click_route_do_not_create_new_results(tmp_path):
+    from cve_agent.gui.app import create_gui_app
+
+    gui = service(tmp_path)
+    first = gui.start_analysis({'cve_id': 'CVE-2020-2889'})
+    second = gui.start_analysis({'cve_id': 'CVE-2020-2889'})
+    app = create_gui_app(gui).test_client()
+    for query in ['2889', '2020', 'cve-2020-2889']:
+        response = app.get('/api/history', query_string={'q': query}).json
+        assert len(response['analyses']) == 2
+        assert response['has_more'] is False
+        for item in response['analyses']:
+            loaded = app.get(f"/api/analyses/{item['id']}").json
+            assert loaded['id'] == item['id']
+            assert loaded['lifecycle'] == 'completed'
+    assert len(gui.history()) == 2
+    assert gui.get_analysis(first['id'])['id'] != gui.get_analysis(second['id'])['id']
+    assert app.get('/api/history?q=missing').json['analyses'] == []
+    for query in ['offset=-1', 'offset=oops', 'q=' + 'x' * 201]:
+        assert app.get('/api/history?' + query).status_code == 400
+
+
+def test_gui_normalizes_cve_before_deduplicating_active_runs(tmp_path):
+    from tests.gui.test_jobs import QueuedExecutor
+
+    gui = service(tmp_path)
+    executor = QueuedExecutor()
+    gui.jobs._executor = executor
+    first = gui.start_analysis({'cve_id': ' cve-2020-2889 '})
+    second = gui.start_analysis({'cve_id': 'CVE-2020-2889'})
+    assert second['already_running'] is True
+    assert first['id'] == second['id']
+    assert len(executor.calls) == 1
+    assert gui.history() == []
+    function, args = executor.calls.pop()
+    function(*args)
+    assert len(gui.history()) == 1
+    third = gui.start_analysis({'cve_id': 'CVE-2020-2889'})
+    assert third['already_running'] is False
+    assert third['id'] != first['id']
