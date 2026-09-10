@@ -89,14 +89,14 @@ descendant receive a final evidence-backed binary evaluation.
 ## Running classifications
 
 ```bash
-uv run cve-agent --taxonomy fixtures/flat_taxonomy.json CVE-2025-6965
+uv run cve-agent --taxonomy fixtures/flat/taxonomy.json CVE-2025-6965
 ```
 
 Multiple CVEs are processed independently and emitted in input order. Use `--verbose` for
 safe progress diagnostics on stderr while stdout remains valid JSON:
 
 ```bash
-uv run cve-agent --verbose --taxonomy fixtures/flat_taxonomy.json CVE-2025-6965
+uv run cve-agent --verbose --taxonomy fixtures/flat/taxonomy.json CVE-2025-6965
 ```
 
 The verbose trace reports research turns, bounded search queries, sanitized fetched URLs,
@@ -147,7 +147,7 @@ export API_KEY="your-provider-key"
 export TAVILY_API_KEY="your-tavily-key"
 uv run cve-agent-gui \
   --config config.toml \
-  --taxonomy fixtures/hybrid_taxonomy.json
+  --taxonomy fixtures/hybrid/taxonomy.json
 ```
 
 Run the GUI from the project root. On first use, `--config` is only the initialization source:
@@ -233,42 +233,51 @@ Machine-local GUI defaults live in the ignored `.data/cve-agent-gui.json` file b
 
 ## Evaluating classification performance
 
-`fixtures/flat_expected-classification.json` contains 14 conservatively selected CVEs covering
-every label in `fixtures/flat_taxonomy.json`. Each case records expected label IDs, a short
+`fixtures/flat/expected-classification.json` contains 14 conservatively selected CVEs covering
+every label in `fixtures/flat/taxonomy.json`. Each case records expected label IDs, a short
 mapping rationale, and the primary or NVD sources used to curate it. The benchmark also contains
 a taxonomy fingerprint, so it cannot accidentally be evaluated against another taxonomy. The
 `cases` array is the single authoritative CVE list; taxonomy files carry stable display names.
 
-`fixtures/hierarchical_taxonomy.json` provides a 27-label, five-root tree using the
+`fixtures/hierarchical/taxonomy.json` provides a 27-label, five-root tree using the
 `most_specific` policy. Its corresponding
-`fixtures/hierarchical_expected-classification.json` reclassifies the same CVEs against that
+`fixtures/hierarchical/expected-classification.json` reclassifies the same CVEs against that
 tree. Ancestors are omitted when a supported descendant exists; an internal node remains valid
 when none of its children describes the vulnerability more precisely.
 
-`fixtures/hybrid_taxonomy.json` is the stress fixture for adaptive traversal. It contains 126
-labels, six independent roots, and paths up to four levels deep. With the example input limit it
-requires two linear exhaustive chunks, so the default `auto` strategy selects hybrid routing.
-Its parents are written as semantic supersets so pruning is meaningful, and
-`fixtures/hybrid_expected-classification.json` maps the same 14 curated CVEs to their most
-specific leaves. Two cases intentionally expect labels from multiple independent branches to
-exercise multi-label traversal and evaluation. Set `token_budget = 50000` or higher before
-running this benchmark; the example 12,000-token budget cannot reserve a complete hybrid branch
-plus useful investigation capacity.
+`fixtures/hybrid/taxonomy.json` is the stress fixture for adaptive traversal. It contains 84
+mechanism labels, nine independent roots, and paths up to four levels deep. Broad catch-all and
+impact-only categories are omitted; nearby labels state the evidence needed to distinguish such
+boundaries as source evaluation versus command injection, authentication versus action
+authorization, and generic upload acceptance versus a dangerous executable type. Every parent is
+a semantic superset of its descendants, so an unsupported parent can safely prune its subtree.
+With the example input limit the taxonomy requires two linear exhaustive chunks, so the default
+`auto` strategy selects hybrid routing.
+
+`fixtures/hybrid/expected-classification.json` contains 50 independently researched CVEs. Its
+selection starts from a commit-pinned 1,703-entry CISA Known Exploited Vulnerabilities catalog
+snapshot and uses seed `20260910`, with a separately seeded multi-mechanism stratum after the
+ordinary research pass. Seven final cases expect labels from multiple independent branches after
+`most_specific` normalization. Each case includes its evidence sources and mapping rationale;
+taxonomy design, sampling, research method, coverage, and evidence limitations are documented in
+`fixtures/hybrid/hybrid_taxonomy_readme.md`. Set `token_budget = 50000` or higher before running
+this benchmark; the example 12,000-token budget cannot reserve a complete hybrid branch plus useful
+investigation capacity.
 
 Run the complete benchmark without listing CVE IDs:
 
 ```bash
 uv run cve-agent \
-  --taxonomy fixtures/flat_taxonomy.json \
-  --validate fixtures/flat_expected-classification.json
+  --taxonomy fixtures/flat/taxonomy.json \
+  --validate fixtures/flat/expected-classification.json
 ```
 
 Or run a cheaper subset while developing:
 
 ```bash
 uv run cve-agent \
-  --taxonomy fixtures/hierarchical_taxonomy.json \
-  --validate fixtures/hierarchical_expected-classification.json \
+  --taxonomy fixtures/hierarchical/taxonomy.json \
+  --validate fixtures/hierarchical/expected-classification.json \
   CVE-2014-0160 CVE-2021-41773
 ```
 
@@ -277,8 +286,8 @@ raising the configured token budget:
 
 ```bash
 uv run cve-agent \
-  --taxonomy fixtures/hybrid_taxonomy.json \
-  --validate fixtures/hybrid_expected-classification.json \
+  --taxonomy fixtures/hybrid/taxonomy.json \
+  --validate fixtures/hybrid/expected-classification.json \
   CVE-2014-0160 CVE-2021-41773
 ```
 

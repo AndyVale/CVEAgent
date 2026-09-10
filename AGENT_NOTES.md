@@ -1,5 +1,35 @@
 # Coding-agent notes
 
+## Hybrid taxonomy and 50-CVE validation set (2026-09-10)
+
+- Complete on `main`; the developer approved committing the work directly.
+- Fixture layout uses `fixtures/flat/`, `fixtures/hierarchical/`, and `fixtures/hybrid/`. Each
+  directory contains `taxonomy.json` and `expected-classification.json`. GUI defaults, tests, and
+  README commands use these paths.
+- The hybrid taxonomy contains 84 mechanism labels, nine independent roots, `most_specific`
+  policy, and at most three parent links. Definitions give evidence requirements and boundaries
+  for nearby labels. `CodeInjection` means general-purpose source evaluation, `ZipSlip` is an
+  archive-extraction specialization of `PathTraversal`, and `IDOR` is an object-level
+  specialization of `ImproperAuthorization`.
+- Under the example 12,000-token per-request limit, the taxonomy produces two exhaustive chunks;
+  `auto` selects hybrid with the documented 50,000-token benchmark budget. The example
+  12,000-token total budget is too small for hybrid preflight.
+- Taxonomy fingerprint:
+  `d466b8ebd065c5df63a282f657de58b9bb9ae17e743b1cfdc773fd63e431083e`.
+- The hybrid benchmark uses the standard top-level format only: `schema_version`,
+  `taxonomy_sha256`, and `cases`. It contains 50 unique, online-researched CVEs; every case has
+  labels, a rationale, and source links. Seven cases remain multi-label after `most_specific`
+  normalization, with no ancestor/descendant pair in one expected answer. CVEAgent predictions
+  and live model results were not used as ground truth.
+- `fixtures/hybrid/hybrid_taxonomy_readme.md` contains taxonomy-design, sampling, evidence,
+  coverage, and uncertainty documentation and is not consumed by application code. Coverage is
+  22 of 84 labels, leaving 62 unrepresented rather than forcing unsupported mappings.
+- Verification after the fixture-path reorganization: 60 focused taxonomy, traversal,
+  evaluation, and GUI path tests passed; the full offline Python suite passed with 319 tests.
+  All three fixture pairs load from their new paths, and the hybrid benchmark has exactly the
+  three standard top-level fields and 50 unique cases. JSON parsing and `git diff --check` passed.
+  The optional GUI Node suite remains unavailable because Node is not installed.
+
 ## Current work
 
 Reliability and maintainability follow-up is complete on `main` and awaiting review; no commits
