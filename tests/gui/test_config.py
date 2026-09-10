@@ -27,7 +27,7 @@ def gui_project(tmp_path):
     config = gui_root / "config.gui.toml"
     config.write_text(Path("config.example.toml").read_text(encoding="utf-8"), encoding="utf-8")
     taxonomy = fixtures / "taxonomy.json"
-    taxonomy.write_text(Path("fixtures/flat_taxonomy.json").read_text(encoding="utf-8"), encoding="utf-8")
+    taxonomy.write_text(Path("fixtures/flat/taxonomy.json").read_text(encoding="utf-8"), encoding="utf-8")
     return GuiPathPolicy(tmp_path), config, taxonomy
 
 

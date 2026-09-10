@@ -173,7 +173,7 @@ def test_unexpected_hybrid_budget_exhaustion_preserves_candidates_and_exact_cove
 
 
 def test_hierarchical_fixture_traversal_is_deterministic_without_live_services(tmp_path):
-    fixture = Path(__file__).parents[2] / "fixtures" / "hierarchical_taxonomy.json"
+    fixture = Path(__file__).parents[2] / "fixtures" / "hierarchical" / "taxonomy.json"
     selected_taxonomy = load_taxonomy(fixture)
     selected_settings = configured(tmp_path, max_input_tokens_per_request=6000)
     budget = TokenBudget(create_hybrid_budget_plan(selected_taxonomy, selected_settings), selected_settings)

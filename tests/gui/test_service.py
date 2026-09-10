@@ -48,9 +48,11 @@ class Classifier:
 def service(tmp_path):
     fixtures = tmp_path / "fixtures"
     fixtures.mkdir()
-    taxonomy = fixtures / "flat_taxonomy.json"
+    taxonomy_directory = fixtures / "flat"
+    taxonomy_directory.mkdir()
+    taxonomy = taxonomy_directory / "taxonomy.json"
     taxonomy.write_text(
-        Path("fixtures/flat_taxonomy.json").read_text(encoding="utf-8"),
+        Path("fixtures/flat/taxonomy.json").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
     policy = GuiPathPolicy(tmp_path)
@@ -241,7 +243,7 @@ def test_service_validates_and_persists_gui_options_without_touching_unknown_tom
 
 def test_global_settings_keep_the_gui_configuration_fixed(tmp_path):
     gui = service(tmp_path)
-    taxonomy = tmp_path / "fixtures" / "flat_taxonomy.json"
+    taxonomy = tmp_path / "fixtures" / "flat" / "taxonomy.json"
     gui_config = tmp_path / "src" / "cve_agent" / "gui" / "config.gui.toml"
     gui_original = gui_config.read_text(encoding="utf-8")
 
@@ -269,7 +271,7 @@ def test_service_lists_only_scoped_path_choices(tmp_path):
         "prefix": "src/cve_agent/gui/",
         "name": "config.gui.toml",
     }
-    assert options["taxonomies"][0]["value"] == "fixtures/flat_taxonomy.json"
+    assert options["taxonomies"][0]["value"] == "fixtures/flat/taxonomy.json"
     assert options["databases"][0]["value"] == ".data/gui.sqlite3"
 
 
@@ -358,12 +360,12 @@ def test_completed_pending_reference_stays_bound_to_original_database(tmp_path, 
     other_database = tmp_path / '.data' / 'other.sqlite3'
     gui.update_global_settings({
         'database_path': str(other_database),
-        'default_taxonomy_path': str(tmp_path / 'fixtures' / 'flat_taxonomy.json'),
+        'default_taxonomy_path': str(tmp_path / 'fixtures' / 'flat' / 'taxonomy.json'),
     })
     changed_values = dict(gui.defaults()['values'])
     changed_values['temperature'] = 0.6
     gui.update_analysis_options({
-        'taxonomy_path': str(tmp_path / 'fixtures' / 'flat_taxonomy.json'),
+        'taxonomy_path': str(tmp_path / 'fixtures' / 'flat' / 'taxonomy.json'),
         'values': changed_values,
     })
     overlapping = gui.start_analysis({'cve_id': 'CVE-2021-26855'})

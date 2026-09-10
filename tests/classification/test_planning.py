@@ -51,7 +51,7 @@ def test_strategy_selection_is_taxonomy_aware_and_config_only(tmp_path):
 
 
 def test_auto_selects_hybrid_for_large_hybrid_fixture(tmp_path):
-    fixture = Path(__file__).parents[2] / "fixtures" / "hybrid_taxonomy.json"
+    fixture = Path(__file__).parents[2] / "fixtures" / "hybrid" / "taxonomy.json"
     selected_taxonomy = load_taxonomy(fixture)
     base = settings(tmp_path)
     configured = base.__class__(**{

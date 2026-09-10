@@ -143,7 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--taxonomy",
-        default="fixtures/hybrid_taxonomy.json",
+        default="fixtures/hybrid/taxonomy.json",
         help="initial taxonomy path",
     )
     parser.add_argument("--no-browser", action="store_true", help="do not open a browser window")
