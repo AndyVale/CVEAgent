@@ -1,18 +1,23 @@
-# Hybrid taxonomy and validation set
+# Hybrid demo taxonomy
 
 ## Purpose
 
-The hybrid taxonomy is a mechanism-focused classification tree for testing adaptive traversal.
-It is designed so that a classifier can reject an unsupported parent and safely prune every
-descendant below it. The taxonomy contains 84 labels under nine independent roots, uses the
-`most_specific` hierarchy policy, and has paths of at most four levels.
+This fixture is an illustrative demo taxonomy, not a complete or standardized vulnerability
+ontology. It contains 84 mechanism labels under nine independent roots, uses the `most_specific`
+hierarchy policy, and has paths of at most four levels.
+
+The name **hybrid** describes how the classification step consumes this hierarchy. It does not
+describe a mixture of vulnerability ontology types. Under the documented configuration, the
+classifier combines iterative parent routing and conservative subtree pruning with exhaustive
+scanning of an active subtree when that is cheaper or required for reliable completion.
 
 The files in this directory are:
 
 - `taxonomy.json`: label IDs, display names, definitions, parents, and hierarchy policy.
-- `expected-classification.json`: 50 researched CVEs in the standard benchmark format.
+- `expected-classification.json`: the shared 50-CVE validation set at full demo granularity.
 
-This document records design and research provenance. It is not an input to the application.
+This Markdown file documents taxonomy design and research provenance. It is not an application
+input.
 
 ## Design method
 
@@ -26,9 +31,9 @@ Each label definition states:
 2. the evidence needed to support it; and
 3. a boundary against nearby labels when confusion is plausible.
 
-Every hierarchy edge was reviewed with this implication: if the child is supported, the parent
-must also be supported. Internal labels remain valid expected answers when evidence establishes
-their mechanism but is not detailed enough to select a child.
+Every hierarchy edge follows this implication: if the child is supported, the parent must also be
+supported. Internal labels remain valid expected answers when evidence establishes their mechanism
+but is not detailed enough to select a child.
 
 The nine root families are:
 
@@ -64,15 +69,37 @@ The nine root families are:
 - Resource-management labels are used only when an attacker-reachable resource rule fails. A crash
   caused by injection or memory corruption is not separately labeled as resource exhaustion.
 - Under `most_specific`, an expected answer omits ancestors when a supported descendant is present.
-  Labels from independent branches may be combined when the evidence establishes multiple real
-  mechanisms.
+  Labels from independent branches may be combined when evidence establishes multiple mechanisms.
 
-## Hybrid traversal
+## Why classification is hybrid
 
-With the project's example 12,000-token per-request input limit, the taxonomy requires two
-exhaustive chunks. With a 50,000-token total budget, the `auto` strategy therefore selects hybrid
-routing. The root request can prune unsupported mechanism families, while supported or uncertain
-roots open their children for further classification.
+With the documented 12,000-token per-request input limit, a linear exhaustive scan of this fixture
+requires two chunks. With a 50,000-token total budget, the `auto` strategy therefore selects the
+hybrid scanner. It first evaluates general parents. Unsupported parents safely prune their entire
+subtrees; supported or uncertain parents keep relevant children active for further traversal.
+
+The scanner compares the remaining routing cost with an exhaustive scan of the active labels and
+may switch to that exhaustive continuation when it is cheaper. It also uses bounded exhaustive
+subtree scans for conservative fallback or final adjudication when routing alone cannot reliably
+complete the classification.
+
+The same taxonomy structure could technically be consumed exhaustively with a forced strategy, or
+a smaller hierarchy could be forced through hybrid traversal. This fixture is called hybrid
+because hybrid traversal is its intended and automatically selected classification path under the
+documented configuration.
+
+## Shared validation set and projection
+
+All three demo benchmarks contain the same 50 unique CVEs in the same order and retain the same
+evidence-source lists. This benchmark is the semantic reference. The flat benchmark projects every
+label to its nearest root. The hierarchical benchmark keeps labels at levels one and two and
+projects deeper labels to their nearest retained level-two ancestor. Converging projections are
+deduplicated in original order.
+
+Every benchmark uses the standard three-field format: `schema_version`, `taxonomy_sha256`, and
+`cases`. Rationales are written for each taxonomy's actual granularity. Parent and child labels do
+not count as distinct mechanisms. Seven CVEs retain multiple labels in all three benchmarks because
+their supported mechanisms occupy independent root branches.
 
 ## Validation-set research
 
@@ -84,13 +111,14 @@ The candidate source was the CISA Known Exploited Vulnerabilities catalog snapsh
 <https://raw.githubusercontent.com/cisagov/kev-data/f6fafe2585c7cc2a7568d13d08024cf142b37d3a/known_exploited_vulnerabilities.json>
 
 Candidate IDs were sorted lexicographically and shuffled with Python 3.14.6 using
-`random.Random(20260910)`. Candidates were then investigated online using authoritative CVE
-records, vendor advisories, patches, and technical analyses. CWE assignments were treated as
-research leads, not as expected labels. A case was classified from the mechanism demonstrated by
-the sources rather than from consequences such as remote code execution or disclosure.
+`random.Random(20260910)`. Candidates were investigated online using authoritative CVE records,
+vendor advisories, patches, and technical analyses. CWE assignments were treated as research leads,
+not expected labels. Cases were classified from supported root causes and exploitation mechanisms,
+not consequences such as remote code execution or disclosure.
 
-The ordinary research pass supplied 45 cases. It yielded two genuine multi-label CVEs, so a
-separate multi-mechanism stratum was formed from six independently researched candidates:
+The ordinary randomized research pass supplied 45 suitable cases and two genuine multi-mechanism
+CVEs. To ensure that the benchmark exercises multiple independent branches, a separate
+multi-mechanism stratum was formed from six independently researched candidates:
 
 - `CVE-2018-9206`
 - `CVE-2019-19781`
@@ -101,14 +129,14 @@ separate multi-mechanism stratum was formed from six independently researched ca
 
 After sorting those IDs, five were selected with
 `random.Random(20260910).sample(candidates, 5)`: `CVE-2018-9206`, `CVE-2021-26855`,
-`CVE-2024-3400`, `CVE-2021-41773`, and `CVE-2019-19781`.
+`CVE-2024-3400`, `CVE-2021-41773`, and `CVE-2019-19781`. No selected case was excluded or replaced
+when producing the flat and hierarchical projections.
 
-All 50 selected CVEs were researched online and have at least one supported label, a concise
-rationale, and source links in `expected-classification.json`. Seven cases retain labels from
-multiple independent branches after hierarchy normalization. CVEAgent predictions and live model
-results were not used to establish expected classifications.
+All 50 selected CVEs have at least one supported label, a concise rationale, and source links.
+Seven cases retain labels from multiple independent branches after hierarchy normalization.
+CVEAgent predictions and live model results were not used to establish expected classifications.
 
-## Coverage and uncertainty
+## Coverage and limitations
 
 The validation set covers 22 of the 84 labels. It emphasizes mechanisms present in the randomized
 known-exploited sample and does not force coverage of unsupported categories. The resource
