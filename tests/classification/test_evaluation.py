@@ -17,6 +17,7 @@ from cve_agent.core.taxonomy import taxonomy_fingerprint
 
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
+DEMO_NAMES = ("flat", "hierarchical", "hybrid")
 
 
 def taxonomy():
@@ -106,38 +107,125 @@ def test_validated_classification_summary_includes_per_case_metrics():
     assert "CVE-2020-0002 | B      | 1.000     | 1.000  | 1.000" in formatted
 
 
-def test_curated_flat_fixture_matches_and_covers_the_flat_taxonomy():
-    selected_taxonomy = load_taxonomy(FIXTURES / "flat" / "taxonomy.json")
-    benchmark = load_benchmark(FIXTURES / "flat" / "expected-classification.json", selected_taxonomy)
-    expected_labels = {label for case in benchmark.cases for label in case.labels}
-
-    assert selected_taxonomy.name == "Flat Vulnerability Mechanisms"
-    assert len(benchmark.cases) == 14
-    assert expected_labels == set(selected_taxonomy.by_id)
-    assert all(case.rationale and case.sources for case in benchmark.cases)
-
-
-def test_hierarchical_fixture_matches_the_tree_and_reclassifies_flat_cases():
-    flat_taxonomy = load_taxonomy(FIXTURES / "flat" / "taxonomy.json")
-    flat_benchmark = load_benchmark(FIXTURES / "flat" / "expected-classification.json", flat_taxonomy)
-    selected_taxonomy = load_taxonomy(FIXTURES / "hierarchical" / "taxonomy.json")
+def _fixture_pair(name):
+    selected_taxonomy = load_taxonomy(FIXTURES / name / "taxonomy.json")
     benchmark = load_benchmark(
-        FIXTURES / "hierarchical" / "expected-classification.json",
+        FIXTURES / name / "expected-classification.json",
         selected_taxonomy,
     )
-    by_cve = {case.cve_id: case.labels for case in benchmark.cases}
+    return selected_taxonomy, benchmark
 
-    assert selected_taxonomy.name == "Hierarchical Vulnerability Mechanisms"
-    assert len(selected_taxonomy.labels) == 27
-    assert {label.id for label in selected_taxonomy.labels if label.parent is None} == {
-        "InputValidation", "AccessControl", "Memory", "ResourceManagement", "Misconfiguration",
+
+def _depth(taxonomy, label_id):
+    result = 1
+    while taxonomy.by_id[label_id].parent:
+        label_id = taxonomy.by_id[label_id].parent
+        result += 1
+    return result
+
+
+def _root(taxonomy, label_id):
+    while taxonomy.by_id[label_id].parent:
+        label_id = taxonomy.by_id[label_id].parent
+    return label_id
+
+
+def _project(hybrid_taxonomy, labels, maximum_depth):
+    projected = []
+    for label_id in labels:
+        while _depth(hybrid_taxonomy, label_id) > maximum_depth:
+            label_id = hybrid_taxonomy.by_id[label_id].parent
+        if label_id not in projected:
+            projected.append(label_id)
+    return tuple(projected)
+
+
+def test_demo_fixtures_share_the_standard_ordered_50_case_benchmark():
+    fixtures = {name: _fixture_pair(name) for name in DEMO_NAMES}
+    hybrid_benchmark = fixtures["hybrid"][1]
+
+    assert len(hybrid_benchmark.cases) == 50
+    assert len(set(hybrid_benchmark.cve_ids)) == 50
+    for name, (_, benchmark) in fixtures.items():
+        raw = json.loads(
+            (FIXTURES / name / "expected-classification.json").read_text(encoding="utf-8")
+        )
+        assert set(raw) == {"schema_version", "taxonomy_sha256", "cases"}
+        assert benchmark.cve_ids == hybrid_benchmark.cve_ids
+        assert all(case.rationale and case.sources for case in benchmark.cases)
+        assert [case.sources for case in benchmark.cases] == [
+            case.sources for case in hybrid_benchmark.cases
+        ]
+
+    for aligned_cases in zip(*(fixtures[name][1].cases for name in DEMO_NAMES), strict=True):
+        assert len({case.rationale for case in aligned_cases}) == len(DEMO_NAMES)
+
+
+def test_demo_taxonomies_are_progressively_finer_hybrid_projections():
+    flat, _ = _fixture_pair("flat")
+    hierarchical, _ = _fixture_pair("hierarchical")
+    hybrid, _ = _fixture_pair("hybrid")
+
+    assert all(
+        taxonomy.hierarchy_policy.value == "most_specific"
+        for taxonomy in (flat, hierarchical, hybrid)
+    )
+
+    hybrid_roots = tuple(label.id for label in hybrid.labels if label.parent is None)
+    hybrid_two_levels = tuple(label.id for label in hybrid.labels if _depth(hybrid, label.id) <= 2)
+
+    assert flat.name == "Flat Vulnerability Mechanisms"
+    assert len(flat.labels) == 9
+    assert tuple(label.id for label in flat.labels) == hybrid_roots
+    assert all(label.parent is None for label in flat.labels)
+
+    assert hierarchical.name == "Hierarchical Vulnerability Mechanisms"
+    assert len(hierarchical.labels) == 39
+    assert tuple(label.id for label in hierarchical.labels) == hybrid_two_levels
+    assert len([label for label in hierarchical.labels if label.parent is None]) == 9
+    assert max(_depth(hierarchical, label.id) for label in hierarchical.labels) == 2
+
+    assert hybrid.name == "Adaptive Vulnerability Mechanisms"
+    assert len(hybrid.labels) == 84
+    assert len(hybrid_roots) == 9
+    assert max(_depth(hybrid, label.id) for label in hybrid.labels) == 4
+
+    for projection in (flat, hierarchical):
+        for label in projection.labels:
+            reference = hybrid.by_id[label.id]
+            assert (label.name, label.description, label.parent) == (
+                reference.name,
+                reference.description,
+                reference.parent,
+            )
+
+
+def test_projected_expected_labels_exactly_match_hybrid_expectations():
+    flat_taxonomy, flat_benchmark = _fixture_pair("flat")
+    hierarchical_taxonomy, hierarchical_benchmark = _fixture_pair("hierarchical")
+    hybrid_taxonomy, hybrid_benchmark = _fixture_pair("hybrid")
+
+    for flat_case, hierarchical_case, hybrid_case in zip(
+        flat_benchmark.cases,
+        hierarchical_benchmark.cases,
+        hybrid_benchmark.cases,
+        strict=True,
+    ):
+        assert flat_case.labels == _project(hybrid_taxonomy, hybrid_case.labels, 1)
+        assert hierarchical_case.labels == _project(hybrid_taxonomy, hybrid_case.labels, 2)
+
+    multi_case_ids = {
+        case.cve_id for case in hybrid_benchmark.cases if len(case.labels) > 1
     }
-    assert selected_taxonomy.by_id["SQLi"].parent == "InjectionFlaws"
-    assert selected_taxonomy.by_id["InjectionFlaws"].parent == "InputValidation"
-    assert benchmark.cve_ids == flat_benchmark.cve_ids
-    assert by_cve["CVE-2021-41773"] == ("PathTraversal",)
-    assert by_cve["CVE-2023-22518"] == ("ImproperAuthorization",)
-    assert by_cve["CVE-2018-9206"] == ("InputValidation",)
+    assert len(multi_case_ids) == 7
+    for taxonomy, benchmark in (
+        (flat_taxonomy, flat_benchmark),
+        (hierarchical_taxonomy, hierarchical_benchmark),
+        (hybrid_taxonomy, hybrid_benchmark),
+    ):
+        assert {case.cve_id for case in benchmark.cases if len(case.labels) > 1} == multi_case_ids
+        for case in benchmark.cases:
+            assert len({_root(taxonomy, label_id) for label_id in case.labels}) == len(case.labels)
 
 
 def test_hybrid_fixture_has_prunable_semantic_hierarchy_and_50_curated_cases():
@@ -146,17 +234,10 @@ def test_hybrid_fixture_has_prunable_semantic_hierarchy_and_50_curated_cases():
     roots = [label for label in selected_taxonomy.labels if label.parent is None]
     by_cve = {case.cve_id: case.labels for case in benchmark.cases}
 
-    def depth(label_id):
-        result = 1
-        while selected_taxonomy.by_id[label_id].parent:
-            label_id = selected_taxonomy.by_id[label_id].parent
-            result += 1
-        return result
-
     assert selected_taxonomy.name == "Adaptive Vulnerability Mechanisms"
     assert len(selected_taxonomy.labels) == 84
     assert len(roots) == 9
-    assert max(depth(label.id) for label in selected_taxonomy.labels) == 4
+    assert max(_depth(selected_taxonomy, label.id) for label in selected_taxonomy.labels) == 4
     assert len(benchmark.cases) == 50
     assert len(set(benchmark.cve_ids)) == 50
     assert all(case.rationale and case.sources for case in benchmark.cases)
@@ -212,6 +293,14 @@ def test_fixture_taxonomy_and_benchmark_ids_are_not_hard_coded_in_production():
         assert set(benchmark_payload) == {"schema_version", "taxonomy_sha256", "cases"}
         fixture_values.update(item["id"] for item in taxonomy_payload["labels"])
         fixture_values.update(item["cve_id"] for item in benchmark_payload["cases"])
-    production = "\n".join(path.read_text(encoding="utf-8") for path in (FIXTURES.parent / "src" / "cve_agent").glob("*.py"))
+    production = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (FIXTURES.parent / "src" / "cve_agent").glob("*.py")
+    )
 
     assert all(value not in production for value in fixture_values)
+    all_production = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (FIXTURES.parent / "src" / "cve_agent").rglob("*.py")
+    )
+    assert "taxonomy_readme.md" not in all_production

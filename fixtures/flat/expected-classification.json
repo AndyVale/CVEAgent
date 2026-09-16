@@ -1,119 +1,565 @@
 {
   "schema_version": 1,
-  "taxonomy_sha256": "b42687ebe02101e6b575f03530bdba7b3e63b2d009bbd2e9348a976be516f5e8",
+  "taxonomy_sha256": "f9c8d5199d4809a95c6773344e81d247ef41589c4cf6f40d09c6633887bcb960",
   "cases": [
     {
-      "cve_id": "CVE-2020-11022",
-      "labels": ["XSS"],
-      "rationale": "Untrusted HTML passed to jQuery DOM manipulation methods can execute attacker-controlled script in the page context.",
+      "cve_id": "CVE-2021-27103",
+      "labels": [
+        "RoutingAndDestinationControl"
+      ],
+      "rationale": "A crafted POST request controls the destination reached by the Accellion FTA server, directly establishing server-side request forgery rather than a client redirect. In the flat demo, this evidence is represented by the `Network Destination Control` family.",
       "sources": [
-        "https://nvd.nist.gov/vuln/detail/CVE-2020-11022",
-        "https://blog.jquery.com/2020/04/10/jquery-3-5-0-released/"
+        "https://www.cve.org/CVERecord?id=CVE-2021-27103",
+        "https://github.com/accellion/CVEs/blob/main/CVE-2021-27103.txt"
       ]
     },
     {
-      "cve_id": "CVE-2023-34362",
-      "labels": ["SQLi"],
-      "rationale": "MOVEit Transfer contains a SQL injection vulnerability that permits unauthorized access to its database.",
+      "cve_id": "CVE-2024-27443",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "A crafted calendar header in an email is rendered by Zimbra webmail and executes embedded JavaScript in the victim's browser session, satisfying the browser-origin execution boundary for XSS. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
       "sources": [
-        "https://docs.progress.com/bundle/moveit-transfer-release-notes-2022_1/page/Fixed-Issues-in-2022.1.5.html"
+        "https://www.cve.org/CVERecord?id=CVE-2024-27443",
+        "https://wiki.zimbra.com/wiki/Zimbra_Releases/10.0.7#Security_Fixes"
       ]
     },
     {
-      "cve_id": "CVE-2024-22424",
-      "labels": ["CSRF"],
-      "rationale": "A malicious same-parent-domain page can make authenticated Argo CD API requests on the victim's behalf.",
+      "cve_id": "CVE-2018-7445",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "RouterOS overflows a stack buffer while processing an attacker-controlled NetBIOS session request, establishing a sequential buffer-capacity overrun. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
       "sources": [
-        "https://nvd.nist.gov/vuln/detail/CVE-2024-22424"
+        "https://www.cve.org/CVERecord?id=CVE-2018-7445",
+        "https://www.coresecurity.com/advisories/mikrotik-routeros-smb-buffer-overflow"
       ]
     },
     {
-      "cve_id": "CVE-2021-26855",
-      "labels": ["SSRF"],
-      "rationale": "Attacker-controlled Exchange backend-routing cookie values coerce the server into unintended backend requests.",
+      "cve_id": "CVE-2020-14864",
+      "labels": [
+        "PathAndResourceSelection"
+      ],
+      "rationale": "The preview FilePath parameter accepts traversal sequences that resolve to arbitrary local files outside the intended image location; the evidence establishes a filesystem path escape, not just disclosure. In the flat demo, this evidence is represented by the `Filesystem Resource Boundary Violation` family.",
       "sources": [
-        "https://www.microsoft.com/en-us/msrc/blog/2021/03/microsoft-exchange-server-vulnerabilities-mitigations-march-2021"
+        "https://www.cve.org/CVERecord?id=CVE-2020-14864",
+        "http://packetstormsecurity.com/files/159748/Oracle-Business-Intelligence-Enterprise-Edition-5.5.0.0.0-12.2.1.3.0-12.2.1.4.0-LFI.html"
       ]
     },
     {
-      "cve_id": "CVE-2021-41773",
-      "labels": ["PathTraversal", "InfoLeak"],
-      "rationale": "Broken path normalization lets crafted URLs map outside configured directories and disclose files through HTTP responses.",
+      "cve_id": "CVE-2021-30632",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "Google identifies an out-of-bounds write in V8 reached through crafted HTML. The evidence does not narrow the write to a sequential buffer overflow or exact off-by-one error. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
       "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-30632",
+        "https://chromereleases.googleblog.com/2021/09/stable-channel-update-for-desktop.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-44026",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "Roundcube search and search_params values can alter SQL query structure, directly matching SQL injection rather than a generic database-access consequence. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-44026",
+        "https://github.com/roundcube/roundcubemail/commit/c8947ecb762d9e89c2091bda28d49002817263f1"
+      ]
+    },
+    {
+      "cve_id": "CVE-2016-9079",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "Mozilla identifies post-release access in SVG Animation as a use-after-free, a concrete temporal-memory mechanism. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2016-9079",
+        "https://www.mozilla.org/security/advisories/mfsa2016-92/"
+      ]
+    },
+    {
+      "cve_id": "CVE-2020-7961",
+      "labels": [
+        "StructuredDataProcessing"
+      ],
+      "rationale": "Liferay JSON web services reconstruct attacker-controlled serialized objects without safe type restrictions, enabling code execution through deserialization behavior rather than injected source text. In the flat demo, this evidence is represented by the `Unsafe Structured-Data Interpretation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2020-7961",
+        "https://portal.liferay.dev/learn/security/known-vulnerabilities/-/asset_publisher/HbL5mxmVrnXW/content/id/117954271"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-25297",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "Authenticated HTTP input reaches an operating-system command without adequate neutralization in Nagios XI, allowing attacker-controlled shell command structure. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-25297",
+        "https://www.fastly.com/blog/anatomy-of-a-command-injection-cve-2021-25296-7-8-with-metasploit-module-and"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-27104",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "Crafted POST data sent to Accellion FTA administrative endpoints is executed as operating-system commands, directly establishing command injection. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-27104",
+        "https://github.com/accellion/CVEs/blob/main/CVE-2021-27104.txt"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-20028",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "SonicWall's advisory identifies failure to neutralize SQL command elements in SRA firmware, supporting SQL injection without relying on the resulting data access. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-20028",
+        "https://psirt.global.sonicwall.com/vuln-detail/SNWLID-2021-0017"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-44228",
+      "labels": [
+        "InterpreterInjection",
+        "RoutingAndDestinationControl"
+      ],
+      "rationale": "Attacker-controlled log text is interpreted as a JNDI lookup directive, while the resulting LDAP or other JNDI lookup makes the vulnerable server contact an attacker-selected endpoint. Those are distinct parser-injection and server-request mechanisms; remote code execution is not used as a label. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` and `Network Destination Control` families.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-44228",
+        "https://logging.apache.org/log4j/2.x/security.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2020-1027",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "Project Zero's root-cause analysis shows an unchecked UNICODE_STRING capacity reaching memcpy and overflowing a heap destination with attacker-controlled contents and sizes, establishing a sequential buffer overflow. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2020-1027",
+        "https://googleprojectzero.github.io/0days-in-the-wild/0day-RCAs/2020/CVE-2020-1027.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2023-23529",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "Apple explicitly identifies WebKit's defect as type confusion corrected through improved checks, supporting incompatible memory-object interpretation rather than a generic code-execution consequence. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2023-23529",
+        "https://support.apple.com/en-us/HT213635"
+      ]
+    },
+    {
+      "cve_id": "CVE-2025-11953",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "The Metro development server accepts unauthenticated POST data that becomes fully controlled shell commands on Windows and arbitrary process execution elsewhere, establishing operating-system command injection. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2025-11953",
+        "https://jfrog.com/blog/cve-2025-11953-critical-react-native-community-cli-vulnerability"
+      ]
+    },
+    {
+      "cve_id": "CVE-2017-8291",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "A crafted Ghostscript document supplies a %pipe% OutputFile value that invokes an attacker-chosen operating-system command. The reported PostScript type confusion bypasses sandbox checks but does not establish native memory-layout type confusion under the native-memory mechanism definition. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2017-8291",
+        "https://bugs.ghostscript.com/show_bug.cgi?id=697808"
+      ]
+    },
+    {
+      "cve_id": "CVE-2022-40765",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "Insufficient restriction of MiVoice Edge Gateway URL parameters lets an authenticated attacker inject operating-system commands, directly satisfying the command-interpreter syntax mechanism. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2022-40765",
+        "https://www.mitel.com/support/security-advisories/mitel-product-security-advisory-22-0007"
+      ]
+    },
+    {
+      "cve_id": "CVE-2014-100005",
+      "labels": [
+        "AccessControl"
+      ],
+      "rationale": "Crafted cross-site requests use an administrator's existing DIR-600 browser session to create accounts, enable remote management, or change configuration without verifying the administrator's intent. In the flat demo, this evidence is represented by the `Identity and Access-Control Failure` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2014-100005",
+        "http://securityadvisories.dlink.com/security/publication.aspx?name=SAP10018"
+      ]
+    },
+    {
+      "cve_id": "CVE-2022-22954",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "VMware identifies attacker-triggered server-side template injection in Workspace ONE Access and Identity Manager; remote execution is the impact of the template evaluator, not a separate command label. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2022-22954",
+        "https://www.vmware.com/security/advisories/VMSA-2022-0011.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2020-1472",
+      "labels": [
+        "AccessControl",
+        "CryptographicProtection"
+      ],
+      "rationale": "Netlogon reuses a static zero IV with AES-CFB8, allowing repeated all-zero credential attempts to be accepted and establishing a forged domain-controller secure channel. The repeated IV and accepted authenticated identity are separately evidenced cryptographic and authentication mechanisms. In the flat demo, this evidence is represented by the `Identity and Access-Control Failure` and `Cryptographic Protection Failure` families.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2020-1472",
+        "https://www.microsoft.com/en-us/wdsi/threats/malware-encyclopedia-description?Name=Behavior:Win32/CVE-2020-1472.B&ThreatID=2147764084"
+      ]
+    },
+    {
+      "cve_id": "CVE-2019-0193",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "Solr accepts a complete DataImportHandler configuration from the dataConfig request parameter and evaluates scripts contained in it, establishing attacker-supplied general-purpose source evaluation. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2019-0193",
+        "https://issues.apache.org/jira/browse/SOLR-13669"
+      ]
+    },
+    {
+      "cve_id": "CVE-2024-12686",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "BeyondTrust reports that an administrator-controlled value is injected into a command and executed as the site user, directly establishing operating-system command injection. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2024-12686",
+        "https://www.beyondtrust.com/trust-center/security-advisories/bt24-11"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-30661",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "Apple identifies WebKit's flaw as use after free and describes improved memory management as the fix, establishing a temporal-memory violation. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-30661",
+        "https://support.apple.com/en-us/HT212317"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-20016",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "Unauthenticated input changes SQL queries in SonicWall SMA100, allowing access to credential and session data; the query-structure defect, not the disclosure, determines the label. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-20016",
+        "https://psirt.global.sonicwall.com/vuln-detail/SNWLID-2021-0001"
+      ]
+    },
+    {
+      "cve_id": "CVE-2024-32113",
+      "labels": [
+        "PathAndResourceSelection"
+      ],
+      "rationale": "Apache identifies failure to limit an OFBiz pathname to its restricted directory, directly supporting filesystem path traversal; remote code execution is only a possible consequence. In the flat demo, this evidence is represented by the `Filesystem Resource Boundary Violation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2024-32113",
+        "https://issues.apache.org/jira/browse/OFBIZ-13006"
+      ]
+    },
+    {
+      "cve_id": "CVE-2017-9822",
+      "labels": [
+        "StructuredDataProcessing"
+      ],
+      "rationale": "A crafted DNN cookie is deserialized into attacker-influenced objects and reaches code execution, establishing unsafe object reconstruction rather than injected source text. In the flat demo, this evidence is represented by the `Unsafe Structured-Data Interpretation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2017-9822",
+        "http://packetstormsecurity.com/files/157080/DotNetNuke-Cookie-Deserialization-Remote-Code-Execution.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-22894",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "Pulse Connect Secure processes a crafted meeting-room input through a vulnerable buffer and overflows its capacity, supporting a concrete buffer overflow rather than only generic memory corruption. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-22894",
+        "https://kb.pulsesecure.net/articles/Pulse_Security_Advisories/SA44784/?kA23Z000000boUWSAY"
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-59310",
+      "labels": [
+        "PathAndResourceSelection"
+      ],
+      "rationale": "Broadcom identifies directory traversal in the vCenter Syslog server, so the established mechanism is escape from an intended filesystem directory rather than the resulting code execution. In the flat demo, this evidence is represented by the `Filesystem Resource Boundary Violation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2026-59310",
+        "https://support.broadcom.com/web/ecx/support-content-notification/-/external/content/SecurityAdvisories/0/38017"
+      ]
+    },
+    {
+      "cve_id": "CVE-2009-4324",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "Adobe Reader and Acrobat access the media-player object after its storage lifetime ends while processing a crafted PDF, directly establishing use after free. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2009-4324",
+        "https://www.adobe.com/support/security/bulletins/apsb10-02.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2018-15961",
+      "labels": [
+        "FileUploadControl"
+      ],
+      "rationale": "ColdFusion accepts an unrestricted uploaded file in a context where the uploaded content can execute, supporting dangerous file-type acceptance rather than a path or authorization inference. In the flat demo, this evidence is represented by the `Unsafe File Upload Acceptance` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2018-15961",
+        "https://helpx.adobe.com/security/products/coldfusion/apsb18-33.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2019-11001",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "Shell metacharacters supplied in the Reolink TestEmail addr1 field become root-level operating-system command syntax, directly establishing command injection. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2019-11001",
+        "https://www.vdoo.com/blog/working-with-the-community-%E2%80%93-significant-vulnerabilities-in-reolink-cameras/"
+      ]
+    },
+    {
+      "cve_id": "CVE-2016-6366",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "Crafted IPv4 SNMP packets overflow a Cisco ASA buffer, so the buffer-capacity overrun is the supported mechanism and reload or code execution are consequences. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2016-6366",
+        "https://tools.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-20160817-asa-snmp"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-36741",
+      "labels": [
+        "FileUploadControl"
+      ],
+      "rationale": "Authenticated management-console input can upload arbitrary files in Trend Micro products, establishing unsafe upload acceptance. The public evidence does not establish an executable serving context, so dangerous-type acceptance is not established. In the flat demo, this evidence is represented by the `Unsafe File Upload Acceptance` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-36741",
+        "https://success.trendmicro.com/solution/000287819"
+      ]
+    },
+    {
+      "cve_id": "CVE-2015-1427",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "Elasticsearch evaluates an attacker-supplied Groovy script after its sandbox is bypassed. The direct general-purpose script evaluation is more specific than its later shell-command impact. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2015-1427",
+        "https://www.elastic.co/community/security/"
+      ]
+    },
+    {
+      "cve_id": "CVE-2020-15999",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "FreeType's PNG handling writes beyond a heap buffer while rendering an embedded font image, establishing a heap buffer overflow rather than generic code execution. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2020-15999",
+        "https://googleprojectzero.blogspot.com/p/rca-cve-2020-15999.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2018-19943",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "QNAP File Station fails to neutralize attacker-controlled content that executes as malicious code in the web interface, matching browser-origin script injection. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2018-19943",
+        "https://www.qnap.com/en/security-advisory/qsa-20-01"
+      ]
+    },
+    {
+      "cve_id": "CVE-2022-3236",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "Sophos identifies code injection in the User Portal and Webadmin leading to execution, which supports attacker-controlled dynamic code evaluation. Public vendor evidence does not disclose enough to choose source-code, expression-language, or template evaluation. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2022-3236",
+        "https://www.sophos.com/en-us/security-advisories/sophos-sa-20220923-sfos-rce"
+      ]
+    },
+    {
+      "cve_id": "CVE-2020-2506",
+      "labels": [
+        "AccessControl"
+      ],
+      "rationale": "QNAP Helpdesk applies inadequate access control to actions or data, allowing unauthorized privilege gain or reading. No object identifier or forged authenticated identity is established, so the evidence supports only the general authorization mechanism. In the flat demo, this evidence is represented by the `Identity and Access-Control Failure` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2020-2506",
+        "https://www.qnap.com/en/security-advisory/qsa-20-08"
+      ]
+    },
+    {
+      "cve_id": "CVE-2023-29298",
+      "labels": [
+        "AccessControl"
+      ],
+      "rationale": "ColdFusion permits unauthorized access to administrative CFM and CFC endpoints because endpoint permissions are not enforced. The evidence describes action authorization, not establishment of an authenticated identity. In the flat demo, this evidence is represented by the `Identity and Access-Control Failure` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2023-29298",
+        "https://helpx.adobe.com/security/products/coldfusion/apsb23-40.html"
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-64849",
+      "labels": [
+        "RoutingAndDestinationControl"
+      ],
+      "rationale": "MLflow validates only an original webhook URL, then follows redirects and re-resolves the target, allowing attacker-selected requests to internal or cloud metadata services and returning their responses. In the flat demo, this evidence is represented by the `Network Destination Control` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2026-64849",
+        "https://github.com/mlflow/mlflow/security/advisories/GHSA-7gwp-5pfp-969j"
+      ]
+    },
+    {
+      "cve_id": "CVE-2024-38475",
+      "labels": [
+        "PathAndResourceSelection"
+      ],
+      "rationale": "Unsafe mod_rewrite substitutions map attacker-influenced URLs to filesystem locations that are permitted but were not intended to be URL-reachable. The evidence establishes unauthorized filesystem selection but not a directory escape using traversal syntax. In the flat demo, this evidence is represented by the `Filesystem Resource Boundary Violation` family.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2024-38475",
         "https://httpd.apache.org/security/vulnerabilities_24.html"
       ]
     },
     {
-      "cve_id": "CVE-2014-6271",
-      "labels": ["CommandInjection"],
-      "rationale": "Bash executes attacker-supplied trailing shell commands embedded in environment-variable function definitions.",
+      "cve_id": "CVE-2026-8452",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "NetScaler documents a memory overflow and failure to restrict operations within a memory buffer's bounds. Because the advisory does not establish read versus write or sequential overflow behavior, the evidence supports only the general spatial-memory mechanism. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
       "sources": [
-        "https://nvd.nist.gov/vuln/detail/CVE-2014-6271"
+        "https://www.cve.org/CVERecord?id=CVE-2026-8452",
+        "https://support.citrix.com/external/article/CTX696604/netscaler-adc-and-netscaler-gateway-secu.html"
       ]
     },
     {
-      "cve_id": "CVE-2017-9841",
-      "labels": ["CodeInjection"],
-      "rationale": "An exposed PHPUnit endpoint evaluates attacker-supplied PHP source from the HTTP request body.",
+      "cve_id": "CVE-2025-27038",
+      "labels": [
+        "MemorySafety"
+      ],
+      "rationale": "Qualcomm's authoritative CVE title identifies use after free in Adreno graphics rendering, supporting a concrete temporal-memory mechanism; the description's memory corruption is treated only as the effect. In the flat demo, this evidence is represented by the `Memory Safety Violation` family.",
       "sources": [
-        "https://nvd.nist.gov/vuln/detail/CVE-2017-9841"
+        "https://www.cve.org/CVERecord?id=CVE-2025-27038",
+        "https://docs.qualcomm.com/product/publicresources/securitybulletin/june-2025-bulletin.html"
       ]
     },
     {
-      "cve_id": "CVE-2017-9805",
-      "labels": ["UntrustedDeserialization"],
-      "rationale": "The Struts REST plugin deserializes attacker-controlled XML with XStream without type filtering.",
+      "cve_id": "CVE-2022-43939",
+      "labels": [
+        "AccessControl"
+      ],
+      "rationale": "Pentaho makes authorization decisions on non-canonical URL forms that an attacker can vary to reach restricted functions. This is function authorization rather than filesystem path traversal or identity authentication. In the flat demo, this evidence is represented by the `Identity and Access-Control Failure` family.",
       "sources": [
-        "https://nvd.nist.gov/vuln/detail/CVE-2017-9805"
+        "https://www.cve.org/CVERecord?id=CVE-2022-43939",
+        "https://support.pentaho.com/hc/en-us/articles/14455394120333--Resolved-Pentaho-BA-Server-Use-of-Non-Canonical-URL-Paths-for-Authorization-Decisions-Versions-before-9-4-0-1-and-9-3-0-2-including-8-3-x-Impacted-CVE-2022-43939-"
       ]
     },
     {
-      "cve_id": "CVE-2015-7547",
-      "labels": ["BufferOverflow"],
-      "rationale": "Crafted DNS responses trigger stack-based buffer overflows in glibc resolver functions.",
+      "cve_id": "CVE-2019-17558",
+      "labels": [
+        "InterpreterInjection"
+      ],
+      "rationale": "Solr's VelocityResponseWriter accepts attacker-influenced Velocity templates from a configset or enabled request parameter and renders them server-side, directly establishing server-side template injection. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` family.",
       "sources": [
-        "https://nvd.nist.gov/vuln/detail/CVE-2015-7547",
-        "https://googleonlinesecurity.blogspot.com/2016/02/cve-2015-7547-glibc-getaddrinfo-stack.html"
-      ]
-    },
-    {
-      "cve_id": "CVE-2014-0160",
-      "labels": ["OutOfBoundsRead"],
-      "rationale": "Malformed TLS heartbeat packets cause OpenSSL to read beyond the intended buffer and return process memory.",
-      "sources": [
-        "https://nvd.nist.gov/vuln/detail/CVE-2014-0160"
-      ]
-    },
-    {
-      "cve_id": "CVE-2019-5786",
-      "labels": ["UseAfterFree"],
-      "rationale": "Chrome identified the underlying FileReader memory-safety defect specifically as a use-after-free.",
-      "sources": [
-        "https://chromereleases.googleblog.com/2019/03/stable-channel-update-for-desktop.html"
-      ]
-    },
-    {
-      "cve_id": "CVE-2023-22518",
-      "labels": ["AccessControl"],
-      "rationale": "Improper authorization lets an unauthenticated attacker reset Confluence and create an administrator account.",
-      "sources": [
-        "https://confluence.atlassian.com/security/cve-2023-22518-improper-authorization-vulnerability-in-confluence-data-center-and-confluence-server-1311473907.html"
-      ]
-    },
-    {
-      "cve_id": "CVE-2023-44487",
-      "labels": ["ResourceExhaustion"],
-      "rationale": "Rapidly resetting an unbounded sequence of HTTP/2 streams consumes server work and causes denial of service.",
-      "sources": [
-        "https://blog.cloudflare.com/technical-breakdown-http2-rapid-reset-ddos-attack/"
+        "https://www.cve.org/CVERecord?id=CVE-2019-17558",
+        "https://issues.apache.org/jira/browse/SOLR-13971"
       ]
     },
     {
       "cve_id": "CVE-2018-9206",
-      "labels": ["InputValidation"],
-      "rationale": "The file-upload component accepts arbitrary unauthenticated uploads, matching the taxonomy's dangerous-file-upload catch-all.",
+      "labels": [
+        "FileUploadControl",
+        "AccessControl"
+      ],
+      "rationale": "The Blueimp PHP handler accepts arbitrary files without authentication, while the deployment guidance confirms that absent server-side restrictions can cause uploaded PHP or other active content to execute. Missing permission on the upload action and dangerous file-type acceptance are distinct mechanisms. In the flat demo, this evidence is represented by the `Unsafe File Upload Acceptance` and `Identity and Access-Control Failure` families.",
       "sources": [
-        "https://nvd.nist.gov/vuln/detail/CVE-2018-9206"
+        "https://www.cve.org/CVERecord?id=CVE-2018-9206",
+        "https://github.com/blueimp/jQuery-File-Upload/wiki/Security/4c00c36b6a83a56d4576930cd11683ad39df2296"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-26855",
+      "labels": [
+        "RoutingAndDestinationControl",
+        "AccessControl"
+      ],
+      "rationale": "An attacker controls Exchange backend-routing values so the front end sends unintended backend HTTP requests, and those requests are accepted as the trusted Exchange server. Server-side destination control and creation of an authenticated server context are separately evidenced. In the flat demo, this evidence is represented by the `Network Destination Control` and `Identity and Access-Control Failure` families.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-26855",
+        "https://googleprojectzero.github.io/0days-in-the-wild/0day-RCAs/2021/CVE-2021-26855.html",
+        "https://www.microsoft.com/en-us/security/blog/2021/03/02/hafnium-targeting-exchange-servers/"
+      ]
+    },
+    {
+      "cve_id": "CVE-2024-3400",
+      "labels": [
+        "InterpreterInjection",
+        "PathAndResourceSelection"
+      ],
+      "rationale": "PAN-OS first accepts a traversal-bearing session ID to create an attacker-named file outside the intended location, then a scheduled job incorporates that filename into an operating-system command. The vendor describes two separate bugs whose combination produces both path traversal and command injection. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` and `Filesystem Resource Boundary Violation` families.",
+      "sources": [
+        "https://security.paloaltonetworks.com/CVE-2024-3400",
+        "https://www.paloaltonetworks.com/blog/2024/04/more-on-the-pan-os-cve/"
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-41773",
+      "labels": [
+        "InterpreterInjection",
+        "PathAndResourceSelection"
+      ],
+      "rationale": "Broken Apache HTTP Server path normalization lets crafted URLs escape configured directories. With CGI enabled, the resolved request reaches a system shell that interprets attacker-supplied request-body commands, separately establishing path traversal and command injection. In the flat demo, this evidence is represented by the `Interpreter or Parser Injection` and `Filesystem Resource Boundary Violation` families.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2021-41773",
+        "https://httpd.apache.org/security/vulnerabilities_24.html",
+        "https://www.rapid7.com/blog/post/ra-cve-2021-41773-analysis/"
+      ]
+    },
+    {
+      "cve_id": "CVE-2019-19781",
+      "labels": [
+        "PathAndResourceSelection",
+        "InterpreterInjection"
+      ],
+      "rationale": "Citrix ADC traversal reaches exposed Perl handlers and writes a crafted XML file into the templates directory; a subsequent request makes the server-side template engine evaluate directives in that file. The directory escape and template evaluation are distinct exploit stages. In the flat demo, this evidence is represented by the `Filesystem Resource Boundary Violation` and `Interpreter or Parser Injection` families.",
+      "sources": [
+        "https://www.cve.org/CVERecord?id=CVE-2019-19781",
+        "https://support.citrix.com/article/CTX267027",
+        "https://www.mdsec.co.uk/2020/01/deep-dive-in-to-citrix-adc-remote-code-execution-cve-2019-19781/"
       ]
     }
   ]

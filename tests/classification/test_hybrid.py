@@ -188,6 +188,6 @@ def test_hierarchical_fixture_traversal_is_deterministic_without_live_services(t
     )
 
     assert outcome.complete
-    assert len(outcome.evaluated_ids) == 5
-    assert len(outcome.pruned_ids) == 22
+    assert len(outcome.evaluated_ids) == 9
+    assert len(outcome.pruned_ids) == 30
     assert len(outcome.evaluated_ids) + len(outcome.pruned_ids) == len(selected_taxonomy.labels)

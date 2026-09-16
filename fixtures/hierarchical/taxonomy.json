@@ -3,161 +3,229 @@
   "hierarchy_policy": "most_specific",
   "labels": [
     {
-      "id": "InputValidation",
-      "name": "Input Validation",
-      "description": "Failures to properly verify, filter, or sanitize data received from external sources before processing."
+      "id": "InterpreterInjection",
+      "name": "Interpreter or Parser Injection",
+      "description": "Attacker-controlled data changes the grammar, executable structure, or directives consumed by an interpreter or parser instead of remaining a literal value. Evidence must identify the interpreted context and how input crosses its syntax boundary; malformed data that only crashes a parser, object reconstruction, and path selection are outside this family."
     },
     {
-      "id": "InjectionFlaws",
-      "name": "Injection Flaws",
-      "description": "Broad category where untrusted data is sent to an interpreter as part of a command or query.",
-      "parent": "InputValidation"
+      "id": "QueryInjection",
+      "name": "Query-Language Injection",
+      "description": "Interpreter injection in which untrusted data changes a database, directory, or document-query expression. Evidence must show alteration of query operators, predicates, or statement structure; an attacker supplying an unexpected but still literal query value is not sufficient.",
+      "parent": "InterpreterInjection"
     },
     {
-      "id": "SQLi",
-      "name": "SQL Injection",
-      "description": "Malicious SQL queries are injected to manipulate the database.",
-      "parent": "InjectionFlaws"
+      "id": "CommandConstruction",
+      "name": "Process Invocation Injection",
+      "description": "Interpreter or parser injection in which attacker-controlled input changes an operating-system process invocation. Evidence must show influence over shell syntax or the invoked program's argument grammar; selecting an already authorized fixed action without changing invocation structure is an authorization issue instead.",
+      "parent": "InterpreterInjection"
     },
     {
-      "id": "CommandInjection",
-      "name": "Command Injection",
-      "description": "Unvalidated input is used to construct system shell commands. Covers OS Command Injection.",
-      "parent": "InjectionFlaws"
+      "id": "DynamicCodeEvaluation",
+      "name": "Dynamic Code Evaluation",
+      "description": "Interpreter injection in which attacker-controlled text is evaluated as program code, an expression language, or a server-side template. Evidence must establish the input-to-evaluator transition; code execution as an impact of memory corruption, deserialization, or command injection does not establish this family.",
+      "parent": "InterpreterInjection"
     },
     {
-      "id": "CodeInjection",
-      "name": "Code Injection",
-      "description": "Unvalidated input is executed as code by the application's interpreter (e.g., PHP, Python, Java).",
-      "parent": "InjectionFlaws"
+      "id": "BrowserContentInjection",
+      "name": "Browser Document Injection",
+      "description": "Interpreter or parser injection in which attacker-controlled markup or script-capable content changes a browser-consumed document. Evidence must show unsafe insertion into an HTML, SVG, or equivalent browser parsing context; server-side templates and redirects are outside this family.",
+      "parent": "InterpreterInjection"
     },
     {
-      "id": "XSS",
-      "name": "Cross-site Scripting",
-      "description": "Malicious scripts are injected into web pages and executed in the victim's browser.",
-      "parent": "InjectionFlaws"
+      "id": "PathAndResourceSelection",
+      "name": "Filesystem Resource Boundary Violation",
+      "description": "Attacker-controlled names, paths, archive entries, or filesystem links resolve to a file or directory outside the resource set intended for an operation. Evidence must show unauthorized filesystem target selection; object identifiers, network destinations, and merely dangerous uploaded content use other families."
     },
     {
       "id": "PathTraversal",
       "name": "Path Traversal",
-      "description": "Manipulation of file paths (e.g., '../') to access files or directories outside the intended scope.",
-      "parent": "InjectionFlaws"
+      "description": "A filesystem resource boundary violation in which crafted path components, absolute paths, encoded separators, or normalization discrepancies escape an intended directory. Evidence must establish the resolved filesystem scope; accessing another database object by identifier is IDOR, not path traversal.",
+      "parent": "PathAndResourceSelection"
+    },
+    {
+      "id": "ImproperLinkResolution",
+      "name": "Improper Filesystem Link Resolution",
+      "description": "A filesystem resource boundary violation in which a symbolic link, hard link, junction, mount, or equivalent reference resolves an operation to an unauthorized target. Evidence must identify link following or replacement; lexical or normalization-based escapes belong to PathTraversal.",
+      "parent": "PathAndResourceSelection"
+    },
+    {
+      "id": "StructuredDataProcessing",
+      "name": "Unsafe Structured-Data Interpretation",
+      "description": "Attacker-controlled structured data is interpreted with object, reference, binding, or graph capabilities beyond the intended data-only contract. Evidence must identify the unsafe structured-data feature; ordinary parser crashes, query injection, and path traversal are outside this family."
     },
     {
       "id": "UntrustedDeserialization",
       "name": "Deserialization of Untrusted Data",
-      "description": "Unsafe restoration of objects from data streams, leading to RCE or logic manipulation.",
-      "parent": "InjectionFlaws"
+      "description": "Unsafe structured-data interpretation in which attacker-controlled serialized data reconstructs objects without adequate type or behavior restrictions, enabling gadget invocation, unsafe construction, or security-sensitive state changes. Parsing plain data without object reconstruction is not sufficient.",
+      "parent": "StructuredDataProcessing"
     },
     {
-      "id": "RequestHandling",
-      "name": "Request Handling",
-      "description": "Flaws in how an application constructs and sends requests to other network components.",
-      "parent": "InputValidation"
+      "id": "XXE",
+      "name": "XML External Entity Processing",
+      "description": "Unsafe structured-data interpretation in which an XML parser processes attacker-controlled external entity declarations or references. Evidence must establish entity resolution; XML deserialization gadgets and XPath expression changes use their respective sibling families.",
+      "parent": "StructuredDataProcessing"
+    },
+    {
+      "id": "PrototypePollution",
+      "name": "Prototype Pollution",
+      "description": "Unsafe structured-data interpretation in which attacker-controlled properties modify a shared prototype or inheritance object, causing later lookups to inherit unauthorized values or behavior. Changing only one ordinary object's permitted fields is not prototype pollution.",
+      "parent": "StructuredDataProcessing"
+    },
+    {
+      "id": "MassAssignment",
+      "name": "Unsafe Mass Assignment",
+      "description": "Unsafe structured-data interpretation in which a framework binds untrusted fields to an object without an allowlist and thereby permits security-sensitive properties that are not externally writable. A correctly bound identifier followed by a missing permission check is ImproperAuthorization instead.",
+      "parent": "StructuredDataProcessing"
+    },
+    {
+      "id": "RoutingAndDestinationControl",
+      "name": "Network Destination Control",
+      "description": "Attacker-controlled network identifiers cause a server, intermediary, or user agent to use an unintended destination or routing authority. Evidence must trace input to network routing or URL construction; selecting a filesystem resource or injecting protocol syntax belongs elsewhere."
     },
     {
       "id": "SSRF",
       "name": "Server-Side Request Forgery",
-      "description": "The server is coerced into making requests to unintended internal or external resources.",
-      "parent": "RequestHandling"
+      "description": "Network destination control in which attacker input makes the vulnerable server issue a request to an unintended resource using the server's network position, identity, or credentials. An open redirect that only directs the user's client is not SSRF.",
+      "parent": "RoutingAndDestinationControl"
+    },
+    {
+      "id": "OpenRedirect",
+      "name": "Unvalidated Redirect",
+      "description": "Network destination control in which attacker-supplied destination data makes an application redirect a user's client to an unintended location without adequate destination validation. Server-originated fetching is SSRF, and host-controlled security links are HostHeaderInjection.",
+      "parent": "RoutingAndDestinationControl"
+    },
+    {
+      "id": "HostHeaderInjection",
+      "name": "Host Header Injection",
+      "description": "Network destination control in which an untrusted HTTP Host or forwarded-host value controls security-sensitive absolute URLs, tenant routing, password-reset links, or backend selection. Evidence must show reliance on an untrusted host authority, not merely acceptance of an unusual header.",
+      "parent": "RoutingAndDestinationControl"
+    },
+    {
+      "id": "FileUploadControl",
+      "name": "Unsafe File Upload Acceptance",
+      "description": "An upload feature accepts attacker-controlled file content contrary to its intended content policy or trust boundary. Evidence must concern what file content the feature accepts; missing permission to invoke the upload is ImproperAuthorization, destination traversal is PathTraversal, and resource-size abuse is ResourceConsumption."
+    },
+    {
+      "id": "DangerousFileTypeUpload",
+      "name": "Dangerous File-Type Upload",
+      "description": "Unsafe file upload acceptance in which type or content validation permits executable, active, or otherwise dangerous content that the surrounding deployment will interpret or serve unsafely. Evidence must support the dangerous processing context, not merely the ability to store an arbitrary inert file.",
+      "parent": "FileUploadControl"
     },
     {
       "id": "AccessControl",
-      "name": "Access Control",
-      "description": "Weaknesses in the mechanisms used to verify identity and enforce permissions across the network."
+      "name": "Identity and Access-Control Failure",
+      "description": "The system fails to establish a principal, bind an authenticated session, authorize an action or resource, or verify the legitimacy of an authority-bearing request. Evidence must identify the failed access decision; obtaining privileges only as an impact of another mechanism is not enough."
     },
     {
-      "id": "BrokenAuthentication",
-      "name": "Broken Authentication",
-      "description": "Vulnerabilities in login or session management allowing attackers to compromise passwords or identity tokens.",
+      "id": "AuthenticationWeakness",
+      "name": "Authentication Failure",
+      "description": "An identity and access-control failure in which the system grants or recovers an authenticated identity without the required proof. Evidence must concern identity establishment rather than permission for one operation; predictable session identifiers and cryptographic key-generation defects use their dedicated branches unless authentication logic also fails independently.",
+      "parent": "AccessControl"
+    },
+    {
+      "id": "SessionManagementWeakness",
+      "name": "Authenticated Session Management Failure",
+      "description": "An identity and access-control failure in the creation, binding, rotation, lifetime, or invalidation of a session identifier after identity proof. Evidence must concern authenticated session state; bearer tokens for one-time recovery or invitations are not sessions.",
       "parent": "AccessControl"
     },
     {
       "id": "ImproperAuthorization",
-      "name": "Improper Authorization",
-      "description": "Failure to restrict access to sensitive resources or functions based on defined user privilege levels.",
+      "name": "Improper Action or Resource Authorization",
+      "description": "An identity and access-control failure in which a security-sensitive action or resource lacks an effective permission check or is evaluated against the wrong principal, action, resource, or context. This includes missing function-level checks; do not also add AuthenticationBypass unless an authenticated identity is separately forged or accepted.",
       "parent": "AccessControl"
     },
     {
-      "id": "CSRF",
-      "name": "Cross-Site Request Forgery",
-      "description": "Unverified requests are executed on behalf of an authenticated user without their consent.",
-      "parent": "ImproperAuthorization"
+      "id": "RequestAuthorizationWeakness",
+      "name": "Authority-Bearing Request Validation Failure",
+      "description": "An identity and access-control failure in which a request carries otherwise valid ambient or delegated authority but the application fails to establish its intended origin, approval, or freshness. This is distinct from identity authentication and from a missing permission check on the requested action.",
+      "parent": "AccessControl"
     },
     {
-      "id": "Memory",
-      "name": "Memory",
-      "description": "Low-level errors related to the insecure management of system memory, typically in compiled languages."
+      "id": "MemorySafety",
+      "name": "Memory Safety Violation",
+      "description": "The implementation accesses or manages storage outside the bounds, lifetime, initialization, pointer-validity, or object-type rules of a memory-unsafe runtime. Evidence must identify an invalid memory operation or an authoritative memory-safety diagnosis; a managed exception, parser rejection, or denial-of-service impact alone is insufficient."
     },
     {
-      "id": "MemoryCorruption",
-      "name": "Memory Corruption",
-      "description": "Flaws that allow attackers to modify memory contents to alter the execution flow of a program.",
-      "parent": "Memory"
+      "id": "SpatialMemorySafety",
+      "name": "Spatial Memory Safety Violation",
+      "description": "A memory safety violation in which a read or write targets bytes outside the valid bounds of the object or region authorized for that operation. Evidence must support an object boundary violation; invalid lifetime and incompatible object type have separate branches.",
+      "parent": "MemorySafety"
     },
     {
-      "id": "BufferOverflow",
-      "name": "Buffer Overflow",
-      "description": "Writing data past buffer boundaries on the stack or heap.",
-      "parent": "MemoryCorruption"
+      "id": "UninitializedMemoryRead",
+      "name": "Uninitialized Memory Read",
+      "description": "A memory safety violation in which the program reads bytes or fields that have not been initialized for the current object or operation. Evidence must establish the read of indeterminate or residual contents; a deliberately null pointer and stale freed storage use other labels.",
+      "parent": "MemorySafety"
     },
     {
-      "id": "UseAfterFree",
-      "name": "Use After Free",
-      "description": "Accessing memory after it has been explicitly freed. A specific memory corruption distinct from overflows.",
-      "parent": "MemoryCorruption"
+      "id": "TemporalMemorySafety",
+      "name": "Temporal Memory Safety Violation",
+      "description": "A memory safety violation caused by accessing, releasing, or reusing an object or handle outside its valid lifetime. Evidence must establish allocation, ownership, or handle-lifetime misuse; an object accessed with the wrong type but valid lifetime is TypeConfusion.",
+      "parent": "MemorySafety"
     },
     {
-      "id": "MemoryDisclosure",
-      "name": "Memory Disclosure",
-      "description": "Vulnerabilities that allow an attacker to read data from memory locations they should not access.",
-      "parent": "Memory"
+      "id": "TypeConfusion",
+      "name": "Memory Object Type Confusion",
+      "description": "A memory safety violation in which native storage is treated as an incompatible object type or layout, causing unsafe field, method, element, or variant access. Evidence must support incompatible representation assumptions; ordinary data-type validation errors in memory-safe code are excluded.",
+      "parent": "MemorySafety"
     },
     {
-      "id": "OutOfBoundsRead",
-      "name": "Out-of-bounds Read",
-      "description": "Reading data past allocated memory boundaries. Use this for memory-based information leaks.",
-      "parent": "MemoryDisclosure"
+      "id": "NullPointerDereference",
+      "name": "Null Pointer Dereference",
+      "description": "A memory safety violation in which code dereferences a null pointer because a required object or error state was not checked. Evidence must identify the null dereference itself; use this mechanism rather than adding a generic denial-of-service consequence.",
+      "parent": "MemorySafety"
     },
     {
-      "id": "ResourceManagement",
-      "name": "Resource Management",
-      "description": "Improper handling of limited system resources such as CPU, memory, disk space, or network bandwidth."
+      "id": "AvailabilityAndResources",
+      "name": "Resource Management Failure",
+      "description": "The defining defect violates a finite-resource bound, release obligation, or progress guarantee under attacker-reachable conditions. Evidence must identify the resource rule that fails; a crash caused by injection or invalid memory access is not independently a resource-management mechanism."
     },
     {
-      "id": "ResourceExhaustion",
-      "name": "Resource Exhaustion",
-      "description": "Uncontrolled consumption of system resources like CPU or bandwidth, leading to a denial of service.",
-      "parent": "ResourceManagement"
+      "id": "ResourceConsumption",
+      "name": "Uncontrolled Resource Consumption",
+      "description": "A resource management failure in which attacker-triggered work or state consumes CPU, memory, bandwidth, processes, or requests without an effective per-operation, per-client, or global bound. Evidence must identify the missing bound or amplification mechanism, not only service unavailability.",
+      "parent": "AvailabilityAndResources"
     },
     {
-      "id": "MemoryLeaks",
-      "name": "Memory Leak",
-      "description": "Failure to release memory after it is no longer needed, eventually leading to system instability or crashes.",
-      "parent": "ResourceManagement"
+      "id": "ResourceLifecycle",
+      "name": "Resource Release Failure",
+      "description": "A resource management failure in which resources acquired for completed, cancelled, or failed operations are not released and accumulate across operations. Evidence must establish retention beyond the intended lifecycle; one oversized allocation belongs to ResourceConsumption.",
+      "parent": "AvailabilityAndResources"
     },
     {
-      "id": "Misconfiguration",
-      "name": "Misconfiguration",
-      "description": "Security weaknesses arising from incorrect settings or incomplete deployment of security controls."
+      "id": "CoordinationFailure",
+      "name": "Concurrency Progress Failure",
+      "description": "A resource management failure in which concurrent actors cannot make progress because locking or coordination rules permit a stable non-progress state. Evidence must establish a concurrency relationship; slow work or resource exhaustion without blocked actors is outside this branch.",
+      "parent": "AvailabilityAndResources"
     },
     {
-      "id": "InsecureDefaults",
-      "name": "Insecure Defaults",
-      "description": "Deployment of software with overly permissive permissions or factory-preset credentials that are well-known.",
-      "parent": "Misconfiguration"
+      "id": "CryptographicProtection",
+      "name": "Cryptographic Protection Failure",
+      "description": "A security control fails because of cryptographic primitive selection, key management, randomness, nonce handling, or peer-certificate validation. Evidence must identify the failed cryptographic property; plaintext exposure without an intended cryptographic control is outside this taxonomy."
     },
     {
-      "id": "WeakCryptography",
-      "name": "Weak Cryptography",
-      "description": "Use of obsolete or flawed encryption algorithms that fail to ensure the confidentiality and integrity of data.",
-      "parent": "Misconfiguration"
+      "id": "AlgorithmSelection",
+      "name": "Unsafe Cryptographic Algorithm Selection",
+      "description": "A cryptographic protection failure caused by choosing a primitive, mode, digest, or key size that cannot provide the claimed property in the stated threat model. Evidence must identify the selected construction and its inadequacy; implementation bugs with a sound selection belong elsewhere.",
+      "parent": "CryptographicProtection"
     },
     {
-      "id": "InformationExposure",
-      "name": "Information Exposure",
-      "description": "Accidental disclosure of technical details or sensitive system data through error messages or metadata.",
-      "parent": "Misconfiguration"
+      "id": "KeyManagement",
+      "name": "Cryptographic Key Management Failure",
+      "description": "A cryptographic protection failure in key generation, storage, separation, distribution, rotation, or reuse rather than primitive selection. Evidence must concern secret key material; passwords and session identifiers are not cryptographic keys merely because they are secrets.",
+      "parent": "CryptographicProtection"
+    },
+    {
+      "id": "RandomnessAndNonce",
+      "name": "Cryptographic Randomness or Nonce Failure",
+      "description": "A cryptographic protection failure caused by predictable, biased, repeated, or insufficiently large random values, nonces, initialization vectors, salts, or non-session security tokens. Session identifiers use PredictableSessionToken to avoid duplicate classification.",
+      "parent": "CryptographicProtection"
+    },
+    {
+      "id": "CertificateValidation",
+      "name": "Certificate and Peer Validation Failure",
+      "description": "A cryptographic protection failure in which a secure-channel client or verifier does not correctly validate the presented certificate chain, trust anchor, signature, constraints, validity, or peer identity. Evidence must concern certificate-based peer authentication, not application login.",
+      "parent": "CryptographicProtection"
     }
   ]
 }

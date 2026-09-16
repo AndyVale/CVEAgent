@@ -50,21 +50,31 @@ def test_strategy_selection_is_taxonomy_aware_and_config_only(tmp_path):
     assert ClassificationCoordinator(forced_exhaustive, FixtureWeb(), FullFlowClient()).planner.plan(large_hierarchy).effective_strategy == EffectiveClassificationStrategy.EXHAUSTIVE
 
 
-def test_auto_selects_hybrid_for_large_hybrid_fixture(tmp_path):
-    fixture = Path(__file__).parents[2] / "fixtures" / "hybrid" / "taxonomy.json"
-    selected_taxonomy = load_taxonomy(fixture)
+def test_demo_fixtures_use_the_documented_automatic_strategies(tmp_path):
+    fixtures = Path(__file__).parents[2] / "fixtures"
     base = settings(tmp_path)
     configured = base.__class__(**{
         **base.__dict__,
         "token_budget": 50_000,
     })
 
-    plan = ClassificationCoordinator(configured, FixtureWeb(), FullFlowClient()).planner.plan(selected_taxonomy)
+    plans = {
+        name: ClassificationCoordinator(configured, FixtureWeb(), FullFlowClient()).planner.plan(
+            load_taxonomy(fixtures / name / "taxonomy.json")
+        )
+        for name in ("flat", "hierarchical", "hybrid")
+    }
 
-    assert plan.effective_strategy == EffectiveClassificationStrategy.HYBRID
-    assert len(plan.chunks) == 2
-    assert 0 < plan.budget.classification_reserve < configured.token_budget
-    assert plan.budget.investigation_limit == configured.token_budget - plan.budget.classification_reserve
+    assert plans["flat"].effective_strategy == EffectiveClassificationStrategy.EXHAUSTIVE
+    assert len(plans["flat"].chunks) == 1
+    assert plans["hierarchical"].effective_strategy == EffectiveClassificationStrategy.EXHAUSTIVE
+    assert len(plans["hierarchical"].chunks) == 1
+    assert plans["hybrid"].effective_strategy == EffectiveClassificationStrategy.HYBRID
+    assert len(plans["hybrid"].chunks) == 2
+    assert 0 < plans["hybrid"].budget.classification_reserve < configured.token_budget
+    assert plans["hybrid"].budget.investigation_limit == (
+        configured.token_budget - plans["hybrid"].budget.classification_reserve
+    )
 
 
 def test_flat_taxonomy_logs_that_configured_hybrid_strategy_is_ignored(tmp_path, caplog):

@@ -1,80 +1,51 @@
 {
   "name": "Flat Vulnerability Mechanisms",
+  "hierarchy_policy": "most_specific",
   "labels": [
     {
-      "id": "XSS",
-      "name": "Cross-site Scripting",
-      "description": "Malicious scripts are injected into web pages and executed in the victim's browser."
+      "id": "InterpreterInjection",
+      "name": "Interpreter or Parser Injection",
+      "description": "Attacker-controlled data changes the grammar, executable structure, or directives consumed by an interpreter or parser instead of remaining a literal value. Evidence must identify the interpreted context and how input crosses its syntax boundary; malformed data that only crashes a parser, object reconstruction, and path selection are outside this family."
     },
     {
-      "id": "SQLi",
-      "name": "SQL Injection",
-      "description": "Malicious SQL queries are injected to manipulate the database."
+      "id": "PathAndResourceSelection",
+      "name": "Filesystem Resource Boundary Violation",
+      "description": "Attacker-controlled names, paths, archive entries, or filesystem links resolve to a file or directory outside the resource set intended for an operation. Evidence must show unauthorized filesystem target selection; object identifiers, network destinations, and merely dangerous uploaded content use other families."
     },
     {
-      "id": "CSRF",
-      "name": "Cross-Site Request Forgery",
-      "description": "Unverified requests are executed on behalf of an authenticated user without their consent."
+      "id": "StructuredDataProcessing",
+      "name": "Unsafe Structured-Data Interpretation",
+      "description": "Attacker-controlled structured data is interpreted with object, reference, binding, or graph capabilities beyond the intended data-only contract. Evidence must identify the unsafe structured-data feature; ordinary parser crashes, query injection, and path traversal are outside this family."
     },
     {
-      "id": "SSRF",
-      "name": "Server-Side Request Forgery",
-      "description": "The server is coerced into making requests to unintended internal or external resources."
+      "id": "RoutingAndDestinationControl",
+      "name": "Network Destination Control",
+      "description": "Attacker-controlled network identifiers cause a server, intermediary, or user agent to use an unintended destination or routing authority. Evidence must trace input to network routing or URL construction; selecting a filesystem resource or injecting protocol syntax belongs elsewhere."
     },
     {
-      "id": "PathTraversal",
-      "name": "Path Traversal",
-      "description": "Manipulation of file paths (e.g., '../') to access files or directories outside the intended scope."
-    },
-    {
-      "id": "CommandInjection",
-      "name": "Command Injection",
-      "description": "Unvalidated input is used to construct system shell commands. Covers OS Command Injection."
-    },
-    {
-      "id": "CodeInjection",
-      "name": "Code Injection",
-      "description": "Unvalidated input is executed as code by the application's interpreter (e.g., PHP, Python, Java)."
-    },
-    {
-      "id": "UntrustedDeserialization",
-      "name": "Deserialization of Untrusted Data",
-      "description": "Unsafe restoration of objects from data streams, leading to RCE or logic manipulation."
-    },
-    {
-      "id": "BufferOverflow",
-      "name": "Buffer Overflow",
-      "description": "Writing data past buffer boundaries on the stack or heap. explicitly covers Out-of-bounds Write."
-    },
-    {
-      "id": "OutOfBoundsRead",
-      "name": "Out-of-bounds Read",
-      "description": "Reading data past allocated memory boundaries. Use this for memory-based information leaks."
-    },
-    {
-      "id": "UseAfterFree",
-      "name": "Use After Free",
-      "description": "Accessing memory after it has been explicitly freed. A specific memory corruption distinct from overflows."
+      "id": "FileUploadControl",
+      "name": "Unsafe File Upload Acceptance",
+      "description": "An upload feature accepts attacker-controlled file content contrary to its intended content policy or trust boundary. Evidence must concern what file content the feature accepts; missing permission to invoke the upload is ImproperAuthorization, destination traversal is PathTraversal, and resource-size abuse is ResourceConsumption."
     },
     {
       "id": "AccessControl",
-      "name": "Broken Access Control",
-      "description": "Failure to manage user privileges. Covers Missing Authentication, Authorization Bypass, and Privilege Escalation."
+      "name": "Identity and Access-Control Failure",
+      "description": "The system fails to establish a principal, bind an authenticated session, authorize an action or resource, or verify the legitimacy of an authority-bearing request. Evidence must identify the failed access decision; obtaining privileges only as an impact of another mechanism is not enough."
     },
     {
-      "id": "InfoLeak",
-      "name": "Exposure of Sensitive Information",
-      "description": "Logical exposure of private data (credentials, PII) via logs or responses. (Distinct from memory-based Out-Of-Bounds Read)."
+      "id": "MemorySafety",
+      "name": "Memory Safety Violation",
+      "description": "The implementation accesses or manages storage outside the bounds, lifetime, initialization, pointer-validity, or object-type rules of a memory-unsafe runtime. Evidence must identify an invalid memory operation or an authoritative memory-safety diagnosis; a managed exception, parser rejection, or denial-of-service impact alone is insufficient."
     },
     {
-      "id": "ResourceExhaustion",
-      "name": "Resource Exhaustion",
-      "description": "Uncontrolled allocation of resources (memory, CPU, disk) causing Denial of Service (DoS). Covers Null Pointer Dereferences if they cause crashes."
+      "id": "AvailabilityAndResources",
+      "name": "Resource Management Failure",
+      "description": "The defining defect violates a finite-resource bound, release obligation, or progress guarantee under attacker-reachable conditions. Evidence must identify the resource rule that fails; a crash caused by injection or invalid memory access is not independently a resource-management mechanism."
     },
     {
-      "id": "InputValidation",
-      "name": "Improper Input Validation",
-      "description": "General failure to validate data correctness. Catch-all for Dangerous File Uploads, Integer Overflows, and Format Strings."
+      "id": "CryptographicProtection",
+      "name": "Cryptographic Protection Failure",
+      "description": "A security control fails because of cryptographic primitive selection, key management, randomness, nonce handling, or peer-certificate validation. Evidence must identify the failed cryptographic property; plaintext exposure without an intended cryptographic control is outside this taxonomy."
     }
   ]
 }
