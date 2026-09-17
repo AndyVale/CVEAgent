@@ -105,13 +105,13 @@
     {
       "id": "PathTraversal",
       "name": "Path Traversal",
-      "description": "A filesystem resource boundary violation in which crafted path components, absolute paths, encoded separators, or normalization discrepancies escape an intended directory. Evidence must establish the resolved filesystem scope; accessing another database object by identifier is IDOR, not path traversal.",
+      "description": "A filesystem resource boundary violation in which crafted path components, absolute paths, encoded separators, or normalization discrepancies escape an intended directory. Evidence must establish the resolved filesystem scope; accessing another database object by identifier without a permission check is an authorization failure, not path traversal.",
       "parent": "PathAndResourceSelection"
     },
     {
       "id": "ZipSlip",
       "name": "Archive Extraction Path Traversal",
-      "description": "Path traversal in which a crafted archive member name or link escapes the extraction directory when unpacked. Evidence must identify archive extraction as the path-resolution operation; traversal in an ordinary HTTP or file API remains PathTraversal.",
+      "description": "Path traversal in which a crafted archive member path escapes the extraction directory when unpacked. Evidence must identify archive extraction and the resolved path outside that directory; an archive link that redirects extraction without a path escape is improper filesystem link resolution.",
       "parent": "PathTraversal"
     },
     {
@@ -152,7 +152,7 @@
     {
       "id": "RoutingAndDestinationControl",
       "name": "Network Destination Control",
-      "description": "Attacker-controlled network identifiers cause a server, intermediary, or user agent to use an unintended destination or routing authority. Evidence must trace input to network routing or URL construction; selecting a filesystem resource or injecting protocol syntax belongs elsewhere."
+      "description": "Attacker-controlled network identifiers determine an unintended network destination or routing authority for a request, redirect, backend selection, or security-sensitive absolute URL. Evidence must trace input to that destination or authority; selecting a filesystem resource or injecting protocol syntax belongs elsewhere."
     },
     {
       "id": "SSRF",
@@ -169,13 +169,13 @@
     {
       "id": "HostHeaderInjection",
       "name": "Host Header Injection",
-      "description": "Network destination control in which an untrusted HTTP Host or forwarded-host value controls security-sensitive absolute URLs, tenant routing, password-reset links, or backend selection. Evidence must show reliance on an untrusted host authority, not merely acceptance of an unusual header.",
+      "description": "Network destination control in which an untrusted HTTP Host or forwarded-host value determines an unintended routing authority, backend, or security-sensitive absolute URL such as a password-reset link. Evidence must trace the untrusted host value to that destination or authority, not merely show acceptance of an unusual header.",
       "parent": "RoutingAndDestinationControl"
     },
     {
       "id": "FileUploadControl",
       "name": "Unsafe File Upload Acceptance",
-      "description": "An upload feature accepts attacker-controlled file content contrary to its intended content policy or trust boundary. Evidence must concern what file content the feature accepts; missing permission to invoke the upload is ImproperAuthorization, destination traversal is PathTraversal, and resource-size abuse is ResourceConsumption."
+      "description": "An upload feature accepts attacker-controlled file content contrary to its intended content policy or trust boundary. Evidence must concern what file content the feature accepts; missing permission to invoke the upload, filesystem destination traversal, and resource-size abuse are separate mechanisms."
     },
     {
       "id": "DangerousFileTypeUpload",
@@ -191,7 +191,7 @@
     {
       "id": "AuthenticationWeakness",
       "name": "Authentication Failure",
-      "description": "An identity and access-control failure in which the system grants or recovers an authenticated identity without the required proof. Evidence must concern identity establishment rather than permission for one operation; predictable session identifiers and cryptographic key-generation defects use their dedicated branches unless authentication logic also fails independently.",
+      "description": "An identity and access-control failure in which the system grants or recovers an authenticated identity without sufficient proof that the requester is entitled to that identity. Evidence must concern identity establishment rather than permission for one operation; predictable session identifiers and cryptographic key-generation defects use their dedicated branches unless authentication logic also fails independently.",
       "parent": "AccessControl"
     },
     {
@@ -239,7 +239,7 @@
     {
       "id": "ImproperAuthorization",
       "name": "Improper Action or Resource Authorization",
-      "description": "An identity and access-control failure in which a security-sensitive action or resource lacks an effective permission check or is evaluated against the wrong principal, action, resource, or context. This includes missing function-level checks; do not also add AuthenticationBypass unless an authenticated identity is separately forged or accepted.",
+      "description": "An identity and access-control failure in which a security-sensitive action or resource lacks an effective permission check or is evaluated against the wrong principal, action, resource, or context. This includes missing function-level checks; accepting or forging an authenticated identity is a distinct authentication failure when separately established.",
       "parent": "AccessControl"
     },
     {
@@ -316,7 +316,7 @@
     {
       "id": "TemporalMemorySafety",
       "name": "Temporal Memory Safety Violation",
-      "description": "A memory safety violation caused by accessing, releasing, or reusing an object or handle outside its valid lifetime. Evidence must establish allocation, ownership, or handle-lifetime misuse; an object accessed with the wrong type but valid lifetime is TypeConfusion.",
+      "description": "A memory safety violation caused by accessing, releasing, or reusing a native allocation or object outside its valid lifetime. Evidence must establish allocation or ownership misuse involving memory; an object accessed with the wrong type but valid lifetime is TypeConfusion.",
       "parent": "MemorySafety"
     },
     {
@@ -334,8 +334,7 @@
     {
       "id": "StaleHandleUse",
       "name": "Stale Handle Use",
-      "description": "A temporal memory safety violation in which an invalidated or recycled descriptor, numeric handle, or object token is reused and resolves to the wrong resource. Evidence must concern handle identity and lifetime rather than direct access to freed memory.",
-      "parent": "TemporalMemorySafety"
+      "description": "An invalidated or recycled descriptor, numeric handle, or object token is reused and resolves to a resource other than the one for which the handle was issued. Evidence must establish the handle identity and lifetime error; direct access to freed native memory is a separate memory-safety mechanism."
     },
     {
       "id": "TypeConfusion",
@@ -346,7 +345,7 @@
     {
       "id": "NullPointerDereference",
       "name": "Null Pointer Dereference",
-      "description": "A memory safety violation in which code dereferences a null pointer because a required object or error state was not checked. Evidence must identify the null dereference itself; use this mechanism rather than adding a generic denial-of-service consequence.",
+      "description": "A memory safety violation in which native or other memory-unsafe code dereferences a null pointer because a required object or error state was not checked. Evidence must identify the invalid pointer dereference; a managed-language null-reference exception or denial-of-service impact alone is insufficient.",
       "parent": "MemorySafety"
     },
     {
@@ -411,7 +410,7 @@
     {
       "id": "CryptographicProtection",
       "name": "Cryptographic Protection Failure",
-      "description": "A security control fails because of cryptographic primitive selection, key management, randomness, nonce handling, or peer-certificate validation. Evidence must identify the failed cryptographic property; plaintext exposure without an intended cryptographic control is outside this taxonomy."
+      "description": "A security control fails because of cryptographic primitive selection, key management, randomness, nonce handling, or peer-certificate validation. Evidence must identify the failed cryptographic property; plaintext exposure without an intended cryptographic control does not by itself satisfy this label."
     },
     {
       "id": "AlgorithmSelection",
@@ -464,7 +463,7 @@
     {
       "id": "RandomnessAndNonce",
       "name": "Cryptographic Randomness or Nonce Failure",
-      "description": "A cryptographic protection failure caused by predictable, biased, repeated, or insufficiently large random values, nonces, initialization vectors, salts, or non-session security tokens. Session identifiers use PredictableSessionToken to avoid duplicate classification.",
+      "description": "A cryptographic protection failure caused by predictable, biased, repeated, or insufficiently large random values, nonces, initialization vectors, salts, or non-session security tokens. Predictable authenticated session identifiers are session-management failures and do not by themselves satisfy this label.",
       "parent": "CryptographicProtection"
     },
     {

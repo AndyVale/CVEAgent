@@ -3,7 +3,7 @@
 ## Purpose
 
 This fixture is an illustrative demo taxonomy, not a complete or standardized vulnerability
-ontology. It contains 84 mechanism labels under nine independent roots, uses the `most_specific`
+ontology. It contains 84 mechanism labels under ten independent roots, uses the `most_specific`
 hierarchy policy, and has paths of at most four levels.
 
 The name **hybrid** describes how the classification step consumes this hierarchy. It does not
@@ -35,7 +35,7 @@ Every hierarchy edge follows this implication: if the child is supported, the pa
 supported. Internal labels remain valid expected answers when evidence establishes their mechanism
 but is not detailed enough to select a child.
 
-The nine root families are:
+The ten roots are:
 
 | Root | Scope |
 | --- | --- |
@@ -46,6 +46,7 @@ The nine root families are:
 | `FileUploadControl` | Upload acceptance that violates the intended content policy or trust boundary. |
 | `AccessControl` | Failures to establish identity, manage sessions, authorize actions, or validate authority-bearing requests. |
 | `MemorySafety` | Invalid native-memory bounds, lifetime, initialization, pointer-validity, or object-type behavior. |
+| `StaleHandleUse` | Reuse of an invalidated or recycled resource handle that resolves to a different resource. |
 | `AvailabilityAndResources` | Violations of resource bounds, release obligations, or concurrency progress guarantees. |
 | `CryptographicProtection` | Failures in primitive selection, key management, randomness, nonce handling, or certificate validation. |
 
@@ -63,7 +64,10 @@ The nine root families are:
   otherwise dangerous in the deployment context. Arbitrary upload acceptance without that
   processing evidence remains `FileUploadControl`.
 - `ZipSlip` is archive-extraction `PathTraversal`, because every supported Zip Slip case also
-  escapes an intended filesystem directory.
+  escapes an intended filesystem directory through a crafted member path. Archive links that
+  redirect extraction without such a path escape use `ImproperLinkResolution`.
+- `StaleHandleUse` is independent of `MemorySafety`: a reused descriptor or numeric handle can
+  select the wrong resource without an invalid native-memory operation.
 - Memory labels distinguish bounds, lifetime, initialization, pointer validity, and native object
   representation. Generic memory corruption remains at the narrowest supported internal label.
 - Resource-management labels are used only when an attacker-reachable resource rule fails. A crash
@@ -92,9 +96,9 @@ documented configuration.
 
 All three demo benchmarks contain the same 50 unique CVEs in the same order and retain the same
 evidence-source lists. This benchmark is the semantic reference. The flat benchmark projects every
-label to its nearest root. The hierarchical benchmark keeps labels at levels one and two and
-projects deeper labels to their nearest retained level-two ancestor. Converging projections are
-deduplicated in original order.
+benchmarked label to its nearest shared root. The hierarchical benchmark keeps benchmarked labels
+at levels one and two and projects deeper labels to their nearest retained level-two ancestor.
+Converging projections are deduplicated in original order.
 
 Every benchmark uses the standard three-field format: `schema_version`, `taxonomy_sha256`, and
 `cases`. Rationales are written for each taxonomy's actual granularity. Parent and child labels do

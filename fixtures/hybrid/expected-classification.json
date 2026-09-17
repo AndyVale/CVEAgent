@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "taxonomy_sha256": "d466b8ebd065c5df63a282f657de58b9bb9ae17e743b1cfdc773fd63e431083e",
+  "taxonomy_sha256": "e12a7822d936b89d0885d5edfe202faf7ba75da13a93ae9e8e334d5a8300808e",
   "cases": [
     {
       "cve_id": "CVE-2021-27103",

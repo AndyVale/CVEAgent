@@ -20,12 +20,12 @@
     {
       "id": "RoutingAndDestinationControl",
       "name": "Network Destination Control",
-      "description": "Attacker-controlled network identifiers cause a server, intermediary, or user agent to use an unintended destination or routing authority. Evidence must trace input to network routing or URL construction; selecting a filesystem resource or injecting protocol syntax belongs elsewhere."
+      "description": "Attacker-controlled network identifiers determine an unintended network destination or routing authority for a request, redirect, backend selection, or security-sensitive absolute URL. Evidence must trace input to that destination or authority; selecting a filesystem resource or injecting protocol syntax belongs elsewhere."
     },
     {
       "id": "FileUploadControl",
       "name": "Unsafe File Upload Acceptance",
-      "description": "An upload feature accepts attacker-controlled file content contrary to its intended content policy or trust boundary. Evidence must concern what file content the feature accepts; missing permission to invoke the upload is ImproperAuthorization, destination traversal is PathTraversal, and resource-size abuse is ResourceConsumption."
+      "description": "An upload feature accepts attacker-controlled file content contrary to its intended content policy or trust boundary. Evidence must concern what file content the feature accepts; missing permission to invoke the upload, filesystem destination traversal, and resource-size abuse are separate mechanisms."
     },
     {
       "id": "AccessControl",
@@ -45,7 +45,7 @@
     {
       "id": "CryptographicProtection",
       "name": "Cryptographic Protection Failure",
-      "description": "A security control fails because of cryptographic primitive selection, key management, randomness, nonce handling, or peer-certificate validation. Evidence must identify the failed cryptographic property; plaintext exposure without an intended cryptographic control is outside this taxonomy."
+      "description": "A security control fails because of cryptographic primitive selection, key management, randomness, nonce handling, or peer-certificate validation. Evidence must identify the failed cryptographic property; plaintext exposure without an intended cryptographic control does not by itself satisfy this label."
     }
   ]
 }

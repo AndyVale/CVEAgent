@@ -21,17 +21,23 @@
 
 - Work is on `main`. The working tree was clean before this task. No commit should be created until
   the developer explicitly approves the proposed commit.
-- The three demo taxonomies are progressive projections of one mechanism model:
-  - flat: nine hybrid roots, no parent relationships;
-  - hierarchical: the 39 hybrid labels at levels one and two, nine roots, maximum depth two;
-  - hybrid: the 84-label reference, nine roots, maximum depth four.
+- The three demo taxonomies share one mechanism model:
+  - flat: nine shared hybrid roots, no parent relationships;
+  - hierarchical: the 39 shared hybrid labels at levels one and two, nine roots, maximum depth two;
+  - hybrid: the 84-label reference, ten roots, maximum depth four.
 - Shared label IDs retain identical names and definitions. The hierarchical and hybrid fixtures use
   `most_specific`; the flat fixture also retains that default policy although it has no ancestry.
 - All three expected-classification files use only `schema_version`, `taxonomy_sha256`, and `cases`.
   They contain the same 50 unique CVEs in the same order and preserve the same source lists.
-- Flat expectations project each hybrid label to its nearest root. Hierarchical expectations retain
-  levels one and two and project deeper labels to the nearest level-two ancestor. Converging labels
-  are deduplicated without reordering. Rationales were rewritten for each taxonomy's granularity.
+- Flat expectations project each benchmarked hybrid label to its nearest shared root.
+  Hierarchical expectations retain levels one and two and project deeper labels to the nearest
+  level-two ancestor. Converging labels are deduplicated without reordering. Rationales were
+  rewritten for each taxonomy's granularity.
+- On 2026-09-17, rechecked every expected selection that directly uses or descends from a revised
+  definition across the 50 aligned cases. Native use-after-free, authorization, authentication,
+  routing, upload, path, and nonce cases still fit. No case uses `StaleHandleUse`, `ZipSlip`,
+  `HostHeaderInjection`, or `NullPointerDereference`. Expected labels and rationales need no
+  changes; only the three taxonomy fingerprint values were refreshed.
 - The existing online evidence was rechecked and remained consistent with all 50 hybrid
   expectations. No CVE was excluded, replaced, or classified from CVEAgent output. All seven
   cross-root multi-mechanism cases remain multi-label in every projection.
@@ -45,9 +51,9 @@
 - Documentation-only design notes live beside each fixture. Application code does not reference
   those Markdown files. The main README describes the shared benchmark and consumption strategies.
 - Current fingerprints:
-  - flat: `f9c8d5199d4809a95c6773344e81d247ef41589c4cf6f40d09c6633887bcb960`
-  - hierarchical: `4a270d875feea19885efea23ee86cb2ce8c5d861dfeaab721493e94b940b3b43`
-  - hybrid: `d466b8ebd065c5df63a282f657de58b9bb9ae17e743b1cfdc773fd63e431083e`
+  - flat: `4ac8956192bee78de970b9d9db41a81e55b39bc9370aa70d170be3ed770a426b`
+  - hierarchical: `13a5a7344910919dabd9763b1f6afc318e3fab936338a1f1de39af5c2c539fa1`
+  - hybrid: `e12a7822d936b89d0885d5edfe202faf7ba75da13a93ae9e8e334d5a8300808e`
 - Verification: 37 focused taxonomy, evaluation, planning, and hybrid traversal tests pass. The
   full offline Python suite passes with 320 tests. All fixture JSON parses, the independent fixture
   audit passes, application source does not reference the taxonomy Markdown files, and

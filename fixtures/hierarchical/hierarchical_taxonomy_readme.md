@@ -16,9 +16,10 @@ This Markdown file documents the fixture and is not an application input.
 
 ## Relationship to the other demos
 
-The hierarchical taxonomy is a two-level projection of the 84-label hybrid demo. It retains every
-hybrid label at levels one and two: the nine roots and one specialization level. Shared IDs, names,
-definitions, and parent relationships are unchanged.
+The hierarchical taxonomy is a two-level projection of the 84-label hybrid demo for the shared
+families. It retains the nine shared roots and their immediate specializations. The hybrid demo
+also has an independent `StaleHandleUse` root, which has no case in this benchmark. Shared IDs,
+names, definitions, and parent relationships are unchanged.
 
 Every retained child is a mechanism specialization of its parent. If the child is supported, its
 parent must also be supported. The parent is omitted from the final answer under `most_specific`;

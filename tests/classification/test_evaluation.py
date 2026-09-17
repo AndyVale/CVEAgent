@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import re
 
 import pytest
 
@@ -208,18 +209,23 @@ def test_demo_taxonomies_are_progressively_finer_hybrid_projections():
 
     assert flat.name == "Flat Vulnerability Mechanisms"
     assert len(flat.labels) == 9
-    assert tuple(label.id for label in flat.labels) == hybrid_roots
+    assert tuple(label.id for label in flat.labels) == tuple(
+        label_id for label_id in hybrid_roots if label_id != "StaleHandleUse"
+    )
     assert all(label.parent is None for label in flat.labels)
 
     assert hierarchical.name == "Hierarchical Vulnerability Mechanisms"
     assert len(hierarchical.labels) == 39
-    assert tuple(label.id for label in hierarchical.labels) == hybrid_two_levels
+    assert tuple(label.id for label in hierarchical.labels) == tuple(
+        label_id for label_id in hybrid_two_levels if label_id != "StaleHandleUse"
+    )
     assert len([label for label in hierarchical.labels if label.parent is None]) == 9
     assert max(_depth(hierarchical, label.id) for label in hierarchical.labels) == 2
 
     assert hybrid.name == "Adaptive Vulnerability Mechanisms"
     assert len(hybrid.labels) == 84
-    assert len(hybrid_roots) == 9
+    assert len(hybrid_roots) == 10
+    assert hybrid.by_id["StaleHandleUse"].parent is None
     assert max(_depth(hybrid, label.id) for label in hybrid.labels) == 4
 
     for projection in (flat, hierarchical):
@@ -230,6 +236,17 @@ def test_demo_taxonomies_are_progressively_finer_hybrid_projections():
                 reference.description,
                 reference.parent,
             )
+
+
+def test_demo_descriptions_reference_only_local_label_ids():
+    taxonomies = {name: _fixture_pair(name)[0] for name in DEMO_NAMES}
+    all_ids = {label.id for taxonomy in taxonomies.values() for label in taxonomy.labels}
+
+    for taxonomy in taxonomies.values():
+        local_ids = set(taxonomy.by_id)
+        for label in taxonomy.labels:
+            references = set(re.findall(r"\b[A-Za-z][A-Za-z0-9]*\b", label.description)) & all_ids
+            assert references <= local_ids, (taxonomy.name, label.id, references - local_ids)
 
 
 def test_projected_expected_labels_exactly_match_hybrid_expectations():
@@ -268,7 +285,7 @@ def test_hybrid_fixture_has_prunable_semantic_hierarchy_and_50_curated_cases():
 
     assert selected_taxonomy.name == "Adaptive Vulnerability Mechanisms"
     assert len(selected_taxonomy.labels) == 84
-    assert len(roots) == 9
+    assert len(roots) == 10
     assert max(_depth(selected_taxonomy, label.id) for label in selected_taxonomy.labels) == 4
     assert len(benchmark.cases) == 50
     assert len(set(benchmark.cve_ids)) == 50

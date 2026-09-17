@@ -248,21 +248,24 @@ specializations. It uses `most_specific`, and all 39 labels fit in one exhaustiv
 example 12,000-token input limit. The default `auto` strategy therefore consumes both the flat and
 hierarchical demos exhaustively.
 
-`fixtures/hybrid/taxonomy.json` is the 84-label semantic reference, with nine roots and paths up to
-four levels deep. Every parent is a semantic superset of its descendants, so an unsupported parent
-can safely prune its subtree. A linear exhaustive scan requires two chunks under the same input
-limit. With `token_budget = 50000`, `auto` selects the hybrid scanner: it combines iterative parent
-routing and pruning with exhaustive scanning of an active subtree when that is cheaper or needed
-for reliable completion. “Hybrid” describes this classification path, not a mixture of ontology
-types. The same hierarchy could technically be consumed with a forced exhaustive strategy.
+`fixtures/hybrid/taxonomy.json` is the 84-label semantic reference, with ten roots and paths up to
+four levels deep. Its additional root, `StaleHandleUse`, covers recycled resource handles that do
+not necessarily involve invalid memory access. Every parent is a semantic superset of its
+descendants, so an unsupported parent can safely prune its subtree. A linear exhaustive scan
+requires two chunks under the same input limit. With `token_budget = 50000`, `auto` selects the hybrid
+scanner: it combines iterative parent routing and pruning with exhaustive scanning of an active
+subtree when that is cheaper or needed for reliable completion. “Hybrid” describes this
+classification path, not a mixture of ontology types. The same hierarchy could technically be
+consumed with a forced exhaustive strategy.
 
-Flat expectations project each hybrid label to its nearest root. Hierarchical expectations keep
-labels at levels one and two and project deeper labels to their nearest retained level-two
-ancestor. Converging projections are deduplicated in original order. All three benchmarks retain
-seven cross-root multi-mechanism cases after `most_specific` normalization and keep identical
-source lists. Selection starts from a commit-pinned 1,703-entry CISA Known Exploited
-Vulnerabilities catalog snapshot with seed `20260910`, followed by a documented randomized
-multi-mechanism stratum. CVEAgent predictions were not used as expected answers.
+Flat expectations project each benchmarked hybrid label to its nearest shared root. Hierarchical
+expectations keep benchmarked labels at levels one and two and project deeper labels to their
+nearest retained level-two ancestor. Converging projections are deduplicated in original order.
+All three benchmarks retain seven cross-root multi-mechanism cases after `most_specific`
+normalization and keep identical source lists. Selection starts from a commit-pinned 1,703-entry
+CISA Known Exploited Vulnerabilities catalog snapshot with seed `20260910`, followed by a
+documented randomized multi-mechanism stratum. CVEAgent predictions were not used as expected
+answers.
 
 Design, projection, evidence, coverage, and limitation details are documented alongside each
 fixture in `fixtures/flat/flat_taxonomy_readme.md`,

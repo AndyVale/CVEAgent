@@ -16,9 +16,10 @@ This Markdown file documents the fixture and is not an application input.
 
 ## Relationship to the other demos
 
-The flat taxonomy is the coarsest projection of the 84-label hybrid demo. Its labels are exactly
-the hybrid taxonomy's nine roots, with the same IDs, names, and definitions but without parent
-relationships. Each root represents one independent mechanism family:
+The flat taxonomy is the coarsest projection used by the 50-CVE benchmark. Its labels are the
+hybrid taxonomy's nine shared roots, with the same IDs, names, and definitions but without parent
+relationships. The hybrid taxonomy also has an independent `StaleHandleUse` root, which has no
+case in this benchmark. Each flat root represents one independent mechanism family:
 
 | Root | Scope |
 | --- | --- |
@@ -40,8 +41,8 @@ hierarchy.
 
 All three demo benchmarks contain the same 50 unique CVEs in the same order and retain the same
 evidence-source lists. The hybrid expectations are the semantic reference. For the flat benchmark,
-each supported hybrid label is replaced by its nearest root. Projections that converge on the same
-root are deduplicated in their original order.
+each benchmarked hybrid label is replaced by its nearest shared root. Projections that converge on
+the same root are deduplicated in their original order.
 
 The benchmark uses the standard three-field format: `schema_version`, `taxonomy_sha256`, and
 `cases`. Every rationale explains the evidence at the flat taxonomy's available granularity.
