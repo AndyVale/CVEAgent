@@ -32,7 +32,9 @@ class WebClient:
     ):
         self.settings = settings
         self.searcher = searcher
-        self.http = HttpClientSession(settings.web_timeout, http_client)
+        self.http = HttpClientSession(
+            settings.web_timeout, http_client, trust_env=False, keepalive=False,
+        )
         self.url_policy = url_policy or PublicWebUrlPolicy()
 
     def close(self) -> None:
@@ -102,17 +104,23 @@ class WebClient:
         return document
 
     def _download(self, url: str) -> tuple[bytes, str, tuple[str, ...], str, str | None]:
-        client = self.http.get()
         current_url = url
         redirect_chain: list[str] = []
         for _ in range(11):
-            self.url_policy.validate(current_url)
-            with client.stream("GET", current_url, follow_redirects=False) as response:
-                response_url = str(response.url)
-                self.url_policy.validate(response_url)
+            address = self.url_policy.resolve_public_address(current_url)
+            logical_url = httpx.URL(current_url)
+            pinned_url = logical_url.copy_with(host=address)
+            with self.http.get().stream(
+                "GET",
+                pinned_url,
+                headers={"Host": logical_url.netloc.decode("ascii")},
+                extensions={"sni_hostname": logical_url.host},
+                follow_redirects=False,
+            ) as response:
+                response_url = str(logical_url)
                 if response.has_redirect_location:
                     redirect_chain.append(response_url)
-                    current_url = str(response.url.join(response.headers["location"]))
+                    current_url = str(logical_url.join(response.headers["location"]))
                     continue
                 response.raise_for_status()
                 content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()

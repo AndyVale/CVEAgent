@@ -103,6 +103,7 @@ def test_validate_supplies_cves_and_prints_metrics_in_table_without_breaking_jso
     taxonomy_path.write_text(json.dumps({"labels": [{"id": "EXPECTED", "name": "Expected", "description": "fixture"}]}), encoding="utf-8")
     expected_path = tmp_path / "expected.json"
     expected_path.write_text(json.dumps({
+        "schema_version": 1,
         "taxonomy_sha256": taxonomy_fingerprint(load_taxonomy(taxonomy_path)),
         "cases": [{"cve_id": "CVE-2020-0001", "labels": ["EXPECTED"]}],
     }), encoding="utf-8")
@@ -129,6 +130,7 @@ def test_verbose_keeps_validation_correctness_out_of_final_log(tmp_path, capsys)
     taxonomy_path.write_text(json.dumps({"labels": [{"id": "EXPECTED", "name": "Expected", "description": "fixture"}]}), encoding="utf-8")
     expected_path = tmp_path / "expected.json"
     expected_path.write_text(json.dumps({
+        "schema_version": 1,
         "taxonomy_sha256": taxonomy_fingerprint(load_taxonomy(taxonomy_path)),
         "cases": [{"cve_id": "CVE-2024-0001", "labels": ["EXPECTED"]}],
     }), encoding="utf-8")
@@ -148,6 +150,29 @@ def test_verbose_keeps_validation_correctness_out_of_final_log(tmp_path, capsys)
     assert "COMPLETE" in captured.err
     assert "run completed successful=1 partial=0 failed=0" in captured.err
     assert "exact_matches=" not in captured.err
+
+
+def test_validate_rejects_benchmark_without_required_metadata_before_running(tmp_path, capsys):
+    taxonomy_path = tmp_path / "taxonomy.json"
+    taxonomy_path.write_text(
+        json.dumps({"labels": [{"id": "EXPECTED", "name": "Expected", "description": "fixture"}]}),
+        encoding="utf-8",
+    )
+    expected_path = tmp_path / "expected.json"
+    expected_path.write_text(
+        json.dumps({"cases": [{"cve_id": "CVE-2020-0001", "labels": ["EXPECTED"]}]}),
+        encoding="utf-8",
+    )
+
+    exit_code = run([
+        "--taxonomy", str(taxonomy_path), "--validate", str(expected_path),
+        "--config", str(tmp_path / "missing-config.toml"),
+    ], cve_source=Source(), web_source=Web(), classifier=ExpectedClassifier())
+
+    captured = capsys.readouterr()
+    assert exit_code == 3
+    assert "evaluation error: expected classifications require schema_version 1" in captured.err
+    assert captured.out == ""
 
 
 def test_invalid_cve_and_unreadable_taxonomy_use_input_exit_code(tmp_path, capsys):

@@ -35,6 +35,7 @@ def test_load_benchmark_validates_fingerprint_membership_and_selection(tmp_path)
     selected_taxonomy = taxonomy()
     path = tmp_path / "expected.json"
     path.write_text(json.dumps({
+        "schema_version": 1,
         "taxonomy_sha256": taxonomy_fingerprint(selected_taxonomy),
         "cases": [
             {"cve_id": "CVE-2020-0001", "labels": ["A"], "rationale": "clear", "sources": ["https://source.test"]},
@@ -45,9 +46,40 @@ def test_load_benchmark_validates_fingerprint_membership_and_selection(tmp_path)
     benchmark = load_benchmark(path, selected_taxonomy).select(["CVE-2020-0002"])
     assert benchmark.cve_ids == ["CVE-2020-0002"]
 
-    path.write_text(json.dumps({"taxonomy_sha256": "wrong", "cases": [{"cve_id": "CVE-2020-0001", "labels": ["A"]}]}), encoding="utf-8")
+    path.write_text(json.dumps({"schema_version": 1, "taxonomy_sha256": "wrong", "cases": [{"cve_id": "CVE-2020-0001", "labels": ["A"]}]}), encoding="utf-8")
     with pytest.raises(BenchmarkError, match="fingerprint"):
         load_benchmark(path, selected_taxonomy)
+
+
+@pytest.mark.parametrize("version", [None, True, "1", 2])
+def test_load_benchmark_requires_supported_schema_version(tmp_path, version):
+    selected_taxonomy = taxonomy()
+    payload = {
+        "taxonomy_sha256": taxonomy_fingerprint(selected_taxonomy),
+        "cases": [{"cve_id": "CVE-2020-0001", "labels": ["A"]}],
+    }
+    if version is not None:
+        payload["schema_version"] = version
+    path = tmp_path / "expected.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(BenchmarkError, match="schema_version 1"):
+        load_benchmark(path, selected_taxonomy)
+
+
+@pytest.mark.parametrize("fingerprint", [None, "", 123, "0" * 64])
+def test_load_benchmark_requires_matching_fingerprint(tmp_path, fingerprint):
+    payload = {
+        "schema_version": 1,
+        "cases": [{"cve_id": "CVE-2020-0001", "labels": ["A"]}],
+    }
+    if fingerprint is not None:
+        payload["taxonomy_sha256"] = fingerprint
+    path = tmp_path / "expected.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(BenchmarkError, match="fingerprint"):
+        load_benchmark(path, taxonomy())
 
 
 def test_evaluation_reports_micro_macro_exact_and_mismatches():

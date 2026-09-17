@@ -1,5 +1,22 @@
 # Coding-agent notes
 
+## Review findings remediation (2026-09-16)
+
+- Implemented public-page IP pinning for every fetch/redirect hop. The application-owned fetch
+  client ignores environment proxies and does not retain idle connections; logical hostnames stay
+  in HTTP Host, HTTPS verification, and document provenance.
+- Benchmark files now require integer schema version 1 and a matching taxonomy fingerprint.
+  NVD retries only transient HTTP statuses, timeouts, and network failures.
+- Added deterministic regression tests and updated the README. The focused integration, cache,
+  evaluation, and CLI suite passed: 72 tests. The final full offline suite passed: 344 tests;
+  `git diff --check` passed.
+- Live run requirements: first ten ordered hybrid benchmark cases, current 100,000-token per-CVE
+  ceiling, isolated temporary database/cache, no-echo credential entry, and both micro/macro F1
+  strictly above 0.80. If either falls short, report without tuning or rerunning. Never put key
+  values in source, configuration, commands, logs, or notes. The no-echo prompt was queued but
+  never became visible in the app. It was canceled before any credential entry or live call, so
+  the ten-CVE run and F1 assessment remain pending.
+
 ## Classification demo alignment (2026-09-15)
 
 - Work is on `main`. The working tree was clean before this task. No commit should be created until

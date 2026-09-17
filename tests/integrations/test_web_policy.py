@@ -11,6 +11,7 @@ def test_public_web_policy_accepts_http_and_https_public_hosts():
     policy = PublicWebUrlPolicy(public_resolver)
 
     assert policy.validate("https://example.test/advisory") == "https://example.test/advisory"
+    assert policy.resolve_public_address("https://example.test/advisory") == "93.184.216.34"
     assert policy.validate("http://93.184.216.34/report") == "http://93.184.216.34/report"
 
 
@@ -38,6 +39,8 @@ def test_public_web_policy_rejects_hosts_with_mixed_public_and_private_dns():
 
     with pytest.raises(PublicWebUrlError, match="non-public address"):
         policy.validate("https://rebinding.test/report")
+    with pytest.raises(PublicWebUrlError, match="non-public address"):
+        policy.resolve_public_address("https://rebinding.test/report")
 
 
 def test_public_web_policy_reports_escaped_hostname_without_exception_control_flow():

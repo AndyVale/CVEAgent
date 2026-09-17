@@ -235,9 +235,11 @@ Machine-local GUI defaults live in the ignored `.data/cve-agent-gui.json` file b
 
 The three fixture pairs are progressively finer demo taxonomies built around the same 50 unique,
 independently researched CVEs in the same order. They are illustrative mechanism models, not
-complete or standardized vulnerability ontologies. Each benchmark keeps the standard
-`schema_version`, `taxonomy_sha256`, and `cases` format; every case records expected label IDs, a
-granularity-specific rationale, and its evidence sources.
+complete or standardized vulnerability ontologies. Each benchmark requires integer
+`schema_version: 1`, a `taxonomy_sha256` matching the supplied taxonomy, and a `cases` array;
+every case records expected label IDs, a granularity-specific rationale, and its evidence sources.
+Validation rejects missing or unsupported metadata rather than scoring against an unverified
+taxonomy.
 
 `fixtures/flat/taxonomy.json` contains the nine independent root families. It has no parent
 relationships, so the classification step always evaluates its labels exhaustively.
@@ -452,11 +454,14 @@ retaining direct fetching of NVD references. NVD and web retries are configured 
 Downloads are streamed, limited by `max_download_bytes`, restricted to textual content types,
 and then extracted and bounded by `max_document_chars` and `max_preview_chars`. Evidence uses
 the final response URL while retaining the requested URL and redirect chain. Fetching accepts
-only HTTP(S) hosts that resolve exclusively to public IP addresses. Search results, cached
+only HTTP(S) hosts that resolve exclusively to public IP addresses and connects to an approved
+address for each redirect hop. The page fetcher uses direct connections, ignoring environment
+proxy settings; it does not keep idle connections across requests. Search results, cached
 documents, and every redirect hop are checked before use; localhost, private/link-local targets,
 URL credentials, and non-web schemes are rejected. External text is always treated as untrusted
 source data rather than agent instructions. Verbose logs include a safe URL and concrete reason
-when a search candidate or fetch is rejected.
+when a search candidate or fetch is rejected. NVD retries only transient HTTP errors, timeouts,
+and network failures; permanent HTTP errors fail immediately.
 
 Searches and fetched documents are cached under `[web].cache_dir`. The cache has no automatic
 expiry. Writes replace entries atomically. Malformed JSON or invalid cache structures are
@@ -524,10 +529,10 @@ Python callers use `cve_agent.application.factory.create_application` and
 `cve_agent.application.service.ClassificationApplication`. Internal import paths were reorganized
 without legacy forwarding modules; the CLI and GUI commands and persisted formats are unchanged.
 
-Default web-download and Tavily clients reuse HTTP connections within an application run and
-are closed when that run ends, including on failure. Injected clients and web sources remain
-owned by their caller. When using `create_web_source`, `WebClient`, or `TavilySearchProvider`
-directly, call `close()` in a `finally` block after use.
+The default Tavily client reuses HTTP connections, while public-page downloads use a reusable
+client without idle connection reuse. Both are closed when the run ends, including on failure.
+Injected clients and web sources remain owned by their caller. When using `create_web_source`,
+`WebClient`, or `TavilySearchProvider` directly, call `close()` in a `finally` block after use.
 
 History search uses the shared `HistorySearch` criteria record, translated into parameterized
 SQLite filters before cursor pagination. Cursors bind the normalized criteria, initial row/run

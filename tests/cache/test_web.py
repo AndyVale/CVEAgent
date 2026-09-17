@@ -152,7 +152,7 @@ def test_cached_web_client_blocks_private_redirect_before_request(tmp_path):
 
     with pytest.raises(PublicWebUrlError, match="non-public address"):
         client.fetch("https://fixture.test/start")
-    assert requested == ["https://fixture.test/start"]
+    assert requested == ["https://93.184.216.34/start"]
 
 
 def test_cached_web_client_bounds_redirects_without_retrying_chain(tmp_path):

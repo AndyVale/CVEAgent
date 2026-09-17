@@ -23,14 +23,18 @@ def _request_json(url: str, timeout: float, retries: int, headers: dict[str, str
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return json.loads(response.read())
         except (TimeoutError, urllib.error.URLError) as exc:
+            status = exc.code if isinstance(exc, urllib.error.HTTPError) else None
+            retryable = status is None or status in {408, 425, 429} or status >= 500
+            retrying = retryable and attempt < retries
             logger.warning(
-                "NVD request failed attempt=%d/%d retrying=%s error_type=%s",
+                "NVD request failed attempt=%d/%d retrying=%s error_type=%s status=%s",
                 attempt + 1,
                 retries + 1,
-                attempt < retries,
+                retrying,
                 type(exc).__name__,
+                status,
             )
-            if attempt >= retries:
+            if not retrying:
                 raise
             time.sleep(0.2 * (2**attempt))
 

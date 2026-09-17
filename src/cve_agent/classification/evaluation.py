@@ -116,11 +116,12 @@ def load_benchmark(path: str | Path, taxonomy: Taxonomy) -> Benchmark:
         raise BenchmarkError(f"cannot read expected classifications from {benchmark_path}: {exc}") from exc
     if not isinstance(raw, dict) or not isinstance(raw.get("cases"), list):
         raise BenchmarkError("expected classifications must be an object with a cases array")
+    if type(raw.get("schema_version")) is not int or raw["schema_version"] != 1:
+        raise BenchmarkError("expected classifications require schema_version 1")
 
     expected_fingerprint = raw.get("taxonomy_sha256")
-    if expected_fingerprint is not None:
-        if not isinstance(expected_fingerprint, str) or expected_fingerprint != taxonomy_fingerprint(taxonomy):
-            raise BenchmarkError("expected classifications do not match the supplied taxonomy fingerprint")
+    if not isinstance(expected_fingerprint, str) or expected_fingerprint != taxonomy_fingerprint(taxonomy):
+        raise BenchmarkError("expected classifications require a matching taxonomy fingerprint")
 
     cases: list[BenchmarkCase] = []
     seen_cves: set[str] = set()

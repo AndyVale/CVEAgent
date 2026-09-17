@@ -27,10 +27,23 @@ class PublicWebUrlPolicy:
             raise PublicWebUrlError(rejection)
         return url
 
+    def resolve_public_address(self, url: str) -> str:
+        """Return an approved destination to use for the actual connection."""
+        address, rejection = self._inspect(url)
+        if rejection:
+            raise PublicWebUrlError(rejection)
+        if address is None:
+            raise PublicWebUrlError("public-web host resolved to no addresses")
+        return address
+
     def rejection_reason(self, url: object) -> str | None:
         """Return a printable rejection reason without raising for untrusted URLs."""
+        _, rejection = self._inspect(url)
+        return rejection
+
+    def _inspect(self, url: object) -> tuple[str | None, str | None]:
         if not isinstance(url, str):
-            return "public-web URL must be a string"
+            return None, "public-web URL must be a string"
         try:
             parsed = urllib.parse.urlsplit(url)
             port = parsed.port
@@ -39,30 +52,30 @@ class PublicWebUrlPolicy:
             password = parsed.password
         except (TypeError, UnicodeError, ValueError) as exc:
             detail = str(exc).strip()
-            return f"invalid public-web URL: {detail}" if detail else "invalid public-web URL"
+            return None, f"invalid public-web URL: {detail}" if detail else "invalid public-web URL"
         if parsed.scheme.casefold() not in {"http", "https"}:
-            return "public-web URL must use HTTP or HTTPS"
+            return None, "public-web URL must use HTTP or HTTPS"
         if not hostname:
-            return "public-web URL requires a host"
+            return None, "public-web URL requires a host"
         if username is not None or password is not None:
-            return "public-web URL must not contain credentials"
+            return None, "public-web URL must not contain credentials"
 
         hostname = hostname.rstrip(".").casefold()
         if hostname == "localhost" or hostname.endswith(".localhost"):
-            return "public-web URL must not target localhost"
+            return None, "public-web URL must not target localhost"
         addresses, address_error = _literal_or_resolved_addresses(
             hostname,
             port or (443 if parsed.scheme.casefold() == "https" else 80),
             self._resolver,
         )
         if address_error:
-            return address_error
+            return None, address_error
         if not addresses:
-            return "public-web host resolved to no addresses"
+            return None, "public-web host resolved to no addresses"
         blocked = sorted(str(address) for address in addresses if not address.is_global)
         if blocked:
-            return f"public-web host resolved to a non-public address: {', '.join(blocked)}"
-        return None
+            return None, f"public-web host resolved to a non-public address: {', '.join(blocked)}"
+        return str(addresses[0]), None
 
 
 def _literal_or_resolved_addresses(
